@@ -1,0 +1,137 @@
+"use client";
+
+import type { FFmpeg } from "@ffmpeg/ffmpeg";
+import type { TimeRange } from "./types";
+
+const CORE_BASE = "/vendor/ffmpeg";
+const INPUT_NAME = "input_video";
+
+let ffmpegPromise: Promise<FFmpeg> | null = null;
+let writtenFor: File | null = null;
+
+/** Lazily load a singleton multi-threaded ffmpeg.wasm instance. */
+export async function getFFmpeg(): Promise<FFmpeg> {
+  if (!ffmpegPromise) {
+    ffmpegPromise = (async () => {
+      const [{ FFmpeg }, { toBlobURL }] = await Promise.all([
+        import("@ffmpeg/ffmpeg"),
+        import("@ffmpeg/util"),
+      ]);
+      if (!self.crossOriginIsolated) {
+        console.warn(
+          "Page is not cross-origin isolated; ffmpeg.wasm multi-threading requires COOP/COEP headers."
+        );
+      }
+      const ffmpeg = new FFmpeg();
+      await ffmpeg.load({
+        coreURL: await toBlobURL(`${CORE_BASE}/ffmpeg-core.js`, "text/javascript"),
+        wasmURL: await toBlobURL(`${CORE_BASE}/ffmpeg-core.wasm`, "application/wasm"),
+        workerURL: await toBlobURL(`${CORE_BASE}/ffmpeg-core.worker.js`, "text/javascript"),
+      });
+      return ffmpeg;
+    })();
+    ffmpegPromise.catch(() => {
+      ffmpegPromise = null;
+    });
+  }
+  return ffmpegPromise;
+}
+
+async function ensureInput(ffmpeg: FFmpeg, file: File): Promise<string> {
+  if (writtenFor !== file) {
+    const { fetchFile } = await import("@ffmpeg/util");
+    await ffmpeg.writeFile(INPUT_NAME, await fetchFile(file));
+    writtenFor = file;
+  }
+  return INPUT_NAME;
+}
+
+/**
+ * Extract the audio track as mono 16 kHz float PCM — the exact format
+ * Whisper expects, and what we render the timeline waveform from.
+ */
+export async function extractAudio(file: File): Promise<Float32Array> {
+  const ffmpeg = await getFFmpeg();
+  const input = await ensureInput(ffmpeg, file);
+  const out = "audio.pcm";
+  const code = await ffmpeg.exec([
+    "-i", input,
+    "-vn",
+    "-ac", "1",
+    "-ar", "16000",
+    "-f", "f32le",
+    "-y", out,
+  ]);
+  if (code !== 0) {
+    throw new Error("Could not extract audio from this file. Does it have an audio track?");
+  }
+  const data = (await ffmpeg.readFile(out)) as Uint8Array;
+  await ffmpeg.deleteFile(out);
+  if (data.byteLength < 4) {
+    throw new Error("This video appears to have no audio track.");
+  }
+  // Copy into a fresh buffer so byteOffset/alignment is clean.
+  const buf = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
+  return new Float32Array(buf as ArrayBuffer);
+}
+
+/**
+ * Render the edited video: keep only `keepRanges` of the original media and
+ * concatenate them. Re-encodes so cuts land exactly on word boundaries
+ * rather than keyframes.
+ */
+export async function exportVideo(
+  file: File,
+  keepRanges: TimeRange[],
+  editedDuration: number,
+  onProgress: (ratio: number) => void
+): Promise<Blob> {
+  if (keepRanges.length === 0) {
+    throw new Error("Everything has been deleted — nothing to export.");
+  }
+  const ffmpeg = await getFFmpeg();
+  const input = await ensureInput(ffmpeg, file);
+  const out = "output.mp4";
+
+  const parts: string[] = [];
+  const labels: string[] = [];
+  keepRanges.forEach((r, i) => {
+    const s = r.start.toFixed(3);
+    const e = r.end.toFixed(3);
+    parts.push(`[0:v]trim=start=${s}:end=${e},setpts=PTS-STARTPTS[v${i}]`);
+    parts.push(`[0:a]atrim=start=${s}:end=${e},asetpts=PTS-STARTPTS[a${i}]`);
+    labels.push(`[v${i}][a${i}]`);
+  });
+  const filter =
+    parts.join(";") +
+    `;${labels.join("")}concat=n=${keepRanges.length}:v=1:a=1[outv][outa]`;
+
+  const progressHandler = ({ time }: { progress: number; time: number }) => {
+    // `time` is the output timestamp in microseconds.
+    const ratio = Math.min(1, time / 1e6 / Math.max(0.001, editedDuration));
+    onProgress(Math.max(0, ratio));
+  };
+  ffmpeg.on("progress", progressHandler);
+  try {
+    const code = await ffmpeg.exec([
+      "-i", input,
+      "-filter_complex", filter,
+      "-map", "[outv]",
+      "-map", "[outa]",
+      "-c:v", "libx264",
+      "-preset", "ultrafast",
+      "-crf", "22",
+      "-c:a", "aac",
+      "-b:a", "192k",
+      "-movflags", "+faststart",
+      "-y", out,
+    ]);
+    if (code !== 0) throw new Error("Export failed while rendering the video.");
+    const data = (await ffmpeg.readFile(out)) as Uint8Array;
+    await ffmpeg.deleteFile(out);
+    const buf = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
+    return new Blob([buf as ArrayBuffer], { type: "video/mp4" });
+  } finally {
+    ffmpeg.off("progress", progressHandler);
+  }
+}
