@@ -52,21 +52,32 @@ function makeDownloadTracker(label: string) {
   };
 }
 
+async function pickDevice(): Promise<"webgpu" | "wasm"> {
+  try {
+    const gpu = (globalThis.navigator as Navigator & {
+      gpu?: { requestAdapter: () => Promise<unknown | null> };
+    })?.gpu;
+    if (gpu && (await gpu.requestAdapter())) return "webgpu";
+  } catch {
+    // fall through to wasm
+  }
+  return "wasm";
+}
+
 let asrPromise: Promise<AutomaticSpeechRecognitionPipeline> | null = null;
-function getAsr() {
+async function getAsr() {
   if (!asrPromise) {
-    const device = (globalThis.navigator as Navigator & { gpu?: unknown })?.gpu
-      ? "webgpu"
-      : "wasm";
+    const device = await pickDevice();
+    const dtype = { encoder_model: "fp32", decoder_model_merged: "q4" } as const;
     asrPromise = pipeline("automatic-speech-recognition", ASR_MODEL, {
-      dtype: "q8",
-      device: device as "webgpu" | "wasm",
+      dtype,
+      device,
       progress_callback: makeDownloadTracker("Downloading speech model…"),
     }).catch((err) => {
       // WebGPU can fail on some drivers; retry once on plain WASM.
       if (device === "webgpu") {
         return pipeline("automatic-speech-recognition", ASR_MODEL, {
-          dtype: "q8",
+          dtype,
           device: "wasm",
           progress_callback: makeDownloadTracker("Downloading speech model…"),
         });

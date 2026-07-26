@@ -18,11 +18,23 @@ for (const f of readdirSync(ffmpegSrc)) {
   cpSync(join(ffmpegSrc, f), join(ffmpegDst, f));
 }
 
+// The @ffmpeg/ffmpeg "class worker" contains a dynamic import() that bundlers
+// cannot process; serve the package's own ESM build and point classWorkerURL
+// at it instead (see lib/ffmpeg.ts).
+const ffmpegClassSrc = join(root, "node_modules/@ffmpeg/ffmpeg/dist/esm");
+const ffmpegClassDst = join(root, "public/vendor/ffmpeg-class");
+mkdirSync(ffmpegClassDst, { recursive: true });
+for (const f of readdirSync(ffmpegClassSrc)) {
+  if (f.endsWith(".js") || f.endsWith(".mjs")) {
+    cpSync(join(ffmpegClassSrc, f), join(ffmpegClassDst, f));
+  }
+}
+
 const ortSrc = join(root, "node_modules/onnxruntime-web/dist");
 const ortDst = join(root, "public/vendor/ort");
 mkdirSync(ortDst, { recursive: true });
 for (const f of readdirSync(ortSrc)) {
-  if (/^ort-wasm-simd-threaded(\.jsep)?\.(wasm|mjs)$/.test(f)) {
+  if (/^ort-wasm-simd-threaded.*\.(wasm|mjs)$/.test(f)) {
     cpSync(join(ortSrc, f), join(ortDst, f));
   }
 }

@@ -27,6 +27,9 @@ export async function getFFmpeg(): Promise<FFmpeg> {
         coreURL: await toBlobURL(`${CORE_BASE}/ffmpeg-core.js`, "text/javascript"),
         wasmURL: await toBlobURL(`${CORE_BASE}/ffmpeg-core.wasm`, "application/wasm"),
         workerURL: await toBlobURL(`${CORE_BASE}/ffmpeg-core.worker.js`, "text/javascript"),
+        // Served same-origin (copied on postinstall): the bundled class worker
+        // contains a dynamic import() that Next's bundler cannot handle.
+        classWorkerURL: new URL("/vendor/ffmpeg-class/worker.js", location.href).href,
       });
       return ffmpeg;
     })();
