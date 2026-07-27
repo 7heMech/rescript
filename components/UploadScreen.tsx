@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import {
   AudioLines,
@@ -11,12 +11,20 @@ import {
   Music,
   Scissors,
   ShieldAlert,
+  Trash2,
   Type,
 } from "lucide-react";
 import logo from "@/assets/logo.png";
 import ModelSelector from "./ModelSelector";
 import { useCrossOriginIsolated } from "@/hooks/useCrossOriginIsolated";
 import { detectMediaKind, MEDIA_ACCEPT } from "@/lib/media";
+import { formatTime } from "@/lib/edits";
+import {
+  formatRelativeTime,
+  listProjects,
+  type ProjectMeta,
+} from "@/lib/projects";
+import { useEditorStore } from "@/lib/store";
 
 // The three media cards that stand in for the upload icon. Each carries its
 // resting transform plus the fanned-out one, applied either on hover (via the
@@ -70,14 +78,109 @@ function MediaCards({ dragging }: { dragging: boolean }) {
   );
 }
 
+function RecentProjects({
+  projects,
+  busyId,
+  onOpen,
+  onRemove,
+}: {
+  projects: ProjectMeta[];
+  busyId: string | null;
+  onOpen: (id: string) => void;
+  onRemove: (id: string) => void;
+}) {
+  if (projects.length === 0) return null;
+  return (
+    <div className="mt-6">
+      <p className="mb-2 text-[11px] font-medium tracking-wide text-zinc-400">
+        Recent
+      </p>
+      <ul className="divide-y divide-zinc-100 overflow-hidden rounded-xl border border-zinc-200 bg-white/80">
+        {projects.map((p) => {
+          const KindIcon = p.mediaKind === "audio" ? AudioLines : Film;
+          const opening = busyId === p.id;
+          return (
+            <li key={p.id}>
+              <div className="flex items-center gap-1 pr-1">
+                <button
+                  type="button"
+                  disabled={busyId !== null}
+                  onClick={() => onOpen(p.id)}
+                  className="flex min-w-0 flex-1 items-center gap-3 px-3 py-2.5 text-left transition hover:bg-zinc-50 disabled:opacity-60"
+                >
+                  <KindIcon size={16} className="shrink-0 text-zinc-400" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[13px] font-medium text-zinc-800">
+                      {p.name}
+                    </span>
+                    <span className="mt-0.5 block text-[11px] text-zinc-400">
+                      {formatRelativeTime(p.updatedAt)}
+                      {p.duration > 0 ? ` · ${formatTime(p.duration)}` : ""}
+                      {` · ${p.mediaKind}`}
+                    </span>
+                  </span>
+                  {opening && (
+                    <Loader2 size={14} className="shrink-0 animate-spin text-zinc-400" />
+                  )}
+                </button>
+                <button
+                  type="button"
+                  title="Remove from recent"
+                  disabled={busyId !== null}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onRemove(p.id);
+                  }}
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 disabled:opacity-40"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
 export default function UploadScreen({ onFile }: { onFile: (file: File) => void }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
+  const [projects, setProjects] = useState<ProjectMeta[]>([]);
+  const [busyId, setBusyId] = useState<string | null>(null);
   // The pipeline needs SharedArrayBuffer, which on static hosts only appears
   // after the COI service worker reloads the page. Accepting a file before then
   // would fail immediately and lose the file to that reload.
   const isolation = useCrossOriginIsolated();
   const ready = isolation === "ready";
+  const openProject = useEditorStore((s) => s.openProject);
+  const removeProject = useEditorStore((s) => s.removeProject);
+
+  const refreshProjects = useCallback(async () => {
+    try {
+      setProjects(await listProjects());
+    } catch (err) {
+      console.warn("Failed to list saved projects.", err);
+      setProjects([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    // IndexedDB is an external store; load once on mount for the recent list.
+    void listProjects()
+      .then((rows) => {
+        if (!cancelled) setProjects(rows);
+      })
+      .catch((err) => {
+        console.warn("Failed to list saved projects.", err);
+        if (!cancelled) setProjects([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleFiles = useCallback(
     (files: FileList | null) => {
@@ -91,6 +194,36 @@ export default function UploadScreen({ onFile }: { onFile: (file: File) => void 
       onFile(file);
     },
     [onFile, ready]
+  );
+
+  const handleOpen = useCallback(
+    async (id: string) => {
+      if (!ready) return;
+      setBusyId(id);
+      try {
+        await openProject(id);
+      } catch (err) {
+        console.error(err);
+        alert(err instanceof Error ? err.message : "Could not open that project.");
+        await refreshProjects();
+      } finally {
+        setBusyId(null);
+      }
+    },
+    [openProject, ready, refreshProjects]
+  );
+
+  const handleRemove = useCallback(
+    async (id: string) => {
+      try {
+        await removeProject(id);
+        await refreshProjects();
+      } catch (err) {
+        console.error(err);
+        alert("Could not remove that project.");
+      }
+    },
+    [removeProject, refreshProjects]
   );
 
   return (
@@ -187,6 +320,15 @@ export default function UploadScreen({ onFile }: { onFile: (file: File) => void 
             onChange={(e) => handleFiles(e.target.files)}
           />
         </div>
+
+        {ready && (
+          <RecentProjects
+            projects={projects}
+            busyId={busyId}
+            onOpen={handleOpen}
+            onRemove={handleRemove}
+          />
+        )}
 
         <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
           {[
