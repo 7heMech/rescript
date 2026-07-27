@@ -2,6 +2,8 @@
 
 **Edit video by editing text — fully offline, in your browser.**
 
+**✨ Try it now: [wassgha.github.io/rescript](https://wassgha.github.io/rescript/)**
+
 Rescript is an open-source, transcript-based video editor. Drop in a video and
 it is transcribed locally with per-word timestamps and speaker labels. Delete
 words in the transcript and the corresponding clip is cut from the video.
@@ -24,11 +26,13 @@ Export the final cut to MP4 — without your video ever leaving your device.
 | Media processing | [ffmpeg.wasm](https://ffmpegwasm.netlify.app/) (multi-threaded) for audio extraction and export |
 | State | zustand |
 
-## Getting started
+## Development
 
 ```bash
-npm install   # also copies ffmpeg/onnxruntime WASM into public/vendor
-npm run dev
+npm install     # also copies ffmpeg/onnxruntime WASM into public/vendor
+npm run dev     # dev server
+npm run build   # production build
+npm run lint    # eslint
 ```
 
 Open [http://localhost:3000](http://localhost:3000) and drop in a video with an
@@ -51,21 +55,11 @@ audio track.
 4. **Export** — the kept ranges are trimmed and concatenated with an ffmpeg
    filter graph and re-encoded (`libx264`/`aac`), so cuts are word-accurate.
 
-See [PLAN.md](./PLAN.md) for architecture details and the roadmap.
-
 ## Browser support
 
 A Chromium-based browser is recommended. The app requires `SharedArrayBuffer`
 (served with COOP/COEP headers) and uses WebGPU for inference when available,
 falling back to WASM otherwise.
-
-## Development
-
-```bash
-npm run dev     # dev server
-npm run build   # production build
-npm run lint    # eslint
-```
 
 ## License
 

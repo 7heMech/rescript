@@ -3,7 +3,8 @@
 import type { FFmpeg } from "@ffmpeg/ffmpeg";
 import type { TimeRange } from "./types";
 
-const CORE_BASE = "/vendor/ffmpeg";
+const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+const CORE_BASE = `${BASE_PATH}/vendor/ffmpeg`;
 const INPUT_NAME = "input_video";
 
 let ffmpegPromise: Promise<FFmpeg> | null = null;
@@ -29,7 +30,8 @@ export async function getFFmpeg(): Promise<FFmpeg> {
         workerURL: await toBlobURL(`${CORE_BASE}/ffmpeg-core.worker.js`, "text/javascript"),
         // Served same-origin (copied on postinstall): the bundled class worker
         // contains a dynamic import() that Next's bundler cannot handle.
-        classWorkerURL: new URL("/vendor/ffmpeg-class/worker.js", location.href).href,
+        classWorkerURL: new URL(`${BASE_PATH}/vendor/ffmpeg-class/worker.js`, location.href)
+          .href,
       });
       return ffmpeg;
     })();
