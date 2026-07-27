@@ -59,6 +59,22 @@ function makeDownloadTracker(label: string) {
   };
 }
 
+/**
+ * Whether a model's weights are already in the transformers.js browser cache.
+ * Used purely to label the progress UI accurately ("Loading … from cache"
+ * instead of "Downloading …"): transformers.js emits identical progress
+ * events when reading a cached model from disk as when downloading it.
+ */
+async function isModelCached(modelId: string): Promise<boolean> {
+  try {
+    const cache = await caches.open(env.cacheKey ?? "transformers-cache");
+    const keys = await cache.keys();
+    return keys.some((req) => req.url.includes(modelId) && req.url.includes(".onnx"));
+  } catch {
+    return false;
+  }
+}
+
 async function pickDevice(): Promise<"webgpu" | "wasm"> {
   try {
     const gpu = (globalThis.navigator as Navigator & {
@@ -76,17 +92,20 @@ async function getAsr() {
   if (!asrPromise) {
     const device = await pickDevice();
     const dtype = { encoder_model: "fp32", decoder_model_merged: "q4" } as const;
+    const label = (await isModelCached(ASR_MODEL))
+      ? "Loading speech model from cache…"
+      : "Downloading speech model…";
     asrPromise = pipeline("automatic-speech-recognition", ASR_MODEL, {
       dtype,
       device,
-      progress_callback: makeDownloadTracker("Downloading speech model…"),
+      progress_callback: makeDownloadTracker(label),
     }).catch((err) => {
       // WebGPU can fail on some drivers; retry once on plain WASM.
       if (device === "webgpu") {
         return pipeline("automatic-speech-recognition", ASR_MODEL, {
           dtype,
           device: "wasm",
-          progress_callback: makeDownloadTracker("Downloading speech model…"),
+          progress_callback: makeDownloadTracker(label),
         });
       }
       throw err;
@@ -102,16 +121,38 @@ interface DiarizationSegment {
   confidence: number;
 }
 
+type Diarizer = {
+  processor: Awaited<ReturnType<typeof AutoProcessor.from_pretrained>>;
+  model: Awaited<ReturnType<typeof AutoModelForAudioFrameClassification.from_pretrained>>;
+};
+
+/**
+ * Load the diarization model. Started in the background while Whisper is
+ * still transcribing, so the (small) speaker model is downloaded, cached,
+ * and ready by the time the transcript lands — closing the tab right after
+ * transcription no longer leaves it uncached for the next session. No
+ * progress is posted here to avoid interleaving with transcription progress.
+ */
+let diarizerPromise: Promise<Diarizer> | null = null;
+function getDiarizer(): Promise<Diarizer> {
+  if (!diarizerPromise) {
+    diarizerPromise = (async () => {
+      const processor = await AutoProcessor.from_pretrained(DIARIZATION_MODEL, {});
+      const model = await AutoModelForAudioFrameClassification.from_pretrained(
+        DIARIZATION_MODEL,
+        { dtype: "fp32" }
+      );
+      return { processor, model };
+    })();
+    diarizerPromise.catch(() => {
+      diarizerPromise = null;
+    });
+  }
+  return diarizerPromise;
+}
+
 async function diarize(audio: Float32Array): Promise<DiarizationSegment[]> {
-  const progress = makeDownloadTracker("Downloading speaker model…");
-  const processor = await AutoProcessor.from_pretrained(DIARIZATION_MODEL, {
-    progress_callback: progress,
-  });
-  const model = await AutoModelForAudioFrameClassification.from_pretrained(
-    DIARIZATION_MODEL,
-    { dtype: "fp32", progress_callback: progress }
-  );
-  post({ type: "progress", message: "Identifying speakers…", value: null });
+  const { processor, model } = await getDiarizer();
   const inputs = await processor(audio);
   const { logits } = await model(inputs);
   // post_process_speaker_diarization is specific to the PyAnnote processor
@@ -159,6 +200,9 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
   const { audio, duration, language } = event.data;
   try {
     const transcriber = await getAsr();
+    // Warm up the speaker model in parallel with transcription (errors are
+    // handled when it is awaited later; this avoids an unhandled rejection).
+    getDiarizer().catch(() => {});
     post({ type: "progress", message: "Transcribing…", value: 0 });
 
     let partial = "";
@@ -227,6 +271,7 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
 
     // Best-effort speaker diarization; a failure should not lose the transcript.
     try {
+      post({ type: "progress", message: "Identifying speakers…", value: null });
       const segments = await diarize(audio);
       assignSpeakers(words, segments);
     } catch (err) {
