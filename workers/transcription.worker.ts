@@ -13,14 +13,22 @@
 import {
   pipeline,
   AutoProcessor,
+  AutoModel,
   AutoModelForAudioFrameClassification,
   WhisperTextStreamer,
+  Tensor,
   env,
   type AutomaticSpeechRecognitionPipeline,
 } from "@huggingface/transformers";
 import type { Word, WorkerRequest, WorkerResponse } from "@/lib/types";
 import { MODELS, type ModelChoice } from "@/lib/models";
 import { cleanTranscript } from "@/lib/hallucinations";
+import {
+  VAD_FRAME_SIZE,
+  VAD_SAMPLE_RATE,
+  energySpeechFrames,
+  muteLongSilence,
+} from "@/lib/vad";
 
 env.allowLocalModels = false;
 // Serve onnxruntime-web WASM from our own origin (offline friendly).
@@ -29,6 +37,10 @@ if (env.backends?.onnx?.wasm) {
 }
 
 const DIARIZATION_MODEL = "onnx-community/pyannote-segmentation-3.0";
+const VAD_MODEL = "onnx-community/silero-vad";
+/** Contiguous silence longer than this is zeroed before Whisper decoding. */
+const MUTE_MIN_SILENCE_S = 1.5;
+const MUTE_PAD_S = 0.25;
 
 const post = (msg: WorkerResponse, transfer: Transferable[] = []) =>
   (self as unknown as Worker).postMessage(msg, transfer);
@@ -172,6 +184,108 @@ type Diarizer = {
 };
 
 /**
+ * Silero VAD: ~2 MB ONNX model that scores speech probability per 32 ms frame.
+ * Used to mute long silent stretches before Whisper so the decoder does not
+ * invent subtitle-like text over silence. Falls back to energy VAD on failure.
+ */
+type VadModel = {
+  (inputs: {
+    input: InstanceType<typeof Tensor>;
+    sr: InstanceType<typeof Tensor>;
+    state: InstanceType<typeof Tensor>;
+  }): Promise<{
+    output: { data: ArrayLike<number> };
+    stateN: InstanceType<typeof Tensor>;
+  }>;
+};
+
+let vadPromise: Promise<VadModel | null> | null = null;
+function getVad(): Promise<VadModel | null> {
+  if (!vadPromise) {
+    vadPromise = (async () => {
+      try {
+        const model = (await AutoModel.from_pretrained(VAD_MODEL, {
+          // Silero ships as a custom ONNX graph without a transformers config.
+          // @ts-expect-error transformers.js accepts model_type via config override
+          config: { model_type: "custom" },
+          dtype: "fp32",
+        })) as unknown as VadModel;
+        return model;
+      } catch (err) {
+        console.warn("Silero VAD failed to load; using energy-based silence detection.", err);
+        return null;
+      }
+    })();
+    vadPromise.catch(() => {
+      vadPromise = null;
+    });
+  }
+  return vadPromise;
+}
+
+async function speechFramesWithSilero(
+  model: VadModel,
+  audio: Float32Array
+): Promise<boolean[]> {
+  const frameSize = VAD_FRAME_SIZE;
+  const n = Math.ceil(audio.length / frameSize) || 0;
+  const out: boolean[] = new Array(n);
+  const sr = new Tensor("int64", [BigInt(VAD_SAMPLE_RATE)], []);
+  let state = new Tensor("float32", new Float32Array(2 * 1 * 128), [2, 1, 128]);
+  const threshold = 0.5;
+
+  for (let f = 0; f < n; f++) {
+    const start = f * frameSize;
+    const end = Math.min(audio.length, start + frameSize);
+    let frame: Float32Array;
+    if (end - start === frameSize) {
+      // Copy: ORT may retain the input buffer across calls.
+      frame = audio.slice(start, end);
+    } else {
+      // Silero expects exactly 512 samples; zero-pad a trailing partial frame.
+      frame = new Float32Array(frameSize);
+      frame.set(audio.subarray(start, end));
+    }
+    const input = new Tensor("float32", frame, [1, frameSize]);
+    const { output, stateN } = await model({ input, sr, state });
+    state = stateN;
+    out[f] = Number(output.data[0] ?? 0) >= threshold;
+
+    // Yield occasionally so long files don't starve the worker event loop.
+    if (f > 0 && f % 256 === 0) {
+      post({
+        type: "progress",
+        message: "Detecting speech…",
+        value: f / n,
+      });
+      await new Promise((r) => setTimeout(r, 0));
+    }
+  }
+  return out;
+}
+
+/**
+ * Mute long silent regions in a copy of `audio`. Prefers Silero VAD; falls
+ * back to energy-based detection. Always preserves length (timestamps stay
+ * aligned). On total failure, returns the original buffer unchanged.
+ */
+async function prepareAudioForAsr(audio: Float32Array): Promise<Float32Array> {
+  try {
+    const vad = await getVad();
+    const frames = vad
+      ? await speechFramesWithSilero(vad, audio)
+      : energySpeechFrames(audio);
+    return muteLongSilence(audio, frames, {
+      minSilenceS: MUTE_MIN_SILENCE_S,
+      padS: MUTE_PAD_S,
+    });
+  } catch (err) {
+    console.warn("Silence muting failed; transcribing original audio.", err);
+    return audio;
+  }
+}
+
+/**
  * Load the diarization model. Started in the background while Whisper is
  * still transcribing, so the (small) speaker model is downloaded, cached,
  * and ready by the time the transcript lands — closing the tab right after
@@ -254,13 +368,22 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
     if (verbatimPrompt && !promptedIds) {
       console.warn("Could not build verbatim prompt tokens; using default decoding.");
     }
-    // Warm up the speaker model in parallel with transcription (errors are
-    // handled when it is awaited later; this avoids an unhandled rejection).
+    // Warm up VAD + speaker models in parallel with ASR load (errors are
+    // handled when awaited later; this avoids unhandled rejections).
+    getVad().catch(() => {});
     getDiarizer().catch(() => {});
+
+    post({ type: "progress", message: "Detecting speech…", value: 0 });
+    // Zero long silent stretches so Whisper does not decode them into
+    // subtitle-like hallucinations. Length is preserved for timestamps.
+    const asrAudio = await prepareAudioForAsr(audio);
+
     post({ type: "progress", message: "Transcribing…", value: 0 });
 
     let partial = "";
-    const chunkLength = 30;
+    // Use 29s instead of 30: transformers.js has a known word-timestamp bug
+    // at exactly chunk_length_s=30 (#1357 / #1358); 29 is the common workaround.
+    const chunkLength = 29;
     const stride = 5;
     const timePrecision =
       // @ts-expect-error feature_extractor config is untyped
@@ -293,7 +416,7 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
       },
     });
 
-    const output = await transcriber(audio, {
+    const output = await transcriber(asrAudio, {
       chunk_length_s: chunkLength,
       stride_length_s: stride,
       return_timestamps: "word",
