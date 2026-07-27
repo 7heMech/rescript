@@ -13,6 +13,19 @@ body {
   background: rgba(99, 102, 241, 0.25);
 }
 
+/*
+ * Custom transcript selection highlight: the native ::selection is made
+ * transparent over the words (see TranscriptPanel) and selected word spans
+ * are marked with [data-sel] instead, producing a dimmed, continuous
+ * highlight that includes the spaces between words.
+ */
+.transcript-words [data-wid][data-sel] {
+  background-color: rgb(199 210 254 / 0.5);
+}
+.transcript-words [data-wid][data-sel].word-deleted {
+  background-color: rgb(254 202 202 / 0.7);
+}
+
 /* Slim scrollbars for panels and the timeline */
 .scrollbar-thin {
   scrollbar-width: thin;

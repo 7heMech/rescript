@@ -9,7 +9,6 @@ import UploadScreen from "./UploadScreen";
 import TranscriptPanel from "./TranscriptPanel";
 import VideoPreview from "./VideoPreview";
 import Timeline from "./Timeline";
-import SideRail from "./SideRail";
 import ExportDialog from "./ExportDialog";
 
 export default function Editor() {
@@ -72,7 +71,7 @@ export default function Editor() {
             <div className="flex w-[44%] min-w-[320px] shrink-0 flex-col border-l border-zinc-200">
               <VideoPreview />
             </div>
-            <SideRail />
+            {/* <SideRail /> — hidden until the tools it exposes are functional */}
           </div>
           <Timeline />
         </>

@@ -209,13 +209,17 @@ export default function Timeline() {
             {visibleWords.map((w) => (
               <span
                 key={w.id}
-                className={`absolute overflow-hidden text-[10px] whitespace-nowrap ${
-                  w.deleted ? "text-red-400 line-through" : "text-zinc-500"
+                title={w.text}
+                className={`absolute block overflow-hidden rounded-sm border px-1 text-[10px] leading-[14px] text-ellipsis whitespace-nowrap ${
+                  w.deleted
+                    ? "border-red-200 bg-red-50 text-red-400 line-through"
+                    : "border-zinc-200 bg-white text-zinc-600"
                 }`}
                 style={{
-                  left: w.start * pps + 1,
-                  top: RULER_H + 3,
-                  maxWidth: Math.max(6, (w.end - w.start) * pps + 24),
+                  left: w.start * pps,
+                  top: RULER_H + 2,
+                  width: Math.max(5, (w.end - w.start) * pps - 1),
+                  height: 16,
                 }}
               >
                 {w.text}

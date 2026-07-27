@@ -22,18 +22,15 @@ export default function TopBar() {
       >
         <Home size={16} />
       </button>
-      <div className="flex items-center gap-1.5 pl-1">
-        <div className="flex h-6 w-6 items-center justify-center rounded-md bg-gradient-to-br from-indigo-500 to-violet-600 text-[13px] font-bold text-white">
-          R
-        </div>
-        <span className="text-sm font-semibold tracking-tight text-zinc-800">
-          Rescript
-        </span>
-      </div>
+      <span className="pl-1 text-sm font-semibold tracking-tight text-zinc-800">
+        Rescript
+      </span>
 
-      <div className="pointer-events-none absolute left-1/2 hidden -translate-x-1/2 items-center text-[13px] text-zinc-500 sm:flex">
-        {videoFile ? videoFile.name : "Untitled project"}
-      </div>
+      {videoFile && (
+        <div className="pointer-events-none absolute left-1/2 hidden -translate-x-1/2 items-center text-[13px] text-zinc-500 sm:flex">
+          {videoFile.name}
+        </div>
+      )}
 
       <div className="ml-auto flex items-center gap-1">
         <button

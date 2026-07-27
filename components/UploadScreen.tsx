@@ -24,9 +24,6 @@ export default function UploadScreen({ onFile }: { onFile: (file: File) => void 
     <div className="flex flex-1 items-center justify-center bg-gradient-to-b from-zinc-50 to-indigo-50/50 p-6">
       <div className="w-full max-w-xl">
         <div className="mb-8 flex flex-col items-center text-center">
-          <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 text-2xl font-bold text-white shadow-lg shadow-indigo-200">
-            R
-          </div>
           <h1 className="text-3xl font-bold tracking-tight text-zinc-900">Rescript</h1>
           <p className="mt-2 max-w-md text-[15px] leading-relaxed text-zinc-500">
             Edit video by editing text. Delete a word in the transcript and it&apos;s cut

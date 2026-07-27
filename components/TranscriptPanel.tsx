@@ -44,22 +44,22 @@ const WordSpan = memo(function WordSpan({
   active: boolean;
   onClick: (word: Word) => void;
 }) {
+  // The trailing space lives inside the span so that selection and deletion
+  // highlights are continuous across words instead of breaking at each gap.
   return (
-    <>
-      <span
-        data-wid={word.id}
-        onClick={() => onClick(word)}
-        className={`cursor-pointer rounded px-px transition-colors duration-75 ${
-          word.deleted
-            ? "bg-red-50 text-red-400 line-through decoration-red-300"
-            : active
-              ? "bg-indigo-200/80 text-zinc-900"
-              : "text-zinc-800 hover:bg-indigo-50"
-        }`}
-      >
-        {word.text}
-      </span>{" "}
-    </>
+    <span
+      data-wid={word.id}
+      onClick={() => onClick(word)}
+      className={`cursor-pointer transition-colors duration-75 ${
+        word.deleted
+          ? "word-deleted bg-red-50 text-red-400 line-through decoration-red-300"
+          : active
+            ? "bg-indigo-200/80 text-zinc-900"
+            : "text-zinc-800 hover:bg-indigo-50"
+      }`}
+    >
+      {word.text}{" "}
+    </span>
   );
 });
 
@@ -106,17 +106,27 @@ export default function TranscriptPanel() {
     setCurrentTime(word.start + 0.001);
   }, []);
 
-  // Track text selection over word spans and position the floating toolbar.
+  // Track text selection over word spans, position the floating toolbar, and
+  // paint our own (dimmed, gap-free) highlight by marking the selected spans.
+  // The native ::selection highlight is made transparent over the words, and
+  // the marking is done imperatively so dragging doesn't re-render the panel.
+  const markedRef = useRef<Set<HTMLElement>>(new Set());
   useEffect(() => {
+    const clearMarks = () => {
+      for (const el of markedRef.current) el.removeAttribute("data-sel");
+      markedRef.current.clear();
+    };
     const handler = () => {
       const container = containerRef.current;
       const sel = window.getSelection();
       if (!container || !sel || sel.isCollapsed || sel.rangeCount === 0) {
+        clearMarks();
         setSelection(null);
         return;
       }
       const range = sel.getRangeAt(0);
       if (!container.contains(range.commonAncestorContainer)) {
+        clearMarks();
         setSelection(null);
         return;
       }
@@ -124,15 +134,22 @@ export default function TranscriptPanel() {
       const ids: number[] = [];
       let anyDeleted = false;
       let anyKept = false;
+      const marked = new Set<HTMLElement>();
       container.querySelectorAll<HTMLElement>("[data-wid]").forEach((el) => {
         if (range.intersectsNode(el)) {
           const id = Number(el.dataset.wid);
           ids.push(id);
+          el.setAttribute("data-sel", "");
+          marked.add(el);
           const w = wordMap.get(id);
           if (w?.deleted) anyDeleted = true;
           else anyKept = true;
         }
       });
+      for (const el of markedRef.current) {
+        if (!marked.has(el)) el.removeAttribute("data-sel");
+      }
+      markedRef.current = marked;
       if (ids.length === 0) {
         setSelection(null);
         return;
@@ -148,7 +165,10 @@ export default function TranscriptPanel() {
       });
     };
     document.addEventListener("selectionchange", handler);
-    return () => document.removeEventListener("selectionchange", handler);
+    return () => {
+      clearMarks();
+      document.removeEventListener("selectionchange", handler);
+    };
   }, [words]);
 
   const cutSelection = useCallback(() => {
@@ -239,10 +259,6 @@ export default function TranscriptPanel() {
                     />
                   </div>
                 )}
-                <p className="mt-2 text-xs text-zinc-400">
-                  Everything runs locally in your browser — this can take a while on
-                  first use while models are cached.
-                </p>
               </div>
               {partialText && (
                 <p className="text-[15px] leading-8 text-zinc-400">
@@ -259,31 +275,34 @@ export default function TranscriptPanel() {
             </div>
           )}
 
-          {status === "ready" &&
-            turns.map((turn, i) => {
-              const visible = showDeleted ? turn.words : turn.words.filter((w) => !w.deleted);
-              if (visible.length === 0) return null;
-              return (
-                <div key={i} className="mb-7">
-                  <div
-                    className="mb-1.5 text-[13px] font-semibold"
-                    style={{ color: speakerColor(turn.speaker) }}
-                  >
-                    Speaker {turn.speaker + 1}
+          {status === "ready" && (
+            <div className="transcript-words selection:bg-transparent">
+              {turns.map((turn, i) => {
+                const visible = showDeleted ? turn.words : turn.words.filter((w) => !w.deleted);
+                if (visible.length === 0) return null;
+                return (
+                  <div key={i} className="mb-7">
+                    <div
+                      className="mb-1.5 text-[13px] font-semibold"
+                      style={{ color: speakerColor(turn.speaker) }}
+                    >
+                      Speaker {turn.speaker + 1}
+                    </div>
+                    <p className="select-text text-[15px] leading-8">
+                      {visible.map((w) => (
+                        <WordSpan
+                          key={w.id}
+                          word={w}
+                          active={w.id === activeWordId}
+                          onClick={seekToWord}
+                        />
+                      ))}
+                    </p>
                   </div>
-                  <p className="select-text text-[15px] leading-8">
-                    {visible.map((w) => (
-                      <WordSpan
-                        key={w.id}
-                        word={w}
-                        active={w.id === activeWordId}
-                        onClick={seekToWord}
-                      />
-                    ))}
-                  </p>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
+          )}
 
           {selection && (
             <div

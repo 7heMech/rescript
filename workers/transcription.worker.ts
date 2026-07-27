@@ -32,9 +32,18 @@ const DIARIZATION_MODEL = "onnx-community/pyannote-segmentation-3.0";
 const post = (msg: WorkerResponse, transfer: Transferable[] = []) =>
   (self as unknown as Worker).postMessage(msg, transfer);
 
-/** Aggregate multi-file download progress into a single 0..1 value. */
+/**
+ * Aggregate multi-file download progress into a single 0..1 value.
+ *
+ * Files are discovered progressively, so the naive loaded/total ratio can
+ * *drop* whenever a new file starts reporting (the denominator suddenly
+ * grows). The reported value is therefore clamped to be monotonically
+ * increasing: it may pause while a newly discovered file catches up, but it
+ * never goes backwards.
+ */
 function makeDownloadTracker(label: string) {
   const files = new Map<string, { loaded: number; total: number }>();
+  let best = 0;
   return (p: { status?: string; file?: string; loaded?: number; total?: number }) => {
     if (p.status !== "progress" || !p.file || !p.total) return;
     files.set(p.file, { loaded: p.loaded ?? 0, total: p.total });
@@ -44,11 +53,9 @@ function makeDownloadTracker(label: string) {
       loaded += f.loaded;
       total += f.total;
     }
-    post({
-      type: "progress",
-      message: label,
-      value: total > 0 ? loaded / total : null,
-    });
+    if (total === 0) return;
+    best = Math.max(best, Math.min(1, loaded / total));
+    post({ type: "progress", message: label, value: best });
   };
 }
 
@@ -166,14 +173,20 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
     const tokenizer = transcriber.tokenizer as ConstructorParameters<
       typeof WhisperTextStreamer
     >[0];
+    // Chunk start times can jitter around stride boundaries; clamp the
+    // reported transcription progress so it only ever moves forward.
+    let transcribed = 0;
     const streamer = new WhisperTextStreamer(tokenizer, {
       skip_prompt: true,
       time_precision: timePrecision,
       on_chunk_start: (t: number) => {
+        if (duration > 0) {
+          transcribed = Math.max(transcribed, Math.min(1, t / duration));
+        }
         post({
           type: "progress",
           message: "Transcribing…",
-          value: duration > 0 ? Math.min(1, t / duration) : null,
+          value: duration > 0 ? transcribed : null,
         });
       },
       callback_function: (text: string) => {
