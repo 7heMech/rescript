@@ -13,6 +13,7 @@ Export the final cut to MP4 — without your video ever leaving your device.
 
 - 🔒 **Private by design** — no server, no auth, no uploads; all media processing happens on-device
 - 📝 **Word-level editing** — select words, press ⌫, the cut follows the text
+- 🧹 **Filler removal** — one-click cut of "um", "uh", and similar fillers (use Verbatim mode to keep them in the transcript)
 - 🗣️ **Speaker diarization** — the transcript is grouped by speaker
 - 🎬 **Timeline** — waveform, word labels, cut regions, playhead, zoom
 - ⚡ **Live preview** — playback skips your cuts in real time
@@ -52,8 +53,10 @@ audio track.
 1. **Extract** — ffmpeg.wasm decodes the audio track to mono 16 kHz PCM.
 2. **Transcribe** — Whisper runs in a Web Worker with `return_timestamps: "word"`,
    streaming text as it goes; pyannote assigns a speaker to every word.
+   **Verbatim** mode prompts Whisper to keep filler words so they can be edited.
 3. **Edit** — deleting words produces "cut ranges" of the original media. The
    preview player skips them in real time and the timeline shows them in red.
+   **Remove fillers** cuts every detected "um" / "uh" / etc. in one click.
 4. **Export** — the kept ranges are trimmed and concatenated with an ffmpeg
    filter graph and re-encoded (`libx264`/`aac`), so cuts are word-accurate.
 
