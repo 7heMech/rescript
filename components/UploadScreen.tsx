@@ -15,6 +15,7 @@ import {
   Type,
 } from "lucide-react";
 import logo from "@/assets/logo.png";
+import GitHubLink from "./GitHubLink";
 import ModelSelector from "./ModelSelector";
 import { useCrossOriginIsolated } from "@/hooks/useCrossOriginIsolated";
 import { detectMediaKind, MEDIA_ACCEPT } from "@/lib/media";
@@ -344,10 +345,13 @@ export default function UploadScreen({ onFile }: { onFile: (file: File) => void 
           ))}
         </div>
 
-        <p className="mt-6 flex items-center justify-center gap-1.5 text-center text-xs text-zinc-400">
-          <Lock size={12} />
-          No uploads, no accounts — your media never leaves this device.
-        </p>
+        <div className="mt-6 flex flex-col items-center gap-2">
+          <p className="flex items-center justify-center gap-1.5 text-center text-xs text-zinc-400">
+            <Lock size={12} />
+            No uploads, no accounts — your media never leaves this device.
+          </p>
+          <GitHubLink variant="text" />
+        </div>
       </div>
     </div>
   );
