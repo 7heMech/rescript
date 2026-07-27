@@ -23,7 +23,7 @@ import type { Word, WorkerRequest, WorkerResponse } from "@/lib/types";
 env.allowLocalModels = false;
 // Serve onnxruntime-web WASM from our own origin (offline friendly).
 if (env.backends?.onnx?.wasm) {
-  env.backends.onnx.wasm.wasmPaths = "/vendor/ort/";
+  env.backends.onnx.wasm.wasmPaths = `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/vendor/ort/`;
 }
 
 const ASR_MODEL = "onnx-community/whisper-base_timestamped";

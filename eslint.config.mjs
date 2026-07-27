@@ -12,8 +12,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
-    // WASM runtime assets copied from node_modules on postinstall.
+    // Runtime assets copied from node_modules on postinstall.
     "public/vendor/**",
+    "public/coi-serviceworker.js",
   ]),
 ]);
 

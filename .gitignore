@@ -40,5 +40,6 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# wasm runtime assets copied from node_modules on postinstall
+# runtime assets copied from node_modules on postinstall
 /public/vendor/
+/public/coi-serviceworker.js
