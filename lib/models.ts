@@ -60,3 +60,31 @@ export const MODELS: Record<ModelChoice, ModelInfo> = {
     verbatimPrompt: VERBATIM_PROMPT,
   },
 };
+
+const MODEL_STORAGE_KEY = "rescript.model";
+
+export function isModelChoice(value: unknown): value is ModelChoice {
+  return typeof value === "string" && value in MODELS;
+}
+
+/** Read the last-selected model from localStorage (defaults to base). */
+export function loadModelPreference(): ModelChoice {
+  if (typeof window === "undefined") return "base";
+  try {
+    const raw = window.localStorage.getItem(MODEL_STORAGE_KEY);
+    if (isModelChoice(raw)) return raw;
+  } catch {
+    // private mode / disabled storage
+  }
+  return "base";
+}
+
+/** Persist the selected model for the next visit. */
+export function saveModelPreference(model: ModelChoice) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(MODEL_STORAGE_KEY, model);
+  } catch {
+    // private mode / disabled storage
+  }
+}

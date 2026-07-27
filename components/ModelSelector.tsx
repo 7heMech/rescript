@@ -3,7 +3,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { AudioLines, ChevronDown } from "lucide-react";
 import { MODEL_ORDER, MODELS, type ModelChoice } from "@/lib/models";
-import { useEditorStore } from "@/lib/store";
+import { hydrateModelPreference, useEditorStore } from "@/lib/store";
 
 /**
  * Compact model picker for the upload screen. Opens upward like a popover
@@ -17,6 +17,10 @@ export default function ModelSelector() {
   const rootRef = useRef<HTMLDivElement>(null);
   const listId = useId();
   const current = MODELS[model];
+
+  useEffect(() => {
+    hydrateModelPreference();
+  }, []);
 
   useEffect(() => {
     if (!open) return;

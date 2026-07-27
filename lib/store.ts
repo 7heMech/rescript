@@ -3,6 +3,7 @@
 import { create } from "zustand";
 import type { EditorStatus, ProgressInfo, Word } from "./types";
 import type { ModelChoice } from "./models";
+import { loadModelPreference, saveModelPreference } from "./models";
 import { detectMediaKind, type MediaKind } from "./media";
 
 interface EditorState {
@@ -109,7 +110,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       exportUrl: null,
     });
   },
-  setModel: (model) => set({ model }),
+  setModel: (model) => {
+    saveModelPreference(model);
+    set({ model });
+  },
   setDuration: (duration) => set({ duration }),
   setAudio: (audio) => set({ audio }),
   setStatus: (status) => set({ status }),
@@ -235,3 +239,11 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     });
   },
 }));
+
+/** Apply the stored model choice after mount (avoids SSR/localStorage mismatch). */
+export function hydrateModelPreference() {
+  const stored = loadModelPreference();
+  if (stored !== useEditorStore.getState().model) {
+    useEditorStore.setState({ model: stored });
+  }
+}
