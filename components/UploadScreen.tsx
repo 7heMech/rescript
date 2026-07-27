@@ -16,7 +16,11 @@ import {
 } from "lucide-react";
 import logo from "@/assets/logo.png";
 import GitHubLink from "./GitHubLink";
-import ModelSelector from "./ModelSelector";
+import ModelSelector, {
+  ModelOption,
+  ModelOptionSeparator,
+} from "./ModelSelector";
+import ImportTranscriptOption from "./ImportTranscriptOption";
 import { useCrossOriginIsolated } from "@/hooks/useCrossOriginIsolated";
 import { detectMediaKind, MEDIA_ACCEPT } from "@/lib/media";
 import { formatTime } from "@/lib/edits";
@@ -262,7 +266,12 @@ export default function UploadScreen({
             />
             <p className="ml-2 text-[15px] font-medium text-zinc-800">Rescript</p>
           </div>
-          <ModelSelector />
+          <ModelSelector groupLabel="Transcript source">
+            <ModelOption id="base" />
+            <ModelOption id="small" />
+            <ModelOptionSeparator />
+            <ImportTranscriptOption />
+          </ModelSelector>
         </div>
         <div
           role="button"
