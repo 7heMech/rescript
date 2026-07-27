@@ -5,6 +5,12 @@ import type { EditorStatus, ProgressInfo, Word } from "./types";
 import type { ModelChoice } from "./models";
 import { loadModelPreference, saveModelPreference } from "./models";
 import { detectMediaKind, type MediaKind } from "./media";
+import {
+  deleteProject,
+  fileFromProject,
+  getProject,
+  type ProjectMeta,
+} from "./projects";
 
 interface EditorState {
   // Media
@@ -17,6 +23,13 @@ interface EditorState {
   audio: Float32Array | null;
   /** Transcription model selected on the upload screen. */
   model: ModelChoice;
+  /** IndexedDB project id when this session is persisted; null for a fresh upload mid-pipeline. */
+  projectId: string | null;
+  /**
+   * When true, Editor extracts audio for the waveform but skips Whisper
+   * (restored projects already have words).
+   */
+  skipTranscription: boolean;
 
   // Pipeline status
   status: EditorStatus;
@@ -42,6 +55,10 @@ interface EditorState {
 
   // Actions
   loadVideo: (file: File) => void;
+  /** Restore a saved project from IndexedDB (no re-transcription). */
+  openProject: (id: string) => Promise<void>;
+  /** Delete a saved project; if it is the active one, resets to the home screen. */
+  removeProject: (id: string) => Promise<void>;
   setModel: (m: ModelChoice) => void;
   setDuration: (d: number) => void;
   setAudio: (a: Float32Array) => void;
@@ -65,6 +82,11 @@ interface EditorState {
   reset: () => void;
 }
 
+function bumpAutosave() {
+  // Dynamic import avoids a circular dependency with lib/autosave.ts.
+  void import("./autosave").then((m) => m.scheduleProjectAutosave());
+}
+
 export const useEditorStore = create<EditorState>((set, get) => ({
   videoFile: null,
   mediaUrl: null,
@@ -72,6 +94,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   duration: 0,
   audio: null,
   model: "base",
+  projectId: null,
+  skipTranscription: false,
 
   status: "idle",
   progress: { message: "", value: null },
@@ -99,6 +123,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       videoFile: file,
       mediaUrl: URL.createObjectURL(file),
       mediaKind: kind,
+      projectId: null,
+      skipTranscription: false,
       status: "preparing",
       progress: { message: "Loading media engine…", value: null },
       words: [],
@@ -108,19 +134,68 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       error: null,
       currentTime: 0,
       exportUrl: null,
+      audio: null,
+      duration: 0,
     });
   },
+
+  openProject: async (id) => {
+    const record = await getProject(id);
+    if (!record) throw new Error("That project is no longer saved.");
+    const file = fileFromProject(record);
+    const prev = get().mediaUrl;
+    if (prev) URL.revokeObjectURL(prev);
+    set({
+      videoFile: file,
+      mediaUrl: URL.createObjectURL(file),
+      mediaKind: record.mediaKind,
+      duration: record.duration,
+      model: record.model,
+      projectId: record.id,
+      skipTranscription: true,
+      status: "preparing",
+      progress: { message: "Loading media engine…", value: null },
+      words: record.words,
+      showDeleted: record.showDeleted,
+      past: [],
+      future: [],
+      partialText: "",
+      error: null,
+      currentTime: 0,
+      playing: false,
+      exportUrl: null,
+      exportOpen: false,
+      audio: null,
+    });
+  },
+
+  removeProject: async (id) => {
+    await deleteProject(id);
+    if (get().projectId === id) {
+      get().reset();
+    }
+  },
+
   setModel: (model) => {
     saveModelPreference(model);
     set({ model });
   },
-  setDuration: (duration) => set({ duration }),
+  setDuration: (duration) => {
+    set({ duration });
+    if (get().status === "ready") bumpAutosave();
+  },
   setAudio: (audio) => set({ audio }),
-  setStatus: (status) => set({ status }),
+  setStatus: (status) => {
+    set({ status });
+    if (status === "ready") bumpAutosave();
+  },
   setProgress: (progress) => set({ progress }),
   setPartialText: (partialText) => set({ partialText }),
   setError: (message) => set({ status: "error", error: message }),
-  setWords: (words) => set({ words, past: [], future: [] }),
+  setWords: (words) => {
+    set({ words, past: [], future: [] });
+    if (get().status === "ready") bumpAutosave();
+  },
 
   deleteWords: (ids) => {
     if (ids.length === 0) return;
@@ -131,6 +206,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       future: [],
       words: words.map((w) => (idSet.has(w.id) && !w.deleted ? { ...w, deleted: true } : w)),
     });
+    bumpAutosave();
   },
   restoreWords: (ids) => {
     if (ids.length === 0) return;
@@ -141,6 +217,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       future: [],
       words: words.map((w) => (idSet.has(w.id) && w.deleted ? { ...w, deleted: false } : w)),
     });
+    bumpAutosave();
   },
   correctWords: (ids, text) => {
     const { words, past } = get();
@@ -188,6 +265,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       future: [],
       words: [...words.slice(0, from), ...replacement, ...words.slice(to + 1)],
     });
+    bumpAutosave();
   },
   undo: () => {
     const { past, future, words } = get();
@@ -197,6 +275,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       past: past.slice(0, -1),
       future: [words, ...future],
     });
+    bumpAutosave();
   },
   redo: () => {
     const { past, future, words } = get();
@@ -206,8 +285,12 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       future: future.slice(1),
       past: [...past, words],
     });
+    bumpAutosave();
   },
-  toggleShowDeleted: () => set((s) => ({ showDeleted: !s.showDeleted })),
+  toggleShowDeleted: () => {
+    set((s) => ({ showDeleted: !s.showDeleted }));
+    bumpAutosave();
+  },
 
   setCurrentTime: (currentTime) => set({ currentTime }),
   setPlaying: (playing) => set({ playing }),
@@ -225,6 +308,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       mediaKind: null,
       duration: 0,
       audio: null,
+      projectId: null,
+      skipTranscription: false,
       status: "idle",
       progress: { message: "", value: null },
       partialText: "",
@@ -247,3 +332,5 @@ export function hydrateModelPreference() {
     useEditorStore.setState({ model: stored });
   }
 }
+
+export type { ProjectMeta };

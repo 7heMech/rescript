@@ -14,14 +14,17 @@ import ExportDialog from "./ExportDialog";
 export default function Editor() {
   const status = useEditorStore((s) => s.status);
   const videoFile = useEditorStore((s) => s.videoFile);
+  const skipTranscription = useEditorStore((s) => s.skipTranscription);
   const loadVideo = useEditorStore((s) => s.loadVideo);
   const { transcribe } = useTranscriber();
 
-  // Processing pipeline: load ffmpeg -> extract audio -> transcribe.
+  // Processing pipeline: load ffmpeg -> extract audio -> (maybe) transcribe.
+  // Restored projects already have words; they only need PCM for the waveform.
   const startedFor = useRef<File | null>(null);
   useEffect(() => {
     if (!videoFile || startedFor.current === videoFile) return;
     startedFor.current = videoFile;
+    const restoreOnly = useEditorStore.getState().skipTranscription;
     (async () => {
       const s = useEditorStore.getState();
       try {
@@ -30,13 +33,18 @@ export default function Editor() {
         s.setProgress({ message: "Extracting audio…", value: null });
         const audio = await extractAudio(videoFile);
         s.setAudio(audio);
-        transcribe(audio, audio.length / 16000);
+        if (restoreOnly) {
+          s.setStatus("ready");
+          s.setProgress({ message: "", value: null });
+        } else {
+          transcribe(audio, audio.length / 16000);
+        }
       } catch (err) {
         console.error("Processing pipeline failed:", err);
         s.setError(err instanceof Error ? err.message : "Failed to process this file.");
       }
     })();
-  }, [videoFile, transcribe]);
+  }, [videoFile, skipTranscription, transcribe]);
 
   // Global shortcuts: space = play/pause, ⌘Z / ⇧⌘Z = undo / redo.
   useEffect(() => {
@@ -57,6 +65,22 @@ export default function Editor() {
     };
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
+  }, []);
+
+  // Flush pending autosave when the tab hides or unloads.
+  useEffect(() => {
+    const flush = () => {
+      void import("@/lib/autosave").then((m) => m.flushProjectAutosave());
+    };
+    const onVis = () => {
+      if (document.visibilityState === "hidden") flush();
+    };
+    window.addEventListener("pagehide", flush);
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      window.removeEventListener("pagehide", flush);
+      document.removeEventListener("visibilitychange", onVis);
+    };
   }, []);
 
   return (
