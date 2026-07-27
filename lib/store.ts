@@ -54,7 +54,8 @@ interface EditorState {
   exportOpen: boolean;
 
   // Actions
-  loadVideo: (file: File) => void;
+  /** Load media for editing. Pass `words` to skip Whisper and use that transcript. */
+  loadVideo: (file: File, options?: { words?: Word[] }) => void;
   /** Restore a saved project from IndexedDB (no re-transcription). */
   openProject: (id: string) => Promise<void>;
   /** Delete a saved project; if it is the active one, resets to the home screen. */
@@ -67,6 +68,11 @@ interface EditorState {
   setPartialText: (t: string) => void;
   setError: (message: string) => void;
   setWords: (words: Word[]) => void;
+  /**
+   * Replace the current transcript with an imported one (keeps media).
+   * Used when the user brings their own SRT/VTT/JSON instead of Whisper.
+   */
+  importWords: (words: Word[]) => void;
   deleteWords: (ids: number[]) => void;
   restoreWords: (ids: number[]) => void;
   /** Replace the selected (contiguous) words with corrected text. */
@@ -114,9 +120,11 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   exportUrl: null,
   exportOpen: false,
 
-  loadVideo: (file) => {
+  loadVideo: (file, options) => {
     const kind = detectMediaKind(file);
     if (!kind) return;
+    const imported = options?.words;
+    if (imported && imported.length === 0) return;
     const prev = get().mediaUrl;
     if (prev) URL.revokeObjectURL(prev);
     set({
@@ -124,10 +132,13 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       mediaUrl: URL.createObjectURL(file),
       mediaKind: kind,
       projectId: null,
-      skipTranscription: false,
+      skipTranscription: Boolean(imported),
       status: "preparing",
-      progress: { message: "Loading media engine…", value: null },
-      words: [],
+      progress: {
+        message: imported ? "Loading media…" : "Loading media engine…",
+        value: null,
+      },
+      words: imported ? imported : [],
       past: [],
       future: [],
       partialText: "",
@@ -195,6 +206,30 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   setWords: (words) => {
     set({ words, past: [], future: [] });
     if (get().status === "ready") bumpAutosave();
+  },
+  importWords: (words) => {
+    if (words.length === 0) return;
+    const { status } = get();
+    if (
+      status !== "ready" &&
+      status !== "error" &&
+      status !== "transcribing"
+    ) {
+      return;
+    }
+    // Stop Whisper if it was still running.
+    void import("@/hooks/useTranscriber").then((m) => m.cancelTranscription());
+    set({
+      words,
+      past: [],
+      future: [],
+      partialText: "",
+      error: null,
+      status: "ready",
+      progress: { message: "", value: null },
+      skipTranscription: true,
+    });
+    bumpAutosave();
   },
 
   deleteWords: (ids) => {
