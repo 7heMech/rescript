@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Rescript — edit video by editing text",
+  title: "Rescript — edit videos like you edit text",
   description:
     "A fully offline, open-source transcript-based video editor. Transcribe with Whisper, cut by deleting words, export with ffmpeg — all in your browser.",
 };

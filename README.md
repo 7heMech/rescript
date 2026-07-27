@@ -1,6 +1,6 @@
 # Rescript
 
-**Edit video by editing text — fully offline, in your browser.**
+**Edit videos like you edit text — fully offline, in your browser.**
 
 **✨ Try it now: [wassgha.github.io/rescript](https://wassgha.github.io/rescript/)**
 

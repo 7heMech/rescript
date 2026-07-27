@@ -23,14 +23,6 @@ export default function UploadScreen({ onFile }: { onFile: (file: File) => void 
   return (
     <div className="flex flex-1 items-center justify-center bg-gradient-to-b from-zinc-50 to-neutral-50/50 p-6">
       <div className="w-full max-w-xl">
-        <div className="mb-8 flex flex-col items-center text-center">
-          <h1 className="text-3xl font-bold tracking-tight text-zinc-900">Rescript</h1>
-          <p className="mt-2 max-w-md text-[15px] leading-relaxed text-zinc-500">
-            Edit video by simply changing the transcript. Delete a word and it&apos;s cut out
-            from the video.
-          </p>
-        </div>
-
         <div
           role="button"
           tabIndex={0}

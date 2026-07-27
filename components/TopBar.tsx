@@ -15,13 +15,15 @@ export default function TopBar() {
 
   return (
     <header className="flex h-12 shrink-0 items-center gap-2 border-b border-zinc-200 bg-white px-3">
-      <button
-        onClick={reset}
-        title="Start over"
-        className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-800"
-      >
-        <Home size={16} />
-      </button>
+      {status !== "idle" && (
+        <button
+          onClick={reset}
+          title="Start over"
+          className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-800"
+        >
+          <Home size={16} />
+        </button>
+      )}
       <span className="pl-1 text-sm font-semibold tracking-tight text-zinc-800">
         Rescript
       </span>
