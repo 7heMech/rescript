@@ -3,13 +3,16 @@
 import { create } from "zustand";
 import type { EditorStatus, ProgressInfo, Word } from "./types";
 import type { ModelChoice } from "./models";
+import { detectMediaKind, type MediaKind } from "./media";
 
 interface EditorState {
   // Media
   videoFile: File | null;
-  videoUrl: string | null;
+  mediaUrl: string | null;
+  /** Whether the loaded file is video or audio-only. */
+  mediaKind: MediaKind | null;
   duration: number;
-  /** Mono 16 kHz PCM of the video's audio track (used for waveform + ASR). */
+  /** Mono 16 kHz PCM of the media's audio track (used for waveform + ASR). */
   audio: Float32Array | null;
   /** Transcription model selected on the upload screen. */
   model: ModelChoice;
@@ -27,10 +30,10 @@ interface EditorState {
   past: Word[][];
   future: Word[][];
 
-  // Playback (mirrored from the <video> element for UI rendering)
+  // Playback (mirrored from the <video>/<audio> element for UI rendering)
   currentTime: number;
   playing: boolean;
-  videoEl: HTMLVideoElement | null;
+  videoEl: HTMLMediaElement | null;
 
   // Export
   exportUrl: string | null;
@@ -55,7 +58,7 @@ interface EditorState {
   toggleShowDeleted: () => void;
   setCurrentTime: (t: number) => void;
   setPlaying: (p: boolean) => void;
-  setVideoEl: (el: HTMLVideoElement | null) => void;
+  setVideoEl: (el: HTMLMediaElement | null) => void;
   setExportUrl: (url: string | null) => void;
   setExportOpen: (open: boolean) => void;
   reset: () => void;
@@ -63,7 +66,8 @@ interface EditorState {
 
 export const useEditorStore = create<EditorState>((set, get) => ({
   videoFile: null,
-  videoUrl: null,
+  mediaUrl: null,
+  mediaKind: null,
   duration: 0,
   audio: null,
   model: "verbatim",
@@ -86,11 +90,14 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   exportOpen: false,
 
   loadVideo: (file) => {
-    const prev = get().videoUrl;
+    const kind = detectMediaKind(file);
+    if (!kind) return;
+    const prev = get().mediaUrl;
     if (prev) URL.revokeObjectURL(prev);
     set({
       videoFile: file,
-      videoUrl: URL.createObjectURL(file),
+      mediaUrl: URL.createObjectURL(file),
+      mediaKind: kind,
       status: "preparing",
       progress: { message: "Loading media engine…", value: null },
       words: [],
@@ -205,12 +212,13 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   setExportOpen: (exportOpen) => set({ exportOpen }),
 
   reset: () => {
-    const { videoUrl, exportUrl } = get();
-    if (videoUrl) URL.revokeObjectURL(videoUrl);
+    const { mediaUrl, exportUrl } = get();
+    if (mediaUrl) URL.revokeObjectURL(mediaUrl);
     if (exportUrl) URL.revokeObjectURL(exportUrl);
     set({
       videoFile: null,
-      videoUrl: null,
+      mediaUrl: null,
+      mediaKind: null,
       duration: 0,
       audio: null,
       status: "idle",

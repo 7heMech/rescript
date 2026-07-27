@@ -5,6 +5,7 @@ import Image from "next/image";
 import { Clapperboard, Loader2, Lock, Scissors, ShieldAlert, Type, Upload } from "lucide-react";
 import logo from "@/assets/logo.png";
 import { useCrossOriginIsolated } from "@/hooks/useCrossOriginIsolated";
+import { detectMediaKind, MEDIA_ACCEPT } from "@/lib/media";
 
 export default function UploadScreen({ onFile }: { onFile: (file: File) => void }) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -20,8 +21,8 @@ export default function UploadScreen({ onFile }: { onFile: (file: File) => void 
       if (!ready) return;
       const file = files?.[0];
       if (!file) return;
-      if (!file.type.startsWith("video/") && !/\.(mp4|webm|mov|mkv|m4v)$/i.test(file.name)) {
-        alert("Please choose a video file.");
+      if (!detectMediaKind(file)) {
+        alert("Please choose a video or audio file.");
         return;
       }
       onFile(file);
@@ -95,10 +96,11 @@ export default function UploadScreen({ onFile }: { onFile: (file: File) => void 
           ) : ready ? (
             <>
               <p className="text-[15px] font-medium text-zinc-800">
-                Drop a video here, or <span className="text-neutral-600">browse</span>
+                Drop a video or audio file here, or{" "}
+                <span className="text-neutral-600">browse</span>
               </p>
               <p className="mt-1 text-[13px] text-zinc-400">
-                MP4, WebM or MOV with an audio track
+                MP4, WebM, MOV, MP3, WAV, M4A, …
               </p>
             </>
           ) : (
@@ -112,7 +114,7 @@ export default function UploadScreen({ onFile }: { onFile: (file: File) => void 
           <input
             ref={inputRef}
             type="file"
-            accept="video/*"
+            accept={MEDIA_ACCEPT}
             className="hidden"
             onChange={(e) => handleFiles(e.target.files)}
           />
@@ -122,7 +124,7 @@ export default function UploadScreen({ onFile }: { onFile: (file: File) => void 
           {[
             { icon: Type, title: "Transcribe", text: "Per-word timing and speaker labels." },
             { icon: Scissors, title: "Edit", text: "Select words and hit delete to edit." },
-            { icon: Clapperboard, title: "Export", text: "Render the final cut to MP4." },
+            { icon: Clapperboard, title: "Export", text: "Render the final cut to MP4 or M4A." },
           ].map(({ icon: Icon, title, text }) => (
             <div key={title} className="rounded-xl border border-zinc-200 bg-white/70 p-4">
               <Icon size={16} className="mb-2 text-neutral-500" />
@@ -134,7 +136,7 @@ export default function UploadScreen({ onFile }: { onFile: (file: File) => void 
 
         <p className="mt-6 flex items-center justify-center gap-1.5 text-center text-xs text-zinc-400">
           <Lock size={12} />
-          No uploads, no accounts — your video never leaves this device.
+          No uploads, no accounts — your media never leaves this device.
         </p>
       </div>
     </div>

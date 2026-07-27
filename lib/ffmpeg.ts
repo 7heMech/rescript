@@ -58,6 +58,7 @@ async function ensureInput(ffmpeg: FFmpeg, file: File): Promise<string> {
 /**
  * Extract the audio track as mono 16 kHz float PCM — the exact format
  * Whisper expects, and what we render the timeline waveform from.
+ * Works for both video and audio-only files.
  */
 export async function extractAudio(file: File): Promise<Float32Array> {
   const ffmpeg = await getFFmpeg();
@@ -72,12 +73,12 @@ export async function extractAudio(file: File): Promise<Float32Array> {
     "-y", out,
   ]);
   if (code !== 0) {
-    throw new Error("Could not extract audio from this file. Does it have an audio track?");
+    throw new Error("Could not extract audio from this file.");
   }
   const data = (await ffmpeg.readFile(out)) as Uint8Array;
   await ffmpeg.deleteFile(out);
   if (data.byteLength < 4) {
-    throw new Error("This video appears to have no audio track.");
+    throw new Error("This file appears to have no audio track.");
   }
   // Copy into a fresh buffer so byteOffset/alignment is clean.
   const buf = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
@@ -140,6 +141,60 @@ export async function exportVideo(
     await ffmpeg.deleteFile(out);
     const buf = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
     return new Blob([buf as ArrayBuffer], { type: "video/mp4" });
+  } finally {
+    ffmpeg.off("progress", progressHandler);
+  }
+}
+
+/**
+ * Render an edited audio-only file: keep only `keepRanges` and concatenate
+ * them into an M4A (AAC) container.
+ */
+export async function exportAudio(
+  file: File,
+  keepRanges: TimeRange[],
+  editedDuration: number,
+  onProgress: (ratio: number) => void
+): Promise<Blob> {
+  if (keepRanges.length === 0) {
+    throw new Error("Everything has been deleted — nothing to export.");
+  }
+  const ffmpeg = await getFFmpeg();
+  const input = await ensureInput(ffmpeg, file);
+  const out = "output.m4a";
+
+  const parts: string[] = [];
+  const labels: string[] = [];
+  keepRanges.forEach((r, i) => {
+    const s = r.start.toFixed(3);
+    const e = r.end.toFixed(3);
+    parts.push(`[0:a]atrim=start=${s}:end=${e},asetpts=PTS-STARTPTS[a${i}]`);
+    labels.push(`[a${i}]`);
+  });
+  const filter =
+    parts.join(";") +
+    `;${labels.join("")}concat=n=${keepRanges.length}:v=0:a=1[outa]`;
+
+  const progressHandler = ({ time }: { progress: number; time: number }) => {
+    const ratio = Math.min(1, time / 1e6 / Math.max(0.001, editedDuration));
+    onProgress(Math.max(0, ratio));
+  };
+  ffmpeg.on("progress", progressHandler);
+  try {
+    const code = await ffmpeg.exec([
+      "-i", input,
+      "-filter_complex", filter,
+      "-map", "[outa]",
+      "-c:a", "aac",
+      "-b:a", "192k",
+      "-movflags", "+faststart",
+      "-y", out,
+    ]);
+    if (code !== 0) throw new Error("Export failed while rendering the audio.");
+    const data = (await ffmpeg.readFile(out)) as Uint8Array;
+    await ffmpeg.deleteFile(out);
+    const buf = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
+    return new Blob([buf as ArrayBuffer], { type: "audio/mp4" });
   } finally {
     ffmpeg.off("progress", progressHandler);
   }

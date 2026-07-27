@@ -7,7 +7,7 @@ import { useTranscriber } from "@/hooks/useTranscriber";
 import TopBar from "./TopBar";
 import UploadScreen from "./UploadScreen";
 import TranscriptPanel from "./TranscriptPanel";
-import VideoPreview from "./VideoPreview";
+import MediaPreview from "./MediaPreview";
 import Timeline from "./Timeline";
 import ExportDialog from "./ExportDialog";
 
@@ -33,7 +33,7 @@ export default function Editor() {
         transcribe(audio, audio.length / 16000);
       } catch (err) {
         console.error("Processing pipeline failed:", err);
-        s.setError(err instanceof Error ? err.message : "Failed to process this video.");
+        s.setError(err instanceof Error ? err.message : "Failed to process this file.");
       }
     })();
   }, [videoFile, transcribe]);
@@ -69,7 +69,7 @@ export default function Editor() {
           <div className="flex min-h-0 flex-1">
             <TranscriptPanel />
             <div className="flex w-[44%] min-w-[320px] shrink-0 flex-col border-l border-zinc-200">
-              <VideoPreview />
+              <MediaPreview />
             </div>
             {/* <SideRail /> — hidden until the tools it exposes are functional */}
           </div>

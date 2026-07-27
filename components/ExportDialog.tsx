@@ -4,12 +4,13 @@ import { useCallback, useMemo, useState } from "react";
 import { Download, X } from "lucide-react";
 import { useEditorStore } from "@/lib/store";
 import { formatTime, getCutRanges, getEditedDuration, getKeepRanges } from "@/lib/edits";
-import { exportVideo } from "@/lib/ffmpeg";
+import { exportAudio, exportVideo } from "@/lib/ffmpeg";
 
 export default function ExportDialog() {
   const open = useEditorStore((s) => s.exportOpen);
   const setOpen = useEditorStore((s) => s.setExportOpen);
   const videoFile = useEditorStore((s) => s.videoFile);
+  const mediaKind = useEditorStore((s) => s.mediaKind);
   const words = useEditorStore((s) => s.words);
   const duration = useEditorStore((s) => s.duration);
   const status = useEditorStore((s) => s.status);
@@ -23,10 +24,13 @@ export default function ExportDialog() {
   const cuts = useMemo(() => getCutRanges(words, duration), [words, duration]);
   const editedDuration = useMemo(() => getEditedDuration(cuts, duration), [cuts, duration]);
   const exporting = status === "exporting";
+  const isAudio = mediaKind === "audio";
+  const ext = isAudio ? "m4a" : "mp4";
+  const formatLabel = isAudio ? "M4A" : "MP4";
 
   const fileName = videoFile
-    ? videoFile.name.replace(/\.[^.]+$/, "") + ".edited.mp4"
-    : "edited.mp4";
+    ? videoFile.name.replace(/\.[^.]+$/, "") + `.edited.${ext}`
+    : `edited.${ext}`;
 
   const start = useCallback(async () => {
     if (!videoFile) return;
@@ -35,7 +39,9 @@ export default function ExportDialog() {
     setStatus("exporting");
     try {
       const keeps = getKeepRanges(cuts, duration);
-      const blob = await exportVideo(videoFile, keeps, editedDuration, setProgress);
+      const blob = isAudio
+        ? await exportAudio(videoFile, keeps, editedDuration, setProgress)
+        : await exportVideo(videoFile, keeps, editedDuration, setProgress);
       const prev = useEditorStore.getState().exportUrl;
       if (prev) URL.revokeObjectURL(prev);
       setExportUrl(URL.createObjectURL(blob));
@@ -44,7 +50,7 @@ export default function ExportDialog() {
     } finally {
       setStatus("ready");
     }
-  }, [videoFile, cuts, duration, editedDuration, setStatus, setExportUrl]);
+  }, [videoFile, isAudio, cuts, duration, editedDuration, setStatus, setExportUrl]);
 
   if (!open) return null;
 
@@ -58,7 +64,9 @@ export default function ExportDialog() {
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-zinc-900">Export video</h2>
+          <h2 className="text-lg font-semibold text-zinc-900">
+            Export {isAudio ? "audio" : "video"}
+          </h2>
           <button
             onClick={() => setOpen(false)}
             disabled={exporting}
@@ -106,7 +114,7 @@ export default function ExportDialog() {
               />
             </div>
             <p className="mt-3 text-xs text-zinc-400">
-              Re-encoding with ffmpeg.wasm — longer videos take a while.
+              Re-encoding with ffmpeg.wasm — longer files take a while.
             </p>
           </div>
         ) : exportUrl ? (
@@ -132,7 +140,7 @@ export default function ExportDialog() {
             className="flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-zinc-900 text-sm font-medium text-white transition hover:bg-zinc-700"
           >
             <Download size={15} />
-            Export MP4
+            Export {formatLabel}
           </button>
         )}
       </div>

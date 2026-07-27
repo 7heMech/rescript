@@ -12,7 +12,7 @@ browser, with no server, no auth, and no API calls.
 │ Next.js (App Router, client-only editor)                           │
 │                                                                    │
 │  ┌───────────────┐  ┌────────────────┐  ┌───────────────────────┐  │
-│  │ TranscriptPanel│  │ VideoPreview  │  │ Timeline (canvas)     │  │
+│  │ TranscriptPanel│  │ MediaPreview  │  │ Timeline (canvas)     │  │
 │  │ words / cuts   │  │ skip playback │  │ waveform + playhead   │  │
 │  └───────┬───────┘  └───────┬────────┘  └──────────┬────────────┘  │
 │          └───────────── zustand store ─────────────┘               │

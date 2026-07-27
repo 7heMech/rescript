@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef } from "react";
-import { Pause, Play, SkipBack, SkipForward } from "lucide-react";
+import { AudioLines, Pause, Play, SkipBack, SkipForward } from "lucide-react";
 import { useEditorStore } from "@/lib/store";
 import {
   cutRangeAt,
@@ -11,8 +11,10 @@ import {
   originalToEdited,
 } from "@/lib/edits";
 
-export default function VideoPreview() {
-  const videoUrl = useEditorStore((s) => s.videoUrl);
+export default function MediaPreview() {
+  const mediaUrl = useEditorStore((s) => s.mediaUrl);
+  const videoFile = useEditorStore((s) => s.videoFile);
+  const mediaKind = useEditorStore((s) => s.mediaKind);
   const words = useEditorStore((s) => s.words);
   const duration = useEditorStore((s) => s.duration);
   const playing = useEditorStore((s) => s.playing);
@@ -22,7 +24,8 @@ export default function VideoPreview() {
   const setPlaying = useEditorStore((s) => s.setPlaying);
   const setCurrentTime = useEditorStore((s) => s.setCurrentTime);
 
-  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const mediaRef = useRef<HTMLMediaElement | null>(null);
+  const isAudio = mediaKind === "audio";
   const cuts = useMemo(() => getCutRanges(words, duration), [words, duration]);
   const cutsRef = useRef(cuts);
   useEffect(() => {
@@ -35,8 +38,8 @@ export default function VideoPreview() {
   );
 
   const refCb = useCallback(
-    (el: HTMLVideoElement | null) => {
-      videoRef.current = el;
+    (el: HTMLMediaElement | null) => {
+      mediaRef.current = el;
       setVideoEl(el);
     },
     [setVideoEl]
@@ -46,19 +49,19 @@ export default function VideoPreview() {
   useEffect(() => {
     let raf = 0;
     const tick = () => {
-      const video = videoRef.current;
-      if (video) {
-        let t = video.currentTime;
-        if (!video.paused) {
+      const media = mediaRef.current;
+      if (media) {
+        let t = media.currentTime;
+        if (!media.paused) {
           const cut = cutRangeAt(t, cutsRef.current);
           if (cut) {
             const target = cut.end + 0.001;
-            if (target >= video.duration - 0.05) {
-              video.pause();
-              video.currentTime = cut.start;
+            if (target >= media.duration - 0.05) {
+              media.pause();
+              media.currentTime = cut.start;
               t = cut.start;
             } else {
-              video.currentTime = target;
+              media.currentTime = target;
               t = target;
             }
           }
@@ -73,32 +76,58 @@ export default function VideoPreview() {
   }, [setCurrentTime]);
 
   const togglePlay = useCallback(() => {
-    const video = videoRef.current;
-    if (!video) return;
-    if (video.paused) {
+    const media = mediaRef.current;
+    if (!media) return;
+    if (media.paused) {
       // If we're parked inside a cut (or at the end), jump to kept content.
-      const cut = cutRangeAt(video.currentTime, cutsRef.current);
-      if (cut) video.currentTime = cut.end + 0.001;
-      if (video.currentTime >= video.duration - 0.05) video.currentTime = 0;
-      void video.play();
+      const cut = cutRangeAt(media.currentTime, cutsRef.current);
+      if (cut) media.currentTime = cut.end + 0.001;
+      if (media.currentTime >= media.duration - 0.05) media.currentTime = 0;
+      void media.play();
     } else {
-      video.pause();
+      media.pause();
     }
   }, []);
 
   const skip = useCallback((delta: number) => {
-    const video = videoRef.current;
-    if (!video) return;
-    video.currentTime = Math.min(Math.max(0, video.currentTime + delta), video.duration);
+    const media = mediaRef.current;
+    if (!media) return;
+    media.currentTime = Math.min(Math.max(0, media.currentTime + delta), media.duration);
   }, []);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-zinc-50/70 p-4">
       <div className="flex min-h-0 flex-1 items-center justify-center">
-        {videoUrl && (
+        {mediaUrl && isAudio && (
+          <>
+            <button
+              type="button"
+              onClick={togglePlay}
+              className="flex w-full max-w-md cursor-pointer flex-col items-center gap-3 rounded-2xl border border-zinc-200 bg-white px-8 py-14 text-center shadow-sm transition hover:border-zinc-300"
+            >
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-zinc-900 text-white">
+                <AudioLines size={24} />
+              </div>
+              <p className="max-w-full truncate text-sm font-medium text-zinc-800">
+                {videoFile?.name ?? "Audio"}
+              </p>
+              <p className="text-xs text-zinc-400">Audio · click to play</p>
+            </button>
+            <audio
+              ref={refCb}
+              src={mediaUrl}
+              preload="metadata"
+              onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
+              onPlay={() => setPlaying(true)}
+              onPause={() => setPlaying(false)}
+              className="hidden"
+            />
+          </>
+        )}
+        {mediaUrl && !isAudio && (
           <video
             ref={refCb}
-            src={videoUrl}
+            src={mediaUrl}
             playsInline
             onClick={togglePlay}
             onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
