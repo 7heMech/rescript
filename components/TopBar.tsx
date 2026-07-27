@@ -1,6 +1,6 @@
 "use client";
 
-import { Download, Home, Redo2, Scissors, Undo2 } from "lucide-react";
+import { Download, Home, Redo2, Undo2 } from "lucide-react";
 import { useEditorStore } from "@/lib/store";
 
 export default function TopBar() {
