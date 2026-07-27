@@ -36,11 +36,12 @@ export default function UploadScreen({ onFile }: { onFile: (file: File) => void 
           <Image
             src={logo}
             alt="Rescript"
-            width={44}
-            height={44}
+            width={24}
+            height={24}
             priority
             className="rounded-sm border border-zinc-200"
           />
+          <p className="text-[15px] font-medium text-zinc-800 ml-2">Rescript</p>
         </div>
         <div
           role="button"
