@@ -297,8 +297,8 @@ export default function TranscriptPanel() {
         <div ref={containerRef} className="relative mx-auto max-w-2xl px-8 py-8">
           {busy && (
             <div className="flex flex-col items-start gap-4">
-              <div className="w-full rounded-xl border border-zinc-200 bg-zinc-50 p-4">
-                <div className="flex items-center gap-3">
+              <div className="w-full bg-zinc-50 p-2">
+                <div className="flex items-center gap-2">
                   <div className="h-4 w-4 animate-spin rounded-full border-2 border-neutral-500 border-t-transparent" />
                   <p className="text-sm font-medium text-zinc-700">{progress.message}</p>
                   {progress.value !== null && (
@@ -308,7 +308,7 @@ export default function TranscriptPanel() {
                   )}
                 </div>
                 {progress.value !== null && (
-                  <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-zinc-200">
+                  <div className="mt-1 h-1 overflow-hidden rounded-full bg-zinc-200">
                     <div
                       className="h-full rounded-full bg-neutral-500 transition-[width] duration-300"
                       style={{ width: `${progress.value * 100}%` }}
