@@ -14,10 +14,37 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+
+const title = "Rescript — edit videos like you edit text";
+const description =
+  "A fully offline, open-source transcript-based video editor. Transcribe with Whisper, cut by deleting words, export with ffmpeg — all in your browser.";
+
 export const metadata: Metadata = {
-  title: "Rescript — edit videos like you edit text",
-  description:
-    "A fully offline, open-source transcript-based video editor. Transcribe with Whisper, cut by deleting words, export with ffmpeg — all in your browser.",
+  metadataBase: new URL("https://wassgha.github.io"),
+  title,
+  description,
+  openGraph: {
+    type: "website",
+    siteName: "Rescript",
+    url: `${basePath}/`,
+    title,
+    description,
+    images: [
+      {
+        url: `${basePath}/og.png`,
+        width: 1200,
+        height: 630,
+        alt: "Rescript — a transcript-based video editor running in the browser",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title,
+    description,
+    images: [`${basePath}/og.png`],
+  },
 };
 
 export default function RootLayout({
