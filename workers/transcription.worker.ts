@@ -41,7 +41,14 @@ const DIARIZATION_MODEL = "onnx-community/pyannote-segmentation-3.0";
 const VAD_MODEL = "onnx-community/silero-vad";
 /** Gaps longer than this split speech into separate Whisper jobs. */
 const SPEECH_MAX_GAP_S = 1.5;
-const SPEECH_PAD_S = 0.25;
+/** Pad each speech region so phoneme edges are not clipped. */
+const SPEECH_PAD_S = 0.4;
+/**
+ * Whisper often emits EOS after the first speaker when a VAD slice starts on
+ * speech with no leading silence. Prepend this much zero-pad before decode
+ * (timestamps are remapped so the pad does not shift the timeline).
+ */
+const WHISPER_LEAD_PAD_S = 0.5;
 
 const post = (msg: WorkerResponse, transfer: Transferable[] = []) =>
   (self as unknown as Worker).postMessage(msg, transfer);
@@ -256,14 +263,13 @@ async function speechFramesWithSilero(
   const out: boolean[] = new Array(n);
   const sr = new Tensor("int64", [BigInt(VAD_SAMPLE_RATE)], []);
   let state = new Tensor("float32", new Float32Array(2 * 1 * 128), [2, 1, 128]);
-  // Reuse one frame buffer across calls — safe because we await each inference.
-  const frameBuf = new Float32Array(frameSize);
-  const threshold = 0.5;
+  // Fresh buffer each frame so ORT never sees a mutated shared view.
+  const threshold = 0.35;
 
   for (let f = 0; f < n; f++) {
     const start = f * frameSize;
     const end = Math.min(audio.length, start + frameSize);
-    frameBuf.fill(0);
+    const frameBuf = new Float32Array(frameSize);
     frameBuf.set(audio.subarray(start, end));
     const input = new Tensor("float32", frameBuf, [1, frameSize]);
     const { output, stateN } = await model({ input, sr, state });
@@ -471,24 +477,30 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
       return_timestamps: "word" as const,
       // Anti-repetition: Whisper-base on multi-minute audio often falls into
       // loops like "little bit of a little bit of a…" near chunk boundaries
-      // or silence. These generation knobs cut that off at decode time.
+      // or silence. Keep penalty mild — 1.15 truncates multi-speaker clips
+      // mid-utterance (second speaker dropped on continuous speech).
       no_repeat_ngram_size: 4,
-      repetition_penalty: 1.15,
+      repetition_penalty: 1.05,
       ...(promptedIds ? { decoder_input_ids: promptedIds } : { language }),
     };
 
     const rawWords: Word[] = [];
+    const leadPadSamples = Math.floor(WHISPER_LEAD_PAD_S * VAD_SAMPLE_RATE);
     for (const seg of speechSegments) {
       const segmentSamples = seg.endSample - seg.startSample;
-      const segmentDuration = segmentSamples / VAD_SAMPLE_RATE;
-      const offsetS = seg.startSample / VAD_SAMPLE_RATE;
-      // subarray avoids copying; Whisper/ORT owns the samples for this await.
-      const slice = audio.subarray(seg.startSample, seg.endSample);
+      // Copy into a fresh buffer with leading silence. Views with a non-zero
+      // byteOffset have caused incomplete ASR with onnxruntime-web; starting
+      // mid-speech with no lead-in also drops later speakers on mixed clips.
+      const slice = new Float32Array(leadPadSamples + segmentSamples);
+      slice.set(audio.subarray(seg.startSample, seg.endSample), leadPadSamples);
+      const sliceDuration = slice.length / VAD_SAMPLE_RATE;
+      const offsetS = seg.startSample / VAD_SAMPLE_RATE - WHISPER_LEAD_PAD_S;
 
       const streamer = new WhisperTextStreamer(tokenizer, {
         skip_prompt: true,
         time_precision: timePrecision,
-        on_chunk_start: (t: number) => reportProgress(t, segmentSamples),
+        on_chunk_start: (t: number) =>
+          reportProgress(Math.max(0, t - WHISPER_LEAD_PAD_S), segmentSamples),
         callback_function: (text: string) => {
           partial += text;
           post({ type: "partial", text: partial });
@@ -498,7 +510,7 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
       const output = await transcriber(slice, { ...asrOptions, streamer });
       const result = Array.isArray(output) ? output[0] : output;
       const chunks = (result.chunks ?? []) as AsrChunk[];
-      rawWords.push(...wordsFromChunks(chunks, offsetS, segmentDuration, duration));
+      rawWords.push(...wordsFromChunks(chunks, offsetS, sliceDuration, duration));
 
       speechDone += segmentSamples;
       reportProgress(0, 0);

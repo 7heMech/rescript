@@ -38,10 +38,6 @@ const WHISPER_DTYPE = {
   wasm: { encoder_model: "fp32", decoder_model_merged: "q4" },
 } satisfies ModelInfo["dtype"];
 
-/** Shared prompt so both sizes keep um/uh for filler editing. */
-const VERBATIM_PROMPT =
-  "Umm, let me think like, hmm... Okay, here's what I'm, like, thinking, um, yeah.";
-
 export const MODELS: Record<ModelChoice, ModelInfo> = {
   base: {
     id: "onnx-community/whisper-base_timestamped",
@@ -49,7 +45,9 @@ export const MODELS: Record<ModelChoice, ModelInfo> = {
     description: "Faster download and transcription. Good for most clips.",
     size: "~200 MB",
     dtype: WHISPER_DTYPE,
-    verbatimPrompt: VERBATIM_PROMPT,
+    // Do not set verbatimPrompt: forcing a long <|startofprev|> prompt via
+    // decoder_input_ids truncates long-form transcripts (e.g. drops the second
+    // speaker on mixed clips). Prefer post-process / filler tools instead.
   },
   small: {
     id: "onnx-community/whisper-small_timestamped",
@@ -57,7 +55,6 @@ export const MODELS: Record<ModelChoice, ModelInfo> = {
     description: "More accurate on longer or noisier audio. Larger download.",
     size: "~600 MB",
     dtype: WHISPER_DTYPE,
-    verbatimPrompt: VERBATIM_PROMPT,
   },
 };
 
