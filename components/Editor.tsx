@@ -61,11 +61,11 @@ export default function Editor() {
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-zinc-50 text-zinc-900">
-      <TopBar />
       {status === "idle" ? (
         <UploadScreen onFile={loadVideo} />
       ) : (
         <>
+          <TopBar />
           <div className="flex min-h-0 flex-1">
             <TranscriptPanel />
             <div className="flex w-[44%] min-w-[320px] shrink-0 flex-col border-l border-zinc-200">
