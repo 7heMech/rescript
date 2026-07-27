@@ -6,8 +6,8 @@ import { MODEL_ORDER, MODELS, type ModelChoice } from "@/lib/models";
 import { hydrateModelPreference, useEditorStore } from "@/lib/store";
 
 /**
- * Compact model picker for the upload screen. Opens upward like a popover
- * menu: group label + icon/name rows, with the trigger showing the current
+ * Compact model picker for the upload screen header. Opens downward under the
+ * trigger: group label + icon/name rows, with the trigger showing the current
  * choice.
  */
 export default function ModelSelector() {
@@ -44,13 +44,29 @@ export default function ModelSelector() {
   };
 
   return (
-    <div ref={rootRef} className="relative flex justify-center">
+    <div ref={rootRef} className="relative shrink-0">
+      <button
+        type="button"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-controls={listId}
+        onClick={() => setOpen((v) => !v)}
+        className="inline-flex items-center gap-2 rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-[13px] font-medium text-zinc-800 shadow-sm shadow-zinc-900/5 transition hover:border-zinc-300 hover:bg-zinc-50"
+      >
+        <AudioLines size={14} className="text-zinc-500" />
+        <span>{current.label}</span>
+        <ChevronDown
+          size={14}
+          className={`text-zinc-400 transition ${open ? "rotate-180" : ""}`}
+        />
+      </button>
+
       {open && (
         <div
           id={listId}
           role="listbox"
           aria-label="Speech model"
-          className="absolute bottom-[calc(100%+0.5rem)] z-20 w-[min(100%,18rem)] overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-lg shadow-zinc-900/5"
+          className="absolute right-0 top-[calc(100%+0.5rem)] z-20 w-[18rem] overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-lg shadow-zinc-900/5"
         >
           <p className="px-3 pb-1 pt-2.5 text-[11px] font-medium tracking-wide text-zinc-400">
             Speech model
@@ -86,22 +102,6 @@ export default function ModelSelector() {
           </div>
         </div>
       )}
-
-      <button
-        type="button"
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        aria-controls={listId}
-        onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-2 rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-[13px] font-medium text-zinc-800 shadow-sm shadow-zinc-900/5 transition hover:border-zinc-300 hover:bg-zinc-50"
-      >
-        <AudioLines size={14} className="text-zinc-500" />
-        <span>{current.label}</span>
-        <ChevronDown
-          size={14}
-          className={`text-zinc-400 transition ${open ? "rotate-180" : ""}`}
-        />
-      </button>
     </div>
   );
 }
