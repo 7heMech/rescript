@@ -4,6 +4,8 @@
 
 **✨ Try it now: [wassgha.github.io/rescript](https://wassgha.github.io/rescript/)**
 
+![Rescript Demo](./screenshots/rescript.png)
+
 Rescript is an open-source, transcript-based video editor. Drop in a video and
 it is transcribed locally with per-word timestamps and speaker labels. Delete
 words in the transcript and the corresponding clip is cut from the video.
