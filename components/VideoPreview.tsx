@@ -12,7 +12,7 @@ import {
 } from "@/lib/edits";
 
 export default function VideoPreview() {
-  const videoUrl = useEditorStore((s) => s.videoUrl);
+  const mediaUrl = useEditorStore((s) => s.mediaUrl);
   const videoFile = useEditorStore((s) => s.videoFile);
   const mediaKind = useEditorStore((s) => s.mediaKind);
   const words = useEditorStore((s) => s.words);
@@ -98,7 +98,7 @@ export default function VideoPreview() {
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-zinc-50/70 p-4">
       <div className="flex min-h-0 flex-1 items-center justify-center">
-        {videoUrl && isAudio && (
+        {mediaUrl && isAudio && (
           <>
             <button
               type="button"
@@ -115,7 +115,7 @@ export default function VideoPreview() {
             </button>
             <audio
               ref={refCb}
-              src={videoUrl}
+              src={mediaUrl}
               preload="metadata"
               onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
               onPlay={() => setPlaying(true)}
@@ -124,10 +124,10 @@ export default function VideoPreview() {
             />
           </>
         )}
-        {videoUrl && !isAudio && (
+        {mediaUrl && !isAudio && (
           <video
             ref={refCb}
-            src={videoUrl}
+            src={mediaUrl}
             playsInline
             onClick={togglePlay}
             onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}

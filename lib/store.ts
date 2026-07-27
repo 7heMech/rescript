@@ -8,7 +8,7 @@ import { detectMediaKind, type MediaKind } from "./media";
 interface EditorState {
   // Media
   videoFile: File | null;
-  videoUrl: string | null;
+  mediaUrl: string | null;
   /** Whether the loaded file is video or audio-only. */
   mediaKind: MediaKind | null;
   duration: number;
@@ -66,7 +66,7 @@ interface EditorState {
 
 export const useEditorStore = create<EditorState>((set, get) => ({
   videoFile: null,
-  videoUrl: null,
+  mediaUrl: null,
   mediaKind: null,
   duration: 0,
   audio: null,
@@ -92,11 +92,11 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   loadVideo: (file) => {
     const kind = detectMediaKind(file);
     if (!kind) return;
-    const prev = get().videoUrl;
+    const prev = get().mediaUrl;
     if (prev) URL.revokeObjectURL(prev);
     set({
       videoFile: file,
-      videoUrl: URL.createObjectURL(file),
+      mediaUrl: URL.createObjectURL(file),
       mediaKind: kind,
       status: "preparing",
       progress: { message: "Loading media engine…", value: null },
@@ -212,12 +212,12 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   setExportOpen: (exportOpen) => set({ exportOpen }),
 
   reset: () => {
-    const { videoUrl, exportUrl } = get();
-    if (videoUrl) URL.revokeObjectURL(videoUrl);
+    const { mediaUrl, exportUrl } = get();
+    if (mediaUrl) URL.revokeObjectURL(mediaUrl);
     if (exportUrl) URL.revokeObjectURL(exportUrl);
     set({
       videoFile: null,
-      videoUrl: null,
+      mediaUrl: null,
       mediaKind: null,
       duration: 0,
       audio: null,
