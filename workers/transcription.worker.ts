@@ -27,7 +27,8 @@ import {
   VAD_FRAME_SIZE,
   VAD_SAMPLE_RATE,
   energySpeechFrames,
-  muteLongSilence,
+  speechSegmentsFromFrames,
+  type SpeechSegment,
 } from "@/lib/vad";
 
 env.allowLocalModels = false;
@@ -38,9 +39,9 @@ if (env.backends?.onnx?.wasm) {
 
 const DIARIZATION_MODEL = "onnx-community/pyannote-segmentation-3.0";
 const VAD_MODEL = "onnx-community/silero-vad";
-/** Contiguous silence longer than this is zeroed before Whisper decoding. */
-const MUTE_MIN_SILENCE_S = 1.5;
-const MUTE_PAD_S = 0.25;
+/** Gaps longer than this split speech into separate Whisper jobs. */
+const SPEECH_MAX_GAP_S = 1.5;
+const SPEECH_PAD_S = 0.25;
 
 const post = (msg: WorkerResponse, transfer: Transferable[] = []) =>
   (self as unknown as Worker).postMessage(msg, transfer);
@@ -265,24 +266,27 @@ async function speechFramesWithSilero(
 }
 
 /**
- * Mute long silent regions in a copy of `audio`. Prefers Silero VAD; falls
- * back to energy-based detection. Always preserves length (timestamps stay
- * aligned). On total failure, returns the original buffer unchanged.
+ * Detect speech segments to feed Whisper. Prefers Silero VAD; falls back to
+ * energy-based detection. On total failure, returns one segment covering the
+ * whole buffer so transcription still runs.
  */
-async function prepareAudioForAsr(audio: Float32Array): Promise<Float32Array> {
+async function detectSpeechSegments(audio: Float32Array): Promise<SpeechSegment[]> {
   try {
     const vad = await getVad();
     const frames = vad
       ? await speechFramesWithSilero(vad, audio)
       : energySpeechFrames(audio);
-    return muteLongSilence(audio, frames, {
-      minSilenceS: MUTE_MIN_SILENCE_S,
-      padS: MUTE_PAD_S,
+    const segments = speechSegmentsFromFrames(frames, audio.length, {
+      maxGapS: SPEECH_MAX_GAP_S,
+      padS: SPEECH_PAD_S,
     });
+    if (segments.length > 0) return segments;
+    // VAD found nothing — still try the full clip rather than returning empty.
+    console.warn("VAD found no speech; falling back to full audio.");
   } catch (err) {
-    console.warn("Silence muting failed; transcribing original audio.", err);
-    return audio;
+    console.warn("Speech segmentation failed; falling back to full audio.", err);
   }
+  return [{ startSample: 0, endSample: audio.length }];
 }
 
 /**
@@ -374,9 +378,13 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
     getDiarizer().catch(() => {});
 
     post({ type: "progress", message: "Detecting speech…", value: 0 });
-    // Zero long silent stretches so Whisper does not decode them into
-    // subtitle-like hallucinations. Length is preserved for timestamps.
-    const asrAudio = await prepareAudioForAsr(audio);
+    // Only decode speech — long silence is skipped entirely (not zero-filled),
+    // which is what stops Whisper from inventing subtitle-like text over gaps.
+    const speechSegments = await detectSpeechSegments(audio);
+    const speechSamples = speechSegments.reduce(
+      (n, s) => n + (s.endSample - s.startSample),
+      0
+    );
 
     post({ type: "progress", message: "Transcribing…", value: 0 });
 
@@ -394,32 +402,29 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
     const tokenizer = transcriber.tokenizer as ConstructorParameters<
       typeof WhisperTextStreamer
     >[0];
-    // Chunk start times can jitter around stride boundaries; clamp the
-    // reported transcription progress so it only ever moves forward.
-    let transcribed = 0;
-    const streamer = new WhisperTextStreamer(tokenizer, {
-      skip_prompt: true,
-      time_precision: timePrecision,
-      on_chunk_start: (t: number) => {
-        if (duration > 0) {
-          transcribed = Math.max(transcribed, Math.min(1, t / duration));
-        }
-        post({
-          type: "progress",
-          message: "Transcribing…",
-          value: duration > 0 ? transcribed : null,
-        });
-      },
-      callback_function: (text: string) => {
-        partial += text;
-        post({ type: "partial", text: partial });
-      },
-    });
 
-    const output = await transcriber(asrAudio, {
+    // Progress is weighted by speech-sample coverage so long silent gaps do
+    // not stall the bar, and multi-segment jobs still move smoothly.
+    let speechDone = 0;
+    let transcribed = 0;
+    const reportProgress = (segmentLocalT: number, segmentSamples: number) => {
+      const local = Math.min(
+        segmentSamples,
+        Math.max(0, segmentLocalT * VAD_SAMPLE_RATE)
+      );
+      const overall = speechSamples > 0 ? (speechDone + local) / speechSamples : 1;
+      transcribed = Math.max(transcribed, Math.min(1, overall));
+      post({
+        type: "progress",
+        message: "Transcribing…",
+        value: transcribed,
+      });
+    };
+
+    const asrOptions = {
       chunk_length_s: chunkLength,
       stride_length_s: stride,
-      return_timestamps: "word",
+      return_timestamps: "word" as const,
       // Anti-repetition: Whisper-base on multi-minute audio often falls into
       // loops like "little bit of a little bit of a…" near chunk boundaries
       // or silence. These generation knobs cut that off at decode time.
@@ -427,29 +432,55 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
       repetition_penalty: 1.15,
       // decoder_input_ids overrides language/task tokens when prompting.
       ...(promptedIds ? { decoder_input_ids: promptedIds } : { language }),
-      streamer,
-    });
-
-    const result = Array.isArray(output) ? output[0] : output;
-    const chunks = (result.chunks ?? []) as {
-      text: string;
-      timestamp: [number, number | null];
-    }[];
+    };
 
     const rawWords: Word[] = [];
-    for (const c of chunks) {
-      const text = c.text.trim();
-      if (!text) continue;
-      const start = c.timestamp[0] ?? 0;
-      const end = c.timestamp[1] ?? Math.min(start + 0.5, duration || start + 0.5);
-      rawWords.push({
-        id: rawWords.length,
-        text,
-        start,
-        end: Math.max(end, start + 0.02),
-        speaker: 0,
-        deleted: false,
+    for (const seg of speechSegments) {
+      const slice = audio.slice(seg.startSample, seg.endSample);
+      const offsetS = seg.startSample / VAD_SAMPLE_RATE;
+      const segmentSamples = seg.endSample - seg.startSample;
+      const segmentDuration = segmentSamples / VAD_SAMPLE_RATE;
+
+      const streamer = new WhisperTextStreamer(tokenizer, {
+        skip_prompt: true,
+        time_precision: timePrecision,
+        on_chunk_start: (t: number) => {
+          reportProgress(t, segmentSamples);
+        },
+        callback_function: (text: string) => {
+          partial += text;
+          post({ type: "partial", text: partial });
+        },
       });
+
+      const output = await transcriber(slice, { ...asrOptions, streamer });
+      const result = Array.isArray(output) ? output[0] : output;
+      const chunks = (result.chunks ?? []) as {
+        text: string;
+        timestamp: [number, number | null];
+      }[];
+
+      for (const c of chunks) {
+        const text = c.text.trim();
+        if (!text) continue;
+        const start = offsetS + (c.timestamp[0] ?? 0);
+        const rawEnd =
+          offsetS +
+          (c.timestamp[1] ??
+            Math.min((c.timestamp[0] ?? 0) + 0.5, segmentDuration));
+        const end = duration > 0 ? Math.min(rawEnd, duration) : rawEnd;
+        rawWords.push({
+          id: rawWords.length,
+          text,
+          start: duration > 0 ? Math.min(start, duration) : start,
+          end: Math.max(end, start + 0.02),
+          speaker: 0,
+          deleted: false,
+        });
+      }
+
+      speechDone += segmentSamples;
+      reportProgress(0, 0);
     }
 
     // Post-process: collapse leftover n-gram loops and drop known hallucination
