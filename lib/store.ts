@@ -66,7 +66,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   videoUrl: null,
   duration: 0,
   audio: null,
-  model: "fast",
+  model: "verbatim",
 
   status: "idle",
   progress: { message: "", value: null },

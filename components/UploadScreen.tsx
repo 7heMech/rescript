@@ -1,10 +1,10 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
+import Image from "next/image";
 import { Clapperboard, Loader2, Lock, Scissors, ShieldAlert, Type, Upload } from "lucide-react";
+import logo from "@/assets/logo.png";
 import { useCrossOriginIsolated } from "@/hooks/useCrossOriginIsolated";
-import { useEditorStore } from "@/lib/store";
-import { MODELS, type ModelChoice } from "@/lib/models";
 
 export default function UploadScreen({ onFile }: { onFile: (file: File) => void }) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -14,8 +14,6 @@ export default function UploadScreen({ onFile }: { onFile: (file: File) => void 
   // would fail immediately and lose the file to that reload.
   const isolation = useCrossOriginIsolated();
   const ready = isolation === "ready";
-  const model = useEditorStore((s) => s.model);
-  const setModel = useEditorStore((s) => s.setModel);
 
   const handleFiles = useCallback(
     (files: FileList | null) => {
@@ -34,6 +32,16 @@ export default function UploadScreen({ onFile }: { onFile: (file: File) => void 
   return (
     <div className="flex flex-1 items-center justify-center bg-gradient-to-b from-zinc-50 to-neutral-50/50 p-6">
       <div className="w-full max-w-xl">
+        <div className="mb-6 flex justify-center">
+          <Image
+            src={logo}
+            alt="Rescript"
+            width={44}
+            height={44}
+            priority
+            className="rounded-sm border border-zinc-200"
+          />
+        </div>
         <div
           role="button"
           aria-disabled={!ready}
@@ -107,38 +115,6 @@ export default function UploadScreen({ onFile }: { onFile: (file: File) => void 
             className="hidden"
             onChange={(e) => handleFiles(e.target.files)}
           />
-        </div>
-
-        <div className="mt-6">
-          <p className="mb-2 text-xs font-semibold tracking-wider text-zinc-400 uppercase">
-            Transcription model
-          </p>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            {(Object.keys(MODELS) as ModelChoice[]).map((key) => {
-              const m = MODELS[key];
-              const selected = model === key;
-              return (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => setModel(key)}
-                  className={`rounded-xl border p-4 text-left transition ${
-                    selected
-                      ? "border-zinc-800 bg-white ring-1 ring-zinc-800"
-                      : "border-zinc-200 bg-white/70 hover:border-zinc-400"
-                  }`}
-                >
-                  <span className="flex items-center justify-between">
-                    <span className="text-[13px] font-semibold text-zinc-800">{m.label}</span>
-                    <span className="text-xs text-zinc-400">{m.size}</span>
-                  </span>
-                  <span className="mt-0.5 block text-xs leading-relaxed text-zinc-500">
-                    {m.description}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
         </div>
 
         <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
