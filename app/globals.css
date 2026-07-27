@@ -10,7 +10,7 @@ body {
 }
 
 ::selection {
-  background: rgba(99, 102, 241, 0.25);
+  background: rgba(99, 102, 241, 0.05);
 }
 
 /*
