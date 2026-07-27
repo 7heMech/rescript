@@ -34,7 +34,11 @@ export interface SpeechSegmentOptions {
 
 /**
  * Build contiguous speech segments from per-frame speech flags.
- * Short silent gaps are absorbed; long gaps become segment boundaries.
+ *
+ * 1. Collect raw speech runs
+ * 2. Expand each run by `padS`
+ * 3. Merge runs whose gap is shorter than `maxGapS`
+ * 4. Drop runs shorter than `minSpeechS`
  */
 export function speechSegmentsFromFrames(
   speechFrames: boolean[],
@@ -51,62 +55,43 @@ export function speechSegmentsFromFrames(
   if (n === 0 || totalSamples === 0) return [];
 
   const padFrames = Math.max(0, Math.round((padS * sampleRate) / frameSize));
-  const maxGapFrames = Math.max(
-    1,
-    Math.round((maxGapS * sampleRate) / frameSize)
-  );
-  const minSpeechSamples = Math.max(
-    1,
-    Math.round(minSpeechS * sampleRate)
-  );
+  const maxGapFrames = Math.max(1, Math.round((maxGapS * sampleRate) / frameSize));
+  const minSpeechSamples = Math.max(1, Math.round(minSpeechS * sampleRate));
 
-  // Dilate speech so we don't clip phoneme edges.
-  const padded = speechFrames.slice();
-  for (let i = 0; i < n; i++) {
-    if (!speechFrames[i]) continue;
-    const lo = Math.max(0, i - padFrames);
-    const hi = Math.min(n - 1, i + padFrames);
-    for (let j = lo; j <= hi; j++) padded[j] = true;
-  }
-
-  // Absorb short silent gaps so a breath does not split a sentence.
-  const merged = padded.slice();
-  let i = 0;
-  while (i < n) {
-    if (merged[i]) {
+  // Raw [start, end) frame runs.
+  const runs: Array<[number, number]> = [];
+  for (let i = 0; i < n; ) {
+    if (!speechFrames[i]) {
       i++;
       continue;
     }
-    let j = i;
-    while (j < n && !padded[j]) j++;
-    const gap = j - i;
-    const touchesSpeech = i > 0 && j < n;
-    if (touchesSpeech && gap < maxGapFrames) {
-      for (let k = i; k < j; k++) merged[k] = true;
-    }
+    let j = i + 1;
+    while (j < n && speechFrames[j]) j++;
+    runs.push([i, j]);
     i = j;
+  }
+  if (runs.length === 0) return [];
+
+  // Pad, then merge overlapping / nearby runs in one pass.
+  const merged: Array<[number, number]> = [];
+  for (const [rawStart, rawEnd] of runs) {
+    const start = Math.max(0, rawStart - padFrames);
+    const end = Math.min(n, rawEnd + padFrames);
+    const prev = merged[merged.length - 1];
+    if (prev && start - prev[1] < maxGapFrames) {
+      prev[1] = Math.max(prev[1], end);
+    } else {
+      merged.push([start, end]);
+    }
   }
 
-  const segments: SpeechSegment[] = [];
-  i = 0;
-  while (i < n) {
-    if (!merged[i]) {
-      i++;
-      continue;
-    }
-    let j = i;
-    while (j < n && merged[j]) j++;
-    const startSample = i * frameSize;
-    // Include a trailing partial frame when the last speech frame is the
-    // final VAD frame and samples remain past n * frameSize.
-    let endSample = Math.min(totalSamples, j * frameSize);
-    if (j === n) endSample = totalSamples;
-    if (endSample - startSample >= minSpeechSamples) {
-      segments.push({ startSample, endSample });
-    }
-    i = j;
-  }
-  return segments;
+  return merged.flatMap(([startFrame, endFrame]) => {
+    const startSample = startFrame * frameSize;
+    const endSample =
+      endFrame >= n ? totalSamples : Math.min(totalSamples, endFrame * frameSize);
+    if (endSample - startSample < minSpeechSamples) return [];
+    return [{ startSample, endSample }];
+  });
 }
 
 /**
@@ -142,7 +127,5 @@ export function energySpeechFrames(
     if (rms > peak) peak = rms;
   }
   const cutoff = Math.max(absoluteFloor, peak * relativeThreshold);
-  const out: boolean[] = new Array(n);
-  for (let f = 0; f < n; f++) out[f] = energies[f] >= cutoff;
-  return out;
+  return Array.from(energies, (e) => e >= cutoff);
 }

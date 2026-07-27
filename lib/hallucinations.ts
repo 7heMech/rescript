@@ -18,7 +18,7 @@ const HALLUCINATION_PHRASES = [
   "subtitles by the amara.org community",
   "subtitles by",
   "www.youtube.com",
-];
+].map((p) => p.split(/\s+/));
 
 function normalizeToken(text: string): string {
   return text.toLowerCase().replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}'-]+$/gu, "");
@@ -86,13 +86,11 @@ export function stripHallucinationPhrases(words: Word[]): Word[] {
   if (words.length === 0) return words;
   const keys = words.map(wordKey);
   const drop = new Array(words.length).fill(false);
-  const phrases = HALLUCINATION_PHRASES.map((p) => p.split(/\s+/));
 
   for (let i = 0; i < keys.length; i++) {
-    for (const phrase of phrases) {
+    for (const phrase of HALLUCINATION_PHRASES) {
       if (i + phrase.length > keys.length) continue;
-      const match = phrase.every((tok, j) => keys[i + j] === tok);
-      if (match) {
+      if (phrase.every((tok, j) => keys[i + j] === tok)) {
         for (let j = 0; j < phrase.length; j++) drop[i + j] = true;
       }
     }
@@ -106,13 +104,15 @@ export function stripHallucinationPhrases(words: Word[]): Word[] {
  */
 export function trimTrailingDegenerateTail(words: Word[]): Word[] {
   if (words.length < 8) return words;
-  // Walk backwards counting how many of the last tokens share the same key
-  // as their immediate neighbors in a small window.
-  let cutFrom = words.length;
+  const keys = words.map(wordKey);
   const window = 6;
+  let cutFrom = words.length;
+
   for (let i = words.length - 1; i >= window; i--) {
-    const slice = words.slice(i - window + 1, i + 1).map(wordKey);
-    const unique = new Set(slice.filter(Boolean));
+    const unique = new Set<string>();
+    for (let j = i - window + 1; j <= i; j++) {
+      if (keys[j]) unique.add(keys[j]!);
+    }
     // Degenerate: ≤2 distinct tokens in a 6-word window near the end.
     if (unique.size > 0 && unique.size <= 2) {
       cutFrom = i - window + 1;
