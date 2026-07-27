@@ -228,8 +228,11 @@ export default function UploadScreen({ onFile }: { onFile: (file: File) => void 
   );
 
   return (
-    <div className="flex flex-1 items-center justify-center bg-gradient-to-b from-zinc-50 to-neutral-50/50 p-6">
-      <div className="w-full max-w-xl">
+    <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-gradient-to-b from-zinc-50 to-neutral-50/50">
+      {/* min-h-full + items-center centers when content fits; the outer
+          overflow-y-auto still lets short viewports (mobile) scroll the top. */}
+      <div className="flex min-h-full items-center justify-center p-6">
+        <div className="w-full max-w-xl">
         <div className="mb-6 flex items-center justify-between gap-3">
           <div className="flex min-w-0 items-center">
             <Image
@@ -352,6 +355,7 @@ export default function UploadScreen({ onFile }: { onFile: (file: File) => void 
           </p>
           <GitHubLink variant="text" />
         </div>
+      </div>
       </div>
     </div>
   );
