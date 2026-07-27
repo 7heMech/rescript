@@ -20,6 +20,7 @@ import {
 } from "@huggingface/transformers";
 import type { Word, WorkerRequest, WorkerResponse } from "@/lib/types";
 import { MODELS, type ModelChoice } from "@/lib/models";
+import { cleanTranscript } from "@/lib/hallucinations";
 
 env.allowLocalModels = false;
 // Serve onnxruntime-web WASM from our own origin (offline friendly).
@@ -296,6 +297,11 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
       chunk_length_s: chunkLength,
       stride_length_s: stride,
       return_timestamps: "word",
+      // Anti-repetition: Whisper-base on multi-minute audio often falls into
+      // loops like "little bit of a little bit of a…" near chunk boundaries
+      // or silence. These generation knobs cut that off at decode time.
+      no_repeat_ngram_size: 4,
+      repetition_penalty: 1.15,
       // decoder_input_ids overrides language/task tokens when prompting.
       ...(promptedIds ? { decoder_input_ids: promptedIds } : { language }),
       streamer,
@@ -307,14 +313,14 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
       timestamp: [number, number | null];
     }[];
 
-    const words: Word[] = [];
+    const rawWords: Word[] = [];
     for (const c of chunks) {
       const text = c.text.trim();
       if (!text) continue;
       const start = c.timestamp[0] ?? 0;
       const end = c.timestamp[1] ?? Math.min(start + 0.5, duration || start + 0.5);
-      words.push({
-        id: words.length,
+      rawWords.push({
+        id: rawWords.length,
         text,
         start,
         end: Math.max(end, start + 0.02),
@@ -322,6 +328,10 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
         deleted: false,
       });
     }
+
+    // Post-process: collapse leftover n-gram loops and drop known hallucination
+    // phrases ("I'm sorry", "thanks for watching", …) that slip past decoding.
+    const words = cleanTranscript(rawWords);
 
     // Best-effort speaker diarization; a failure should not lose the transcript.
     try {

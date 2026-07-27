@@ -52,6 +52,9 @@ export const MODELS: Record<ModelChoice, ModelInfo> = {
     size: "~80 MB",
     dtype: WHISPER_BASE_DTYPE,
     verbatimPrompt:
-      "Umm, let me think like, hmm... Okay, here's what I'm, like, thinking, um, yeah.",
+      // Keep this short and free of "I'm …" openers — a longer prompt that
+      // starts with "I'm" can seed the common "I'm sorry" hallucination loop
+      // on later chunks of long audio.
+      "Um, uh, hmm, er, ah.",
   },
 };
