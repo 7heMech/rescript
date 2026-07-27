@@ -1,6 +1,6 @@
 "use client";
 
-import { Download, Home, Redo2, Undo2 } from "lucide-react";
+import { Download, Redo2, Undo2 } from "lucide-react";
 import { useEditorStore } from "@/lib/store";
 import Image from "next/image";
 import logo from "@/assets/logo.png";

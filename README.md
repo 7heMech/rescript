@@ -4,16 +4,16 @@
 
 # Rescript
 
-**Edit videos like you edit text — fully offline, in your browser.**
+**Edit video and audio like you edit text — fully offline, in your browser.**
 
 **✨ Try it now: [wassgha.github.io/rescript](https://wassgha.github.io/rescript/)**
 
 [![Rescript Demo](./screenshots/rescript.png)](https://wassgha.github.io/rescript/)
 
-Rescript is an open-source, transcript-based video editor. Drop in a video and
-it is transcribed locally with per-word timestamps and speaker labels. Delete
-words in the transcript and the corresponding clip is cut from the video.
-Export the final cut to MP4 — without your video ever leaving your device.
+Rescript is an open-source, transcript-based media editor. Drop in a video or
+audio file and it is transcribed locally with per-word timestamps and speaker
+labels. Delete words in the transcript and the corresponding clip is cut from
+the media. Export the final cut — without your file ever leaving your device.
 
 - 🔒 **Private by design** — no server, no auth, no uploads; all media processing happens on-device
 - 📝 **Word-level editing** — select words, press ⌫, the cut follows the text
@@ -21,7 +21,8 @@ Export the final cut to MP4 — without your video ever leaving your device.
 - 🗣️ **Speaker diarization** — the transcript is grouped by speaker
 - 🎬 **Timeline** — waveform, word labels, cut regions, playhead, zoom
 - ⚡ **Live preview** — playback skips your cuts in real time
-- 📦 **In-browser export** — frame-accurate MP4 render with ffmpeg.wasm
+- 📦 **In-browser export** — frame-accurate MP4 (video) or M4A (audio) with ffmpeg.wasm
+- 🎧 **Audio files** — edit podcasts, voice notes, and interviews the same way as video
 
 ## Stack
 

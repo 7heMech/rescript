@@ -33,7 +33,7 @@ export default function Editor() {
         transcribe(audio, audio.length / 16000);
       } catch (err) {
         console.error("Processing pipeline failed:", err);
-        s.setError(err instanceof Error ? err.message : "Failed to process this video.");
+        s.setError(err instanceof Error ? err.message : "Failed to process this file.");
       }
     })();
   }, [videoFile, transcribe]);
