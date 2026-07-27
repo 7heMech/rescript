@@ -8,6 +8,8 @@
 
 **✨ Try it now: [wassgha.github.io/rescript](https://wassgha.github.io/rescript/)**
 
+[![Follow @wassgha on X](https://img.shields.io/badge/Follow%20@wassgha-000000?logo=x&logoColor=white)](https://x.com/wassgha)
+
 [![Rescript Demo](./screenshots/rescript.png)](https://wassgha.github.io/rescript/)
 
 Rescript is an open-source, transcript-based media editor. Drop in a video or
@@ -74,3 +76,7 @@ falling back to WASM otherwise.
 ## License
 
 MIT
+
+---
+
+Built by [@wassgha](https://x.com/wassgha) — follow along on X for updates.

@@ -2,10 +2,72 @@
 
 import { useCallback, useRef, useState } from "react";
 import Image from "next/image";
-import { Clapperboard, Loader2, Lock, Scissors, ShieldAlert, Type, Upload } from "lucide-react";
+import {
+  AudioLines,
+  Clapperboard,
+  Film,
+  Loader2,
+  Lock,
+  Music,
+  Scissors,
+  ShieldAlert,
+  Type,
+} from "lucide-react";
 import logo from "@/assets/logo.png";
 import { useCrossOriginIsolated } from "@/hooks/useCrossOriginIsolated";
 import { detectMediaKind, MEDIA_ACCEPT } from "@/lib/media";
+
+// The three media cards that stand in for the upload icon. Each carries its
+// resting transform plus the fanned-out one, applied either on hover (via the
+// dropzone's `group`) or while a file is being dragged over.
+const CARDS = [
+  {
+    icon: Film,
+    size: "h-[4.25rem] w-[3.25rem]",
+    iconSize: 18,
+    bars: ["w-7", "w-4"],
+    fan: "-rotate-[18deg] -translate-x-10 -translate-y-1.5",
+    rest: "-rotate-[11deg] -translate-x-5 group-hover:-rotate-[18deg] group-hover:-translate-x-10 group-hover:-translate-y-1.5",
+  },
+  {
+    icon: AudioLines,
+    size: "h-20 w-16",
+    iconSize: 22,
+    bars: ["w-9", "w-5"],
+    fan: "z-10 -translate-y-2.5",
+    rest: "z-10 group-hover:-translate-y-2.5",
+  },
+  {
+    icon: Music,
+    size: "h-[4.25rem] w-[3.25rem]",
+    iconSize: 18,
+    bars: ["w-7", "w-4"],
+    fan: "rotate-[18deg] translate-x-10 -translate-y-1.5",
+    rest: "rotate-[11deg] translate-x-5 group-hover:rotate-[18deg] group-hover:translate-x-10 group-hover:-translate-y-1.5",
+  },
+] as const;
+
+function MediaCards({ dragging }: { dragging: boolean }) {
+  return (
+    <div className="pointer-events-none relative mb-5 flex h-24 w-full items-center justify-center">
+      {CARDS.map(({ icon: Icon, size, iconSize, bars, rest, fan }, i) => (
+        <div
+          key={i}
+          className={`absolute flex flex-col items-center justify-center gap-1.5 rounded-xl border border-zinc-200 bg-white transition-transform duration-300 ease-out ${size} ${
+            dragging ? fan : rest
+          }`}
+        >
+          <Icon size={iconSize} className="text-neutral-400" />
+          <div className="flex flex-col items-center gap-1">
+            {bars.map((w) => (
+              <span key={w} className={`block h-[3px] rounded-full bg-zinc-200 ${w}`} />
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export default function UploadScreen({ onFile }: { onFile: (file: File) => void }) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -60,7 +122,7 @@ export default function UploadScreen({ onFile }: { onFile: (file: File) => void 
             setDragging(false);
             handleFiles(e.dataTransfer.files);
           }}
-          className={`flex flex-col items-center justify-center rounded-2xl border-2 border-dashed bg-white/80 px-8 py-14 text-center transition ${
+          className={`group flex flex-col items-center justify-center rounded-2xl border-2 border-dashed bg-white/80 px-8 py-14 text-center transition ${
             !ready
               ? "cursor-default border-zinc-200"
               : dragging
@@ -68,21 +130,23 @@ export default function UploadScreen({ onFile }: { onFile: (file: File) => void 
                 : "cursor-pointer border-zinc-300 hover:border-neutral-400 hover:bg-white"
           }`}
         >
-          <div
-            className={`mb-3 flex h-12 w-12 items-center justify-center rounded-full ${
-              isolation === "unavailable"
-                ? "bg-amber-50 text-amber-600"
-                : "bg-neutral-100 text-neutral-600"
-            }`}
-          >
-            {isolation === "unavailable" ? (
-              <ShieldAlert size={20} />
-            ) : ready ? (
-              <Upload size={20} />
-            ) : (
-              <Loader2 size={20} className="animate-spin" />
-            )}
-          </div>
+          {ready ? (
+            <MediaCards dragging={dragging} />
+          ) : (
+            <div
+              className={`mb-3 flex h-12 w-12 items-center justify-center rounded-full ${
+                isolation === "unavailable"
+                  ? "bg-amber-50 text-amber-600"
+                  : "bg-neutral-100 text-neutral-600"
+              }`}
+            >
+              {isolation === "unavailable" ? (
+                <ShieldAlert size={20} />
+              ) : (
+                <Loader2 size={20} className="animate-spin" />
+              )}
+            </div>
+          )}
           {isolation === "unavailable" ? (
             <>
               <p className="text-[15px] font-medium text-zinc-800">
