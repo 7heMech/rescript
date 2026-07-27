@@ -4,6 +4,7 @@ import { Download, Redo2, Undo2 } from "lucide-react";
 import { useEditorStore } from "@/lib/store";
 import Image from "next/image";
 import logo from "@/assets/logo.png";
+import GitHubLink from "./GitHubLink";
 
 export default function TopBar() {
   const videoFile = useEditorStore((s) => s.videoFile);
@@ -42,6 +43,7 @@ export default function TopBar() {
       )}
 
       <div className="ml-auto flex items-center gap-1">
+        <GitHubLink />
         <button
           onClick={undo}
           disabled={!canUndo}
