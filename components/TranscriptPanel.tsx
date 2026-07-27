@@ -1,7 +1,7 @@
 "use client";
 
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Eye, EyeOff, RotateCcw, Scissors } from "lucide-react";
+import { Eye, EyeOff, Pencil, RotateCcw, Scissors, X } from "lucide-react";
 import { useEditorStore } from "@/lib/store";
 import type { SpeakerTurn, Word } from "@/lib/types";
 
@@ -81,12 +81,23 @@ export default function TranscriptPanel() {
   const toggleShowDeleted = useEditorStore((s) => s.toggleShowDeleted);
   const deleteWords = useEditorStore((s) => s.deleteWords);
   const restoreWords = useEditorStore((s) => s.restoreWords);
+  const correctWords = useEditorStore((s) => s.correctWords);
   const playing = useEditorStore((s) => s.playing);
   const activeWordId = useEditorStore((s) => findActiveWordId(s.words, s.currentTime));
 
   const containerRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [selection, setSelection] = useState<SelectionInfo | null>(null);
+  const [correcting, setCorrecting] = useState<{
+    ids: number[];
+    top: number;
+    left: number;
+    containerWidth: number;
+  } | null>(null);
+  const [correctText, setCorrectText] = useState("");
+  // Mirrors `correcting` so the selectionchange handler (which has its own
+  // dependency list) can freeze the highlight while the popover is open.
+  const correctingRef = useRef(false);
 
   const turns = useMemo<SpeakerTurn[]>(() => {
     const out: SpeakerTurn[] = [];
@@ -117,6 +128,8 @@ export default function TranscriptPanel() {
       markedRef.current.clear();
     };
     const handler = () => {
+      // Keep the highlight frozen on the words being corrected.
+      if (correctingRef.current) return;
       const container = containerRef.current;
       const sel = window.getSelection();
       if (!container || !sel || sel.isCollapsed || sel.rangeCount === 0) {
@@ -184,6 +197,49 @@ export default function TranscriptPanel() {
     window.getSelection()?.removeAllRanges();
     setSelection(null);
   }, [selection, restoreWords]);
+
+  const openCorrect = useCallback(() => {
+    if (!selection) return;
+    const idSet = new Set(selection.ids);
+    const text = words
+      .filter((w) => idSet.has(w.id))
+      .map((w) => w.text)
+      .join(" ");
+    correctingRef.current = true;
+    setCorrectText(text);
+    setCorrecting({
+      ids: selection.ids,
+      top: selection.top,
+      left: selection.left,
+      containerWidth: containerRef.current?.clientWidth ?? 640,
+    });
+    setSelection(null);
+    window.getSelection()?.removeAllRanges();
+  }, [selection, words]);
+
+  const closeCorrect = useCallback(() => {
+    correctingRef.current = false;
+    for (const el of markedRef.current) el.removeAttribute("data-sel");
+    markedRef.current.clear();
+    setCorrecting(null);
+  }, []);
+
+  const applyCorrection = useCallback(() => {
+    if (!correcting) return;
+    correctWords(correcting.ids, correctText);
+    closeCorrect();
+  }, [correcting, correctText, correctWords, closeCorrect]);
+
+  // Close the correction popover when clicking outside of it.
+  const popoverRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!correcting) return;
+    const handler = (e: MouseEvent) => {
+      if (!popoverRef.current?.contains(e.target as Node)) closeCorrect();
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [correcting, closeCorrect]);
 
   // Delete / Backspace cuts the selected words.
   useEffect(() => {
@@ -304,7 +360,7 @@ export default function TranscriptPanel() {
             </div>
           )}
 
-          {selection && (
+          {selection && !correcting && (
             <div
               className="absolute z-20 flex -translate-x-1/2 items-center gap-0.5 rounded-xl border border-zinc-200 bg-white p-1 shadow-lg shadow-zinc-900/10"
               style={{ top: selection.top, left: selection.left }}
@@ -319,6 +375,13 @@ export default function TranscriptPanel() {
                   Cut
                 </button>
               )}
+              <button
+                onClick={openCorrect}
+                className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[13px] font-medium text-zinc-700 transition hover:bg-zinc-100"
+              >
+                <Pencil size={13} />
+                Correct
+              </button>
               {selection.anyDeleted && (
                 <button
                   onClick={restoreSelection}
@@ -328,6 +391,50 @@ export default function TranscriptPanel() {
                   Restore
                 </button>
               )}
+            </div>
+          )}
+
+          {correcting && (
+            <div
+              ref={popoverRef}
+              className="absolute z-20 w-80 max-w-[calc(100%-16px)] -translate-x-1/2 rounded-2xl border border-zinc-200 bg-white p-3 shadow-xl shadow-zinc-900/10"
+              style={{
+                top: Math.max(4, correcting.top - 56),
+                left: Math.min(
+                  Math.max(168, correcting.left),
+                  correcting.containerWidth - 168
+                ),
+              }}
+            >
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-[13px] font-semibold text-zinc-800">Correct</span>
+                <button
+                  onClick={closeCorrect}
+                  className="flex h-6 w-6 items-center justify-center rounded-md text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700"
+                >
+                  <X size={13} />
+                </button>
+              </div>
+              <input
+                autoFocus
+                value={correctText}
+                onChange={(e) => setCorrectText(e.target.value)}
+                onFocus={(e) => e.currentTarget.select()}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") applyCorrection();
+                  else if (e.key === "Escape") closeCorrect();
+                }}
+                className="w-full rounded-lg border border-zinc-300 bg-zinc-50 px-2.5 py-1.5 text-sm text-zinc-800 outline-none focus:border-zinc-500 focus:bg-white"
+              />
+              <div className="mt-2.5 flex justify-end">
+                <button
+                  onClick={applyCorrection}
+                  disabled={correctText.trim().length === 0}
+                  className="flex h-8 items-center rounded-full bg-zinc-900 px-4 text-[13px] font-medium text-white transition hover:bg-zinc-700 disabled:opacity-40"
+                >
+                  Correct
+                </button>
+              </div>
             </div>
           )}
         </div>

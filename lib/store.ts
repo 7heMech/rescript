@@ -44,6 +44,8 @@ interface EditorState {
   setWords: (words: Word[]) => void;
   deleteWords: (ids: number[]) => void;
   restoreWords: (ids: number[]) => void;
+  /** Replace the selected (contiguous) words with corrected text. */
+  correctWords: (ids: number[], text: string) => void;
   undo: () => void;
   redo: () => void;
   toggleShowDeleted: () => void;
@@ -121,6 +123,53 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       past: [...past, words],
       future: [],
       words: words.map((w) => (idSet.has(w.id) && w.deleted ? { ...w, deleted: false } : w)),
+    });
+  },
+  correctWords: (ids, text) => {
+    const { words, past } = get();
+    const tokens = text.split(/\s+/).filter(Boolean);
+    if (ids.length === 0 || tokens.length === 0) return;
+    const idSet = new Set(ids);
+    const indices = words.reduce<number[]>((acc, w, i) => {
+      if (idSet.has(w.id)) acc.push(i);
+      return acc;
+    }, []);
+    if (indices.length === 0) return;
+    // Replace the whole contiguous slice covered by the selection.
+    const from = indices[0];
+    const to = indices[indices.length - 1];
+    const selected = words.slice(from, to + 1);
+    if (selected.map((w) => w.text).join(" ") === tokens.join(" ")) return;
+
+    // Distribute the original time span across the new words in proportion
+    // to their character length.
+    const spanStart = selected[0].start;
+    const spanEnd = selected[selected.length - 1].end;
+    const span = Math.max(0.02, spanEnd - spanStart);
+    const totalChars = tokens.reduce((acc, t) => acc + t.length, 0);
+    let nextId = words.reduce((m, w) => Math.max(m, w.id), 0) + 1;
+    let cursor = spanStart;
+    const replacement: Word[] = tokens.map((t) => {
+      const dur = (span * t.length) / totalChars;
+      const word: Word = {
+        id: nextId++,
+        text: t,
+        start: cursor,
+        end: Math.min(spanEnd, cursor + dur),
+        speaker: selected[0].speaker,
+        // A correction implies the words are wanted, unless the whole
+        // selection was already cut.
+        deleted: selected.every((w) => w.deleted),
+      };
+      cursor = word.end;
+      return word;
+    });
+    replacement[replacement.length - 1].end = spanEnd;
+
+    set({
+      past: [...past, words],
+      future: [],
+      words: [...words.slice(0, from), ...replacement, ...words.slice(to + 1)],
     });
   },
   undo: () => {
