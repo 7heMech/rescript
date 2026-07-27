@@ -14,6 +14,7 @@ import {
   Type,
 } from "lucide-react";
 import logo from "@/assets/logo.png";
+import ModelSelector from "./ModelSelector";
 import { useCrossOriginIsolated } from "@/hooks/useCrossOriginIsolated";
 import { detectMediaKind, MEDIA_ACCEPT } from "@/lib/media";
 
@@ -95,16 +96,19 @@ export default function UploadScreen({ onFile }: { onFile: (file: File) => void 
   return (
     <div className="flex flex-1 items-center justify-center bg-gradient-to-b from-zinc-50 to-neutral-50/50 p-6">
       <div className="w-full max-w-xl">
-        <div className="mb-6 flex justify-center">
-          <Image
-            src={logo}
-            alt="Rescript"
-            width={24}
-            height={24}
-            priority
-            className="rounded-sm border border-zinc-200"
-          />
-          <p className="text-[15px] font-medium text-zinc-800 ml-2">Rescript</p>
+        <div className="mb-6 flex items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center">
+            <Image
+              src={logo}
+              alt="Rescript"
+              width={24}
+              height={24}
+              priority
+              className="rounded-sm border border-zinc-200"
+            />
+            <p className="ml-2 text-[15px] font-medium text-zinc-800">Rescript</p>
+          </div>
+          <ModelSelector />
         </div>
         <div
           role="button"

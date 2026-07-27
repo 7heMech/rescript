@@ -1,10 +1,10 @@
 /**
  * Transcription worker: runs entirely in the browser.
  *
- * 1. A Whisper-family model (see lib/models.ts) produces a transcript with
- *    per-word timestamps.
- * 2. Pyannote segmentation 3.0 produces speaker segments, which are used to
- *    assign a speaker to each word.
+ * 1. Silero VAD (energy fallback) finds speech segments; silence is skipped.
+ * 2. A Whisper-family model (see lib/models.ts) transcribes each segment with
+ *    per-word timestamps, remapped onto the original timeline.
+ * 3. Pyannote segmentation 3.0 assigns a speaker to each word.
  *
  * Models are fetched from the Hugging Face Hub on first use and cached in the
  * browser Cache Storage; every run after that is fully offline. The ONNX
@@ -13,13 +13,23 @@
 import {
   pipeline,
   AutoProcessor,
+  AutoModel,
   AutoModelForAudioFrameClassification,
   WhisperTextStreamer,
+  Tensor,
   env,
   type AutomaticSpeechRecognitionPipeline,
 } from "@huggingface/transformers";
 import type { Word, WorkerRequest, WorkerResponse } from "@/lib/types";
 import { MODELS, type ModelChoice } from "@/lib/models";
+import { cleanTranscript } from "@/lib/hallucinations";
+import {
+  VAD_FRAME_SIZE,
+  VAD_SAMPLE_RATE,
+  energySpeechFrames,
+  speechSegmentsFromFrames,
+  type SpeechSegment,
+} from "@/lib/vad";
 
 env.allowLocalModels = false;
 // Serve onnxruntime-web WASM from our own origin (offline friendly).
@@ -28,23 +38,59 @@ if (env.backends?.onnx?.wasm) {
 }
 
 const DIARIZATION_MODEL = "onnx-community/pyannote-segmentation-3.0";
+const VAD_MODEL = "onnx-community/silero-vad";
+/** Gaps longer than this split speech into separate Whisper jobs. */
+const SPEECH_MAX_GAP_S = 1.5;
+const SPEECH_PAD_S = 0.25;
 
 const post = (msg: WorkerResponse, transfer: Transferable[] = []) =>
   (self as unknown as Worker).postMessage(msg, transfer);
 
 /**
- * Aggregate multi-file download progress into a single 0..1 value.
+ * Aggregate model download progress into a single 0..1 value.
  *
- * Files are discovered progressively, so the naive loaded/total ratio can
- * *drop* whenever a new file starts reporting (the denominator suddenly
- * grows). The reported value is therefore clamped to be monotonically
- * increasing: it may pause while a newly discovered file catches up, but it
- * never goes backwards.
+ * Prefer transformers.js `progress_total` events: those are pre-seeded with
+ * every expected file's size, so the bar does not jump to 100% after the first
+ * ONNX file finishes while larger siblings are still downloading. Fall back to
+ * per-file `progress` only when totals are unavailable, and rescale `best`
+ * whenever the known byte total grows so the bar can move backwards honestly.
  */
 function makeDownloadTracker(label: string) {
   const files = new Map<string, { loaded: number; total: number }>();
   let best = 0;
-  return (p: { status?: string; file?: string; loaded?: number; total?: number }) => {
+  let lastTotal = 0;
+  let useTotalEvents = false;
+
+  const report = (loaded: number, total: number) => {
+    if (total <= 0) return;
+    if (total > lastTotal && lastTotal > 0 && best > 0) {
+      best *= lastTotal / total;
+    }
+    lastTotal = total;
+    best = Math.max(best, Math.min(1, loaded / total));
+    post({ type: "progress", message: label, value: best });
+  };
+
+  return (p: {
+    status?: string;
+    file?: string;
+    loaded?: number;
+    total?: number;
+    progress?: number;
+  }) => {
+    if (p.status === "progress_total") {
+      useTotalEvents = true;
+      const total = p.total ?? 0;
+      const loaded =
+        total > 0 && typeof p.progress === "number"
+          ? (p.progress / 100) * total
+          : (p.loaded ?? 0);
+      report(loaded, total);
+      return;
+    }
+
+    // Per-file fallback when the library could not pre-seed expected files.
+    if (useTotalEvents) return;
     if (p.status !== "progress" || !p.file || !p.total) return;
     files.set(p.file, { loaded: p.loaded ?? 0, total: p.total });
     let loaded = 0;
@@ -53,9 +99,7 @@ function makeDownloadTracker(label: string) {
       loaded += f.loaded;
       total += f.total;
     }
-    if (total === 0) return;
-    best = Math.max(best, Math.min(1, loaded / total));
-    post({ type: "progress", message: label, value: best });
+    report(loaded, total);
   };
 }
 
@@ -87,8 +131,7 @@ async function pickDevice(): Promise<"webgpu" | "wasm"> {
   return "wasm";
 }
 
-// Keyed by model id: choices that share the same underlying model (e.g.
-// "fast" and "verbatim", which differ only in prompting) share one pipeline.
+// Keyed by model id so choices that share weights reuse one pipeline.
 const asrPromises = new Map<string, Promise<AutomaticSpeechRecognitionPipeline>>();
 async function getAsr(choice: ModelChoice) {
   const { id, dtype } = MODELS[choice];
@@ -171,6 +214,132 @@ type Diarizer = {
 };
 
 /**
+ * Silero VAD: ~2 MB ONNX model that scores speech probability per 32 ms frame.
+ * Used to find speech segments so Whisper never decodes long silence.
+ * Falls back to energy VAD on failure.
+ */
+type VadModel = {
+  (inputs: {
+    input: InstanceType<typeof Tensor>;
+    sr: InstanceType<typeof Tensor>;
+    state: InstanceType<typeof Tensor>;
+  }): Promise<{
+    output: { data: ArrayLike<number> };
+    stateN: InstanceType<typeof Tensor>;
+  }>;
+};
+
+let vadPromise: Promise<VadModel | null> | null = null;
+function getVad(): Promise<VadModel | null> {
+  if (!vadPromise) {
+    vadPromise = AutoModel.from_pretrained(VAD_MODEL, {
+      // Silero ships as a custom ONNX graph without a transformers config.
+      // @ts-expect-error transformers.js accepts model_type via config override
+      config: { model_type: "custom" },
+      dtype: "fp32",
+    })
+      .then((model) => model as unknown as VadModel)
+      .catch((err) => {
+        console.warn("Silero VAD failed to load; using energy-based silence detection.", err);
+        return null;
+      });
+  }
+  return vadPromise;
+}
+
+async function speechFramesWithSilero(
+  model: VadModel,
+  audio: Float32Array
+): Promise<boolean[]> {
+  const frameSize = VAD_FRAME_SIZE;
+  const n = Math.ceil(audio.length / frameSize) || 0;
+  const out: boolean[] = new Array(n);
+  const sr = new Tensor("int64", [BigInt(VAD_SAMPLE_RATE)], []);
+  let state = new Tensor("float32", new Float32Array(2 * 1 * 128), [2, 1, 128]);
+  // Reuse one frame buffer across calls — safe because we await each inference.
+  const frameBuf = new Float32Array(frameSize);
+  const threshold = 0.5;
+
+  for (let f = 0; f < n; f++) {
+    const start = f * frameSize;
+    const end = Math.min(audio.length, start + frameSize);
+    frameBuf.fill(0);
+    frameBuf.set(audio.subarray(start, end));
+    const input = new Tensor("float32", frameBuf, [1, frameSize]);
+    const { output, stateN } = await model({ input, sr, state });
+    state = stateN;
+    out[f] = Number(output.data[0] ?? 0) >= threshold;
+
+    if (f > 0 && f % 512 === 0) {
+      post({ type: "progress", message: "Detecting speech…", value: f / n });
+    }
+  }
+  return out;
+}
+
+/** Turn speech-frame flags into segments, with a full-audio fallback. */
+function segmentsOrFull(
+  frames: boolean[],
+  audio: Float32Array
+): SpeechSegment[] {
+  const segments = speechSegmentsFromFrames(frames, audio.length, {
+    maxGapS: SPEECH_MAX_GAP_S,
+    padS: SPEECH_PAD_S,
+  });
+  if (segments.length > 0) return segments;
+  console.warn("VAD found no speech; falling back to full audio.");
+  return [{ startSample: 0, endSample: audio.length }];
+}
+
+async function detectSpeechSegments(
+  audio: Float32Array,
+  vad: VadModel | null
+): Promise<SpeechSegment[]> {
+  try {
+    const frames = vad
+      ? await speechFramesWithSilero(vad, audio)
+      : energySpeechFrames(audio);
+    return segmentsOrFull(frames, audio);
+  } catch (err) {
+    console.warn("Speech segmentation failed; falling back to full audio.", err);
+    return [{ startSample: 0, endSample: audio.length }];
+  }
+}
+
+type AsrChunk = { text: string; timestamp: [number, number | null] };
+
+/** Map Whisper word chunks from a segment onto the original media timeline. */
+function wordsFromChunks(
+  chunks: AsrChunk[],
+  offsetS: number,
+  segmentDuration: number,
+  mediaDuration: number
+): Word[] {
+  const words: Word[] = [];
+  for (const c of chunks) {
+    const text = c.text.trim();
+    if (!text) continue;
+    const localStart = c.timestamp[0] ?? 0;
+    const localEnd = c.timestamp[1] ?? Math.min(localStart + 0.5, segmentDuration);
+    let start = offsetS + localStart;
+    let end = offsetS + localEnd;
+    if (mediaDuration > 0) {
+      start = Math.min(start, mediaDuration);
+      end = Math.min(end, mediaDuration);
+    }
+    words.push({
+      id: words.length,
+      text,
+      start,
+      end: Math.max(end, start + 0.02),
+      speaker: 0,
+      deleted: false,
+    });
+  }
+  return words;
+}
+
+/**
  * Load the diarization model. Started in the background while Whisper is
  * still transcribing, so the (small) speaker model is downloaded, cached,
  * and ready by the time the transcript lands — closing the tab right after
@@ -243,8 +412,14 @@ function assignSpeakers(words: Word[], segments: DiarizationSegment[]) {
 self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
   const { audio, duration, model, language } = event.data;
   try {
-    const choice = model ?? "fast";
-    const transcriber = await getAsr(choice);
+    const choice = model ?? "base";
+
+    // Overlap Whisper + Silero downloads; diarizer warms in the background.
+    getDiarizer().catch(() => {});
+    const [transcriber, vad] = await Promise.all([getAsr(choice), getVad()]);
+
+    post({ type: "progress", message: "Detecting speech…", value: 0 });
+    const speechSegments = await detectSpeechSegments(audio, vad);
 
     const { verbatimPrompt } = MODELS[choice];
     const promptedIds = verbatimPrompt
@@ -253,13 +428,18 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
     if (verbatimPrompt && !promptedIds) {
       console.warn("Could not build verbatim prompt tokens; using default decoding.");
     }
-    // Warm up the speaker model in parallel with transcription (errors are
-    // handled when it is awaited later; this avoids an unhandled rejection).
-    getDiarizer().catch(() => {});
+
+    const speechSamples = speechSegments.reduce(
+      (n, s) => n + (s.endSample - s.startSample),
+      0
+    );
+
     post({ type: "progress", message: "Transcribing…", value: 0 });
 
     let partial = "";
-    const chunkLength = 30;
+    // Use 29s instead of 30: transformers.js has a known word-timestamp bug
+    // at exactly chunk_length_s=30 (#1357 / #1358); 29 is the common workaround.
+    const chunkLength = 29;
     const stride = 5;
     const timePrecision =
       // @ts-expect-error feature_extractor config is untyped
@@ -270,58 +450,63 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
     const tokenizer = transcriber.tokenizer as ConstructorParameters<
       typeof WhisperTextStreamer
     >[0];
-    // Chunk start times can jitter around stride boundaries; clamp the
-    // reported transcription progress so it only ever moves forward.
-    let transcribed = 0;
-    const streamer = new WhisperTextStreamer(tokenizer, {
-      skip_prompt: true,
-      time_precision: timePrecision,
-      on_chunk_start: (t: number) => {
-        if (duration > 0) {
-          transcribed = Math.max(transcribed, Math.min(1, t / duration));
-        }
-        post({
-          type: "progress",
-          message: "Transcribing…",
-          value: duration > 0 ? transcribed : null,
-        });
-      },
-      callback_function: (text: string) => {
-        partial += text;
-        post({ type: "partial", text: partial });
-      },
-    });
 
-    const output = await transcriber(audio, {
+    let speechDone = 0;
+    let transcribed = 0;
+    const reportProgress = (segmentLocalT: number, segmentSamples: number) => {
+      const local = Math.min(
+        segmentSamples,
+        Math.max(0, segmentLocalT * VAD_SAMPLE_RATE)
+      );
+      transcribed = Math.max(
+        transcribed,
+        Math.min(1, speechSamples > 0 ? (speechDone + local) / speechSamples : 1)
+      );
+      post({ type: "progress", message: "Transcribing…", value: transcribed });
+    };
+
+    const asrOptions = {
       chunk_length_s: chunkLength,
       stride_length_s: stride,
-      return_timestamps: "word",
-      // decoder_input_ids overrides language/task tokens when prompting.
+      return_timestamps: "word" as const,
+      // Anti-repetition: Whisper-base on multi-minute audio often falls into
+      // loops like "little bit of a little bit of a…" near chunk boundaries
+      // or silence. These generation knobs cut that off at decode time.
+      no_repeat_ngram_size: 4,
+      repetition_penalty: 1.15,
       ...(promptedIds ? { decoder_input_ids: promptedIds } : { language }),
-      streamer,
-    });
+    };
 
-    const result = Array.isArray(output) ? output[0] : output;
-    const chunks = (result.chunks ?? []) as {
-      text: string;
-      timestamp: [number, number | null];
-    }[];
+    const rawWords: Word[] = [];
+    for (const seg of speechSegments) {
+      const segmentSamples = seg.endSample - seg.startSample;
+      const segmentDuration = segmentSamples / VAD_SAMPLE_RATE;
+      const offsetS = seg.startSample / VAD_SAMPLE_RATE;
+      // subarray avoids copying; Whisper/ORT owns the samples for this await.
+      const slice = audio.subarray(seg.startSample, seg.endSample);
 
-    const words: Word[] = [];
-    for (const c of chunks) {
-      const text = c.text.trim();
-      if (!text) continue;
-      const start = c.timestamp[0] ?? 0;
-      const end = c.timestamp[1] ?? Math.min(start + 0.5, duration || start + 0.5);
-      words.push({
-        id: words.length,
-        text,
-        start,
-        end: Math.max(end, start + 0.02),
-        speaker: 0,
-        deleted: false,
+      const streamer = new WhisperTextStreamer(tokenizer, {
+        skip_prompt: true,
+        time_precision: timePrecision,
+        on_chunk_start: (t: number) => reportProgress(t, segmentSamples),
+        callback_function: (text: string) => {
+          partial += text;
+          post({ type: "partial", text: partial });
+        },
       });
+
+      const output = await transcriber(slice, { ...asrOptions, streamer });
+      const result = Array.isArray(output) ? output[0] : output;
+      const chunks = (result.chunks ?? []) as AsrChunk[];
+      rawWords.push(...wordsFromChunks(chunks, offsetS, segmentDuration, duration));
+
+      speechDone += segmentSamples;
+      reportProgress(0, 0);
     }
+
+    // Post-process: collapse leftover n-gram loops and drop known hallucination
+    // phrases ("I'm sorry", "thanks for watching", …) that slip past decoding.
+    const words = cleanTranscript(rawWords);
 
     // Best-effort speaker diarization; a failure should not lose the transcript.
     try {
