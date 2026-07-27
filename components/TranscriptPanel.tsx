@@ -51,10 +51,10 @@ const WordSpan = memo(function WordSpan({
       data-wid={word.id}
       onClick={() => onClick(word)}
       className={`cursor-pointer transition-colors duration-75 ${word.deleted
-          ? "word-deleted bg-red-50 text-red-400 line-through decoration-red-300"
-          : active
-            ? "bg-neutral-200/80 text-zinc-900"
-            : "text-zinc-800 hover:bg-neutral-50"
+        ? "word-deleted bg-red-50 text-red-400 line-through decoration-red-300"
+        : active
+          ? "bg-neutral-200/80 text-zinc-900"
+          : "text-zinc-800 hover:bg-neutral-50"
         }`}
     >
       {word.text}{" "}
@@ -270,14 +270,14 @@ export default function TranscriptPanel() {
         <span className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
           Transcript
         </span>
-        {status === "ready" && (
-          <span className="hidden text-xs text-zinc-400 md:inline">
-            · select words and press ⌫ to cut
-          </span>
-        )}
         <div className="ml-auto flex items-center gap-2">
+          {status === "ready" && (
+            <span className="hidden text-xs text-zinc-400 md:inline">
+              select words and press ⌫ to cut
+            </span>
+          )}
           {deletedCount > 0 && (
-            <span className="rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-500">
+            <span className="rounded-md bg-red-50 px-2 py-0.5 text-[9px] font-medium text-red-500">
               {deletedCount} word{deletedCount === 1 ? "" : "s"} cut
             </span>
           )}
@@ -302,7 +302,7 @@ export default function TranscriptPanel() {
                   <p className="text-sm font-medium text-zinc-700">{progress.message}</p>
                   {progress.value !== null && (
                     <>
-                      <div className="mt-1 ml-auto w-[100px] h-1 overflow-hidden rounded-full bg-zinc-200">
+                      <div className="ml-auto w-[100px] h-1 overflow-hidden rounded-full bg-zinc-200">
                         <div
                           className="h-full rounded-full bg-neutral-500 transition-[width] duration-300"
                           style={{ width: `${progress.value * 100}%` }}
