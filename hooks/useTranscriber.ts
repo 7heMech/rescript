@@ -52,7 +52,10 @@ export function useTranscriber() {
 
     // Transfer a copy so the original stays available for the waveform.
     const copy = audio.slice();
-    workerRef.current.postMessage({ audio: copy, duration }, [copy.buffer]);
+    workerRef.current.postMessage(
+      { audio: copy, duration, model: store.model },
+      [copy.buffer]
+    );
   }, []);
 
   return { transcribe };
