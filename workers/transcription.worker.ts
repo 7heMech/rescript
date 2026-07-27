@@ -47,18 +47,50 @@ const post = (msg: WorkerResponse, transfer: Transferable[] = []) =>
   (self as unknown as Worker).postMessage(msg, transfer);
 
 /**
- * Aggregate multi-file download progress into a single 0..1 value.
+ * Aggregate model download progress into a single 0..1 value.
  *
- * Files are discovered progressively, so the naive loaded/total ratio can
- * *drop* whenever a new file starts reporting (the denominator suddenly
- * grows). The reported value is therefore clamped to be monotonically
- * increasing: it may pause while a newly discovered file catches up, but it
- * never goes backwards.
+ * Prefer transformers.js `progress_total` events: those are pre-seeded with
+ * every expected file's size, so the bar does not jump to 100% after the first
+ * ONNX file finishes while larger siblings are still downloading. Fall back to
+ * per-file `progress` only when totals are unavailable, and rescale `best`
+ * whenever the known byte total grows so the bar can move backwards honestly.
  */
 function makeDownloadTracker(label: string) {
   const files = new Map<string, { loaded: number; total: number }>();
   let best = 0;
-  return (p: { status?: string; file?: string; loaded?: number; total?: number }) => {
+  let lastTotal = 0;
+  let useTotalEvents = false;
+
+  const report = (loaded: number, total: number) => {
+    if (total <= 0) return;
+    if (total > lastTotal && lastTotal > 0 && best > 0) {
+      best *= lastTotal / total;
+    }
+    lastTotal = total;
+    best = Math.max(best, Math.min(1, loaded / total));
+    post({ type: "progress", message: label, value: best });
+  };
+
+  return (p: {
+    status?: string;
+    file?: string;
+    loaded?: number;
+    total?: number;
+    progress?: number;
+  }) => {
+    if (p.status === "progress_total") {
+      useTotalEvents = true;
+      const total = p.total ?? 0;
+      const loaded =
+        total > 0 && typeof p.progress === "number"
+          ? (p.progress / 100) * total
+          : (p.loaded ?? 0);
+      report(loaded, total);
+      return;
+    }
+
+    // Per-file fallback when the library could not pre-seed expected files.
+    if (useTotalEvents) return;
     if (p.status !== "progress" || !p.file || !p.total) return;
     files.set(p.file, { loaded: p.loaded ?? 0, total: p.total });
     let loaded = 0;
@@ -67,9 +99,7 @@ function makeDownloadTracker(label: string) {
       loaded += f.loaded;
       total += f.total;
     }
-    if (total === 0) return;
-    best = Math.max(best, Math.min(1, loaded / total));
-    post({ type: "progress", message: label, value: best });
+    report(loaded, total);
   };
 }
 
