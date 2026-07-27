@@ -11,7 +11,7 @@ import {
   originalToEdited,
 } from "@/lib/edits";
 
-export default function VideoPreview() {
+export default function MediaPreview() {
   const mediaUrl = useEditorStore((s) => s.mediaUrl);
   const videoFile = useEditorStore((s) => s.videoFile);
   const mediaKind = useEditorStore((s) => s.mediaKind);
