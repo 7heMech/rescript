@@ -7,7 +7,7 @@ it is transcribed locally with per-word timestamps and speaker labels. Delete
 words in the transcript and the corresponding clip is cut from the video.
 Export the final cut to MP4 — without your video ever leaving your device.
 
-- 🔒 **Private by design** — no server, no auth, no API calls, no uploads
+- 🔒 **Private by design** — no server, no auth, no uploads; all media processing happens on-device
 - 📝 **Word-level editing** — select words, press ⌫, the cut follows the text
 - 🗣️ **Speaker diarization** — the transcript is grouped by speaker
 - 🎬 **Timeline** — waveform, word labels, cut regions, playhead, zoom
@@ -37,7 +37,9 @@ audio track.
 > **Note on "offline":** the AI models (~90 MB total) are downloaded from the
 > Hugging Face Hub the *first* time you transcribe, then cached in browser
 > storage. After that, everything — transcription, editing, export — works with
-> the network fully disconnected. The app itself never makes API calls.
+> the network fully disconnected. Your media and transcript never leave the
+> device; the only third-party request the app makes is anonymous page
+> analytics (Google Analytics), which fails silently when offline.
 
 ## How it works
 

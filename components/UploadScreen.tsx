@@ -84,7 +84,7 @@ export default function UploadScreen({ onFile }: { onFile: (file: File) => void 
 
         <p className="mt-6 flex items-center justify-center gap-1.5 text-center text-xs text-zinc-400">
           <Lock size={12} />
-          No uploads, no accounts, no API calls — your video never leaves this device.
+          No uploads, no accounts — your video never leaves this device.
         </p>
       </div>
     </div>
