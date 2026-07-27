@@ -18,9 +18,13 @@ export async function getFFmpeg(): Promise<FFmpeg> {
         import("@ffmpeg/ffmpeg"),
         import("@ffmpeg/util"),
       ]);
-      if (!self.crossOriginIsolated) {
-        console.warn(
-          "Page is not cross-origin isolated; ffmpeg.wasm multi-threading requires COOP/COEP headers."
+      // Multi-threaded ffmpeg.wasm needs SharedArrayBuffer, i.e. a
+      // cross-origin-isolated page (real COOP/COEP headers, or the COI service
+      // worker after its reload). Without it the core throws a bare
+      // "SharedArrayBuffer is not defined" from deep inside the worker.
+      if (!self.crossOriginIsolated || typeof SharedArrayBuffer === "undefined") {
+        throw new Error(
+          "The media engine isn't ready yet — reload the page and try again."
         );
       }
       const ffmpeg = new FFmpeg();
