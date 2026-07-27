@@ -19,7 +19,7 @@ the media. Export the final cut — without your file ever leaving your device.
 
 - 🔒 **Private by design** — no server, no auth, no uploads; all media processing happens on-device
 - 📝 **Word-level editing** — select words, press ⌫, the cut follows the text
-- 🧹 **Filler removal** — one-click cut of "um", "uh", and similar fillers (use Verbatim mode to keep them in the transcript)
+- 🧹 **Filler removal** — one-click cut of "um", "uh", and similar fillers
 - 🗣️ **Speaker diarization** — the transcript is grouped by speaker
 - 🎬 **Timeline** — waveform, word labels, cut regions, playhead, zoom
 - ⚡ **Live preview** — playback skips your cuts in real time
@@ -31,7 +31,7 @@ the media. Export the final cut — without your file ever leaving your device.
 | Piece | Tech |
 | --- | --- |
 | App | [Next.js](https://nextjs.org) + React + TypeScript + Tailwind |
-| Transcription | [transformers.js](https://github.com/huggingface/transformers.js) running [`whisper-base_timestamped`](https://huggingface.co/onnx-community/whisper-base_timestamped) (WebGPU with WASM fallback) in a Web Worker |
+| Transcription | [transformers.js](https://github.com/huggingface/transformers.js) running [`whisper-base_timestamped`](https://huggingface.co/onnx-community/whisper-base_timestamped) or [`whisper-small_timestamped`](https://huggingface.co/onnx-community/whisper-small_timestamped) (WebGPU with WASM fallback) in a Web Worker |
 | Speaker labels | [`pyannote-segmentation-3.0`](https://huggingface.co/onnx-community/pyannote-segmentation-3.0) (ONNX) |
 | Media processing | [ffmpeg.wasm](https://ffmpegwasm.netlify.app/) (multi-threaded) for audio extraction and export |
 | State | zustand |
@@ -48,19 +48,21 @@ npm run lint    # eslint
 Open [http://localhost:3000](http://localhost:3000) and drop in a video with an
 audio track.
 
-> **Note on "offline":** the AI models (~90 MB total) are downloaded from the
-> Hugging Face Hub the *first* time you transcribe, then cached in browser
-> storage. After that, everything — transcription, editing, export — works with
-> the network fully disconnected. Your media and transcript never leave the
-> device; the only third-party request the app makes is anonymous page
-> analytics (Google Analytics), which fails silently when offline.
+> **Note on "offline":** the AI models (Whisper Base ~200 MB, or Small ~600 MB,
+> plus a small speaker model) are downloaded from the Hugging Face Hub the
+> *first* time you transcribe, then cached in browser storage. After that,
+> everything — transcription, editing, export — works with the network fully
+> disconnected. Your media and transcript never leave the device; the only
+> third-party request the app makes is anonymous page analytics (Google
+> Analytics), which fails silently when offline.
 
 ## How it works
 
 1. **Extract** — ffmpeg.wasm decodes the audio track to mono 16 kHz PCM.
 2. **Transcribe** — Whisper runs in a Web Worker with `return_timestamps: "word"`,
    streaming text as it goes; pyannote assigns a speaker to every word.
-   **Verbatim** mode prompts Whisper to keep filler words so they can be edited.
+   Choose **Whisper Base** or **Whisper Small** on the homepage; both are
+   prompted to keep filler words so they can be edited.
 3. **Edit** — deleting words produces "cut ranges" of the original media. The
    preview player skips them in real time and the timeline shows them in red.
    **Remove fillers** cuts every detected "um" / "uh" / etc. in one click.

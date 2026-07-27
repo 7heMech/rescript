@@ -1,5 +1,5 @@
 /** Transcription model choices offered on the upload screen. */
-export type ModelChoice = "fast" | "verbatim";
+export type ModelChoice = "base" | "small";
 
 type DType = "fp32" | "fp16" | "q8" | "int8" | "uint8" | "q4" | "q4f16" | "bnb4";
 
@@ -28,30 +28,35 @@ export interface ModelInfo {
   verbatimPrompt?: string;
 }
 
-const WHISPER_BASE = "onnx-community/whisper-base_timestamped";
-const WHISPER_BASE_DTYPE = {
+/** Display order for the homepage model dropdown. */
+export const MODEL_ORDER: ModelChoice[] = ["base", "small"];
+
+const WHISPER_DTYPE = {
   // q4 decoder: q8 fails session creation on onnxruntime-web 1.26
   // (Missing required scale … MatMulNBits).
   webgpu: { encoder_model: "fp32", decoder_model_merged: "q4" },
   wasm: { encoder_model: "fp32", decoder_model_merged: "q4" },
 } satisfies ModelInfo["dtype"];
 
+/** Shared prompt so both sizes keep um/uh for filler editing. */
+const VERBATIM_PROMPT =
+  "Umm, let me think like, hmm... Okay, here's what I'm, like, thinking, um, yeah.";
+
 export const MODELS: Record<ModelChoice, ModelInfo> = {
-  fast: {
-    id: WHISPER_BASE,
-    label: "Standard",
-    description: "Fast on any device. May clean up filler words (\u201cum\u201d, \u201cuh\u201d).",
-    size: "~80 MB",
-    dtype: WHISPER_BASE_DTYPE,
+  base: {
+    id: "onnx-community/whisper-base_timestamped",
+    label: "Whisper Base",
+    description: "Faster download and transcription. Good for most clips.",
+    size: "~200 MB",
+    dtype: WHISPER_DTYPE,
+    verbatimPrompt: VERBATIM_PROMPT,
   },
-  verbatim: {
-    id: WHISPER_BASE,
-    label: "Verbatim",
-    description:
-      "Tries to keep filler words (\u201cum\u201d, \u201cuh\u201d) in the transcript so you can cut them. Same speed and size.",
-    size: "~80 MB",
-    dtype: WHISPER_BASE_DTYPE,
-    verbatimPrompt:
-      "Umm, let me think like, hmm... Okay, here's what I'm, like, thinking, um, yeah.",
+  small: {
+    id: "onnx-community/whisper-small_timestamped",
+    label: "Whisper Small",
+    description: "More accurate on longer or noisier audio. Larger download.",
+    size: "~600 MB",
+    dtype: WHISPER_DTYPE,
+    verbatimPrompt: VERBATIM_PROMPT,
   },
 };

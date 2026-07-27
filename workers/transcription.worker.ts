@@ -101,8 +101,7 @@ async function pickDevice(): Promise<"webgpu" | "wasm"> {
   return "wasm";
 }
 
-// Keyed by model id: choices that share the same underlying model (e.g.
-// "fast" and "verbatim", which differ only in prompting) share one pipeline.
+// Keyed by model id so choices that share weights reuse one pipeline.
 const asrPromises = new Map<string, Promise<AutomaticSpeechRecognitionPipeline>>();
 async function getAsr(choice: ModelChoice) {
   const { id, dtype } = MODELS[choice];
@@ -383,7 +382,7 @@ function assignSpeakers(words: Word[], segments: DiarizationSegment[]) {
 self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
   const { audio, duration, model, language } = event.data;
   try {
-    const choice = model ?? "fast";
+    const choice = model ?? "base";
 
     // Overlap Whisper + Silero downloads; diarizer warms in the background.
     getDiarizer().catch(() => {});

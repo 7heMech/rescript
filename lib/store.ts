@@ -70,7 +70,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   mediaKind: null,
   duration: 0,
   audio: null,
-  model: "verbatim",
+  model: "base",
 
   status: "idle",
   progress: { message: "", value: null },

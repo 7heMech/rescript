@@ -14,6 +14,7 @@ import {
   Type,
 } from "lucide-react";
 import logo from "@/assets/logo.png";
+import ModelSelector from "./ModelSelector";
 import { useCrossOriginIsolated } from "@/hooks/useCrossOriginIsolated";
 import { detectMediaKind, MEDIA_ACCEPT } from "@/lib/media";
 
@@ -182,6 +183,10 @@ export default function UploadScreen({ onFile }: { onFile: (file: File) => void 
             className="hidden"
             onChange={(e) => handleFiles(e.target.files)}
           />
+        </div>
+
+        <div className="mt-4">
+          <ModelSelector />
         </div>
 
         <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
