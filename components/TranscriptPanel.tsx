@@ -50,13 +50,12 @@ const WordSpan = memo(function WordSpan({
     <span
       data-wid={word.id}
       onClick={() => onClick(word)}
-      className={`cursor-pointer transition-colors duration-75 ${
-        word.deleted
+      className={`cursor-pointer transition-colors duration-75 ${word.deleted
           ? "word-deleted bg-red-50 text-red-400 line-through decoration-red-300"
           : active
             ? "bg-neutral-200/80 text-zinc-900"
             : "text-zinc-800 hover:bg-neutral-50"
-      }`}
+        }`}
     >
       {word.text}{" "}
     </span>
@@ -302,19 +301,19 @@ export default function TranscriptPanel() {
                   <div className="h-4 w-4 animate-spin rounded-full border-2 border-neutral-500 border-t-transparent" />
                   <p className="text-sm font-medium text-zinc-700">{progress.message}</p>
                   {progress.value !== null && (
-                    <span className="ml-auto text-xs tabular-nums text-zinc-400">
-                      {Math.round(progress.value * 100)}%
-                    </span>
+                    <>
+                      <div className="mt-1 ml-auto w-[100px] h-1 overflow-hidden rounded-full bg-zinc-200">
+                        <div
+                          className="h-full rounded-full bg-neutral-500 transition-[width] duration-300"
+                          style={{ width: `${progress.value * 100}%` }}
+                        />
+                      </div>
+                      <span className="text-xs tabular-nums text-zinc-400">
+                        {Math.round(progress.value * 100)}%
+                      </span>
+                    </>
                   )}
                 </div>
-                {progress.value !== null && (
-                  <div className="mt-1 h-1 overflow-hidden rounded-full bg-zinc-200">
-                    <div
-                      className="h-full rounded-full bg-neutral-500 transition-[width] duration-300"
-                      style={{ width: `${progress.value * 100}%` }}
-                    />
-                  </div>
-                )}
               </div>
               {partialText && (
                 <p className="text-[15px] leading-8 text-zinc-400">
