@@ -62,8 +62,8 @@ audio track.
 1. **Extract** — ffmpeg.wasm decodes the audio track to mono 16 kHz PCM.
 2. **Transcribe** — Whisper runs in a Web Worker with `return_timestamps: "word"`,
    streaming text as it goes; pyannote assigns a speaker to every word.
-   Choose **Whisper Base** or **Whisper Small** on the homepage.
-   Alternatively, **import an SRT / VTT / JSON** transcript and skip AI entirely.
+   Choose **Whisper Base**, **Whisper Small**, or **Import transcript**
+   (SRT / VTT / JSON) on the homepage.
 3. **Edit** — deleting words produces "cut ranges" of the original media. The
    preview player skips them in real time and the timeline shows them in red.
    **Remove fillers** cuts every detected "um" / "uh" / etc. in one click.

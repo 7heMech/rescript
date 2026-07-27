@@ -1,5 +1,6 @@
-/** Transcription model choices offered on the upload screen. */
-export type ModelChoice = "base" | "small";
+/** Transcription source choices offered on the upload screen. */
+export type WhisperModel = "base" | "small";
+export type ModelChoice = WhisperModel | "import";
 
 type DType = "fp32" | "fp16" | "q8" | "int8" | "uint8" | "q4" | "q4f16" | "bnb4";
 
@@ -28,8 +29,11 @@ export interface ModelInfo {
   verbatimPrompt?: string;
 }
 
-/** Display order for the homepage model dropdown. */
-export const MODEL_ORDER: ModelChoice[] = ["base", "small"];
+/** Display order for Whisper rows in the homepage source dropdown. */
+export const WHISPER_ORDER: WhisperModel[] = ["base", "small"];
+
+/** @deprecated Prefer WHISPER_ORDER; kept for older imports. */
+export const MODEL_ORDER = WHISPER_ORDER;
 
 const WHISPER_DTYPE = {
   // q4 decoder: q8 fails session creation on onnxruntime-web 1.26
@@ -38,7 +42,8 @@ const WHISPER_DTYPE = {
   wasm: { encoder_model: "fp32", decoder_model_merged: "q4" },
 } satisfies ModelInfo["dtype"];
 
-export const MODELS: Record<ModelChoice, ModelInfo> = {
+/** Whisper models that can run in the transcription worker. */
+export const MODELS: Record<WhisperModel, ModelInfo> = {
   base: {
     id: "onnx-community/whisper-base_timestamped",
     label: "Whisper Base",
@@ -58,26 +63,32 @@ export const MODELS: Record<ModelChoice, ModelInfo> = {
   },
 };
 
-const MODEL_STORAGE_KEY = "rescript.model";
-
-export function isModelChoice(value: unknown): value is ModelChoice {
-  return typeof value === "string" && value in MODELS;
+export function isWhisperModel(value: unknown): value is WhisperModel {
+  return value === "base" || value === "small";
 }
 
-/** Read the last-selected model from localStorage (defaults to base). */
-export function loadModelPreference(): ModelChoice {
+export function isModelChoice(value: unknown): value is ModelChoice {
+  return isWhisperModel(value) || value === "import";
+}
+
+const MODEL_STORAGE_KEY = "rescript.model";
+
+/** Read the last-selected Whisper model from localStorage (defaults to base). */
+export function loadModelPreference(): WhisperModel {
   if (typeof window === "undefined") return "base";
   try {
     const raw = window.localStorage.getItem(MODEL_STORAGE_KEY);
-    if (isModelChoice(raw)) return raw;
+    // Ignore a stale "import" preference — that choice is session-only until a
+    // transcript file is picked again.
+    if (isWhisperModel(raw)) return raw;
   } catch {
     // private mode / disabled storage
   }
   return "base";
 }
 
-/** Persist the selected model for the next visit. */
-export function saveModelPreference(model: ModelChoice) {
+/** Persist the selected Whisper model for the next visit. */
+export function saveModelPreference(model: WhisperModel) {
   if (typeof window === "undefined") return;
   try {
     window.localStorage.setItem(MODEL_STORAGE_KEY, model);

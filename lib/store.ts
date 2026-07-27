@@ -2,8 +2,13 @@
 
 import { create } from "zustand";
 import type { EditorStatus, ProgressInfo, Word } from "./types";
+import {
+  isModelChoice,
+  isWhisperModel,
+  loadModelPreference,
+  saveModelPreference,
+} from "./models";
 import type { ModelChoice } from "./models";
-import { loadModelPreference, saveModelPreference } from "./models";
 import { detectMediaKind, type MediaKind } from "./media";
 import {
   deleteProject,
@@ -11,6 +16,11 @@ import {
   getProject,
   type ProjectMeta,
 } from "./projects";
+
+interface PendingTranscript {
+  name: string;
+  words: Word[];
+}
 
 interface EditorState {
   // Media
@@ -21,13 +31,18 @@ interface EditorState {
   duration: number;
   /** Mono 16 kHz PCM of the media's audio track (used for waveform + ASR). */
   audio: Float32Array | null;
-  /** Transcription model selected on the upload screen. */
+  /** Transcript source selected on the upload screen (Whisper or import). */
   model: ModelChoice;
+  /**
+   * Caption file parsed on the upload screen when source is "import".
+   * Cleared when switching back to a Whisper model or after media loads.
+   */
+  pendingTranscript: PendingTranscript | null;
   /** IndexedDB project id when this session is persisted; null for a fresh upload mid-pipeline. */
   projectId: string | null;
   /**
    * When true, Editor extracts audio for the waveform but skips Whisper
-   * (restored projects already have words).
+   * (restored projects / imported transcripts already have words).
    */
   skipTranscription: boolean;
 
@@ -61,6 +76,7 @@ interface EditorState {
   /** Delete a saved project; if it is the active one, resets to the home screen. */
   removeProject: (id: string) => Promise<void>;
   setModel: (m: ModelChoice) => void;
+  setPendingTranscript: (t: PendingTranscript | null) => void;
   setDuration: (d: number) => void;
   setAudio: (a: Float32Array) => void;
   setStatus: (s: EditorStatus) => void;
@@ -100,6 +116,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   duration: 0,
   audio: null,
   model: "base",
+  pendingTranscript: null,
   projectId: null,
   skipTranscription: false,
 
@@ -127,12 +144,15 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     if (imported && imported.length === 0) return;
     const prev = get().mediaUrl;
     if (prev) URL.revokeObjectURL(prev);
+    const current = get().model;
     set({
       videoFile: file,
       mediaUrl: URL.createObjectURL(file),
       mediaKind: kind,
       projectId: null,
       skipTranscription: Boolean(imported),
+      model: imported ? "import" : isWhisperModel(current) ? current : "base",
+      pendingTranscript: null,
       status: "preparing",
       progress: {
         message: imported ? "Loading media…" : "Loading media engine…",
@@ -161,9 +181,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       mediaUrl: URL.createObjectURL(file),
       mediaKind: record.mediaKind,
       duration: record.duration,
-      model: record.model,
+      model: isModelChoice(record.model) ? record.model : "base",
       projectId: record.id,
       skipTranscription: true,
+      pendingTranscript: null,
       status: "preparing",
       progress: { message: "Loading media engine…", value: null },
       words: record.words,
@@ -188,9 +209,14 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   },
 
   setModel: (model) => {
-    saveModelPreference(model);
-    set({ model });
+    if (isWhisperModel(model)) {
+      saveModelPreference(model);
+      set({ model, pendingTranscript: null });
+    } else {
+      set({ model });
+    }
   },
+  setPendingTranscript: (pendingTranscript) => set({ pendingTranscript }),
   setDuration: (duration) => {
     set({ duration });
     if (get().status === "ready") bumpAutosave();
@@ -228,6 +254,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       status: "ready",
       progress: { message: "", value: null },
       skipTranscription: true,
+      model: "import",
     });
     bumpAutosave();
   },
@@ -343,6 +370,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       mediaKind: null,
       duration: 0,
       audio: null,
+      model: loadModelPreference(),
+      pendingTranscript: null,
       projectId: null,
       skipTranscription: false,
       status: "idle",

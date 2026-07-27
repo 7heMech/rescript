@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef } from "react";
+import { isWhisperModel } from "@/lib/models";
 import { useEditorStore } from "@/lib/store";
 import type { WorkerResponse } from "@/lib/types";
 
@@ -25,6 +26,11 @@ export function useTranscriber() {
 
   const transcribe = useCallback((audio: Float32Array, duration: number) => {
     const store = useEditorStore.getState();
+    if (!isWhisperModel(store.model)) {
+      store.setError("Select Whisper Base or Small to transcribe.");
+      return;
+    }
+    const whisperModel = store.model;
     store.setStatus("transcribing");
     store.setProgress({ message: "Loading speech model…", value: null });
 
@@ -66,7 +72,7 @@ export function useTranscriber() {
     // Transfer a copy so the original stays available for the waveform.
     const copy = audio.slice();
     workerRef.current.postMessage(
-      { audio: copy, duration, model: store.model },
+      { audio: copy, duration, model: whisperModel },
       [copy.buffer]
     );
   }, []);

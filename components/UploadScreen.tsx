@@ -5,7 +5,6 @@ import Image from "next/image";
 import {
   AudioLines,
   Clapperboard,
-  FileText,
   Film,
   Loader2,
   Lock,
@@ -14,18 +13,12 @@ import {
   ShieldAlert,
   Trash2,
   Type,
-  X,
 } from "lucide-react";
 import logo from "@/assets/logo.png";
 import GitHubLink from "./GitHubLink";
 import ModelSelector from "./ModelSelector";
 import { useCrossOriginIsolated } from "@/hooks/useCrossOriginIsolated";
 import { detectMediaKind, MEDIA_ACCEPT } from "@/lib/media";
-import {
-  isTranscriptFile,
-  parseTranscriptFile,
-  TRANSCRIPT_ACCEPT,
-} from "@/lib/parseTranscript";
 import { formatTime } from "@/lib/edits";
 import {
   formatRelativeTime,
@@ -159,20 +152,16 @@ export default function UploadScreen({
   onFile: (file: File, options?: { words?: Word[] }) => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
-  const mediaInputRef = useRef<HTMLInputElement>(null);
-  const transcriptInputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   const [projects, setProjects] = useState<ProjectMeta[]>([]);
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [importOpen, setImportOpen] = useState(false);
-  const [importMedia, setImportMedia] = useState<File | null>(null);
-  const [importTranscript, setImportTranscript] = useState<File | null>(null);
-  const [importBusy, setImportBusy] = useState(false);
   // The pipeline needs SharedArrayBuffer, which on static hosts only appears
   // after the COI service worker reloads the page. Accepting a file before then
   // would fail immediately and lose the file to that reload.
   const isolation = useCrossOriginIsolated();
   const ready = isolation === "ready";
+  const model = useEditorStore((s) => s.model);
+  const pendingTranscript = useEditorStore((s) => s.pendingTranscript);
   const openProject = useEditorStore((s) => s.openProject);
   const removeProject = useEditorStore((s) => s.removeProject);
 
@@ -210,6 +199,16 @@ export default function UploadScreen({
         alert("Please choose a video or audio file.");
         return;
       }
+      const { model: source, pendingTranscript: pending } =
+        useEditorStore.getState();
+      if (source === "import") {
+        if (!pending) {
+          alert("Choose a transcript file from the source menu first.");
+          return;
+        }
+        onFile(file, { words: pending.words });
+        return;
+      }
       onFile(file);
     },
     [onFile, ready]
@@ -244,26 +243,6 @@ export default function UploadScreen({
     },
     [removeProject, refreshProjects]
   );
-
-  const closeImport = useCallback(() => {
-    setImportOpen(false);
-    setImportMedia(null);
-    setImportTranscript(null);
-    setImportBusy(false);
-  }, []);
-
-  const startImport = useCallback(async () => {
-    if (!ready || !importMedia || !importTranscript) return;
-    setImportBusy(true);
-    try {
-      const words = await parseTranscriptFile(importTranscript);
-      onFile(importMedia, { words });
-    } catch (err) {
-      console.error(err);
-      alert(err instanceof Error ? err.message : "Could not read that transcript.");
-      setImportBusy(false);
-    }
-  }, [ready, importMedia, importTranscript, onFile]);
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-gradient-to-b from-zinc-50 to-neutral-50/50">
@@ -343,7 +322,11 @@ export default function UploadScreen({
                 <span className="text-neutral-600">browse</span>
               </p>
               <p className="mt-1 text-[13px] text-zinc-400">
-                MP4, WebM, MOV, MP3, WAV, M4A, …
+                {model === "import"
+                  ? pendingTranscript
+                    ? `Will use ${pendingTranscript.name} · MP4, WebM, MOV, MP3, WAV, …`
+                    : "Pick a transcript in the menu above, then drop your media"
+                  : "MP4, WebM, MOV, MP3, WAV, M4A, …"}
               </p>
             </>
           ) : (
@@ -362,113 +345,6 @@ export default function UploadScreen({
             onChange={(e) => handleFiles(e.target.files)}
           />
         </div>
-
-        {ready && !importOpen && (
-          <p className="mt-3 text-center text-[13px] text-zinc-400">
-            Or{" "}
-            <button
-              type="button"
-              onClick={() => setImportOpen(true)}
-              className="font-medium text-zinc-600 underline-offset-2 transition hover:text-zinc-900 hover:underline"
-            >
-              import your own transcript
-            </button>{" "}
-            (SRT, VTT, JSON)
-          </p>
-        )}
-
-        {ready && importOpen && (
-          <div className="mt-4 rounded-2xl border border-zinc-200 bg-white/80 p-4">
-            <div className="mb-3 flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2 text-[13px] font-medium text-zinc-800">
-                <FileText size={15} className="text-zinc-500" />
-                Import media + transcript
-              </div>
-              <button
-                type="button"
-                onClick={closeImport}
-                className="flex h-7 w-7 items-center justify-center rounded-lg text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700"
-                title="Cancel"
-              >
-                <X size={14} />
-              </button>
-            </div>
-            <p className="mb-3 text-xs leading-relaxed text-zinc-500">
-              Skip Whisper and edit with timings from your caption file. Speakers
-              are taken from VTT voice tags or <span className="font-mono">Name:</span>{" "}
-              labels when present.
-            </p>
-            <div className="grid gap-2 sm:grid-cols-2">
-              <button
-                type="button"
-                onClick={() => mediaInputRef.current?.click()}
-                className="flex flex-col items-start gap-0.5 rounded-xl border border-dashed border-zinc-300 px-3 py-3 text-left transition hover:border-neutral-400 hover:bg-zinc-50"
-              >
-                <span className="text-[12px] font-medium text-zinc-700">Media</span>
-                <span className="w-full truncate text-[11px] text-zinc-400">
-                  {importMedia ? importMedia.name : "Choose video or audio…"}
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={() => transcriptInputRef.current?.click()}
-                className="flex flex-col items-start gap-0.5 rounded-xl border border-dashed border-zinc-300 px-3 py-3 text-left transition hover:border-neutral-400 hover:bg-zinc-50"
-              >
-                <span className="text-[12px] font-medium text-zinc-700">Transcript</span>
-                <span className="w-full truncate text-[11px] text-zinc-400">
-                  {importTranscript ? importTranscript.name : "Choose SRT, VTT, or JSON…"}
-                </span>
-              </button>
-            </div>
-            <input
-              ref={mediaInputRef}
-              type="file"
-              accept={MEDIA_ACCEPT}
-              className="hidden"
-              onChange={(e) => {
-                const file = e.target.files?.[0] ?? null;
-                e.target.value = "";
-                if (!file) return;
-                if (!detectMediaKind(file)) {
-                  alert("Please choose a video or audio file.");
-                  return;
-                }
-                setImportMedia(file);
-              }}
-            />
-            <input
-              ref={transcriptInputRef}
-              type="file"
-              accept={TRANSCRIPT_ACCEPT}
-              className="hidden"
-              onChange={(e) => {
-                const file = e.target.files?.[0] ?? null;
-                e.target.value = "";
-                if (!file) return;
-                if (!isTranscriptFile(file)) {
-                  alert("Please choose an SRT, VTT, or JSON transcript.");
-                  return;
-                }
-                setImportTranscript(file);
-              }}
-            />
-            <button
-              type="button"
-              disabled={!importMedia || !importTranscript || importBusy}
-              onClick={() => void startImport()}
-              className="mt-3 flex h-9 w-full items-center justify-center gap-2 rounded-full bg-zinc-900 text-[13px] font-medium text-white transition hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              {importBusy ? (
-                <>
-                  <Loader2 size={14} className="animate-spin" />
-                  Reading transcript…
-                </>
-              ) : (
-                "Start editing"
-              )}
-            </button>
-          </div>
-        )}
 
         {ready && (
           <RecentProjects
