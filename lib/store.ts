@@ -2,6 +2,7 @@
 
 import { create } from "zustand";
 import type { EditorStatus, ProgressInfo, Word } from "./types";
+import type { ModelChoice } from "./models";
 
 interface EditorState {
   // Media
@@ -10,6 +11,8 @@ interface EditorState {
   duration: number;
   /** Mono 16 kHz PCM of the video's audio track (used for waveform + ASR). */
   audio: Float32Array | null;
+  /** Transcription model selected on the upload screen. */
+  model: ModelChoice;
 
   // Pipeline status
   status: EditorStatus;
@@ -35,6 +38,7 @@ interface EditorState {
 
   // Actions
   loadVideo: (file: File) => void;
+  setModel: (m: ModelChoice) => void;
   setDuration: (d: number) => void;
   setAudio: (a: Float32Array) => void;
   setStatus: (s: EditorStatus) => void;
@@ -62,6 +66,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   videoUrl: null,
   duration: 0,
   audio: null,
+  model: "fast",
 
   status: "idle",
   progress: { message: "", value: null },
@@ -97,6 +102,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       exportUrl: null,
     });
   },
+  setModel: (model) => set({ model }),
   setDuration: (duration) => set({ duration }),
   setAudio: (audio) => set({ audio }),
   setStatus: (status) => set({ status }),

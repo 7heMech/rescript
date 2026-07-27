@@ -1,8 +1,8 @@
 /**
  * Transcription worker: runs entirely in the browser.
  *
- * 1. Whisper (onnx-community/whisper-base_timestamped) produces a transcript
- *    with per-word timestamps.
+ * 1. A Whisper-family model (see lib/models.ts) produces a transcript with
+ *    per-word timestamps.
  * 2. Pyannote segmentation 3.0 produces speaker segments, which are used to
  *    assign a speaker to each word.
  *
@@ -19,6 +19,7 @@ import {
   type AutomaticSpeechRecognitionPipeline,
 } from "@huggingface/transformers";
 import type { Word, WorkerRequest, WorkerResponse } from "@/lib/types";
+import { MODELS, type ModelChoice } from "@/lib/models";
 
 env.allowLocalModels = false;
 // Serve onnxruntime-web WASM from our own origin (offline friendly).
@@ -26,7 +27,6 @@ if (env.backends?.onnx?.wasm) {
   env.backends.onnx.wasm.wasmPaths = `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/vendor/ort/`;
 }
 
-const ASR_MODEL = "onnx-community/whisper-base_timestamped";
 const DIARIZATION_MODEL = "onnx-community/pyannote-segmentation-3.0";
 
 const post = (msg: WorkerResponse, transfer: Transferable[] = []) =>
@@ -87,31 +87,75 @@ async function pickDevice(): Promise<"webgpu" | "wasm"> {
   return "wasm";
 }
 
-let asrPromise: Promise<AutomaticSpeechRecognitionPipeline> | null = null;
-async function getAsr() {
-  if (!asrPromise) {
+// Keyed by model id: choices that share the same underlying model (e.g.
+// "fast" and "verbatim", which differ only in prompting) share one pipeline.
+const asrPromises = new Map<string, Promise<AutomaticSpeechRecognitionPipeline>>();
+async function getAsr(choice: ModelChoice) {
+  const { id, dtype } = MODELS[choice];
+  let promise = asrPromises.get(id);
+  if (!promise) {
     const device = await pickDevice();
-    const dtype = { encoder_model: "fp32", decoder_model_merged: "q4" } as const;
-    const label = (await isModelCached(ASR_MODEL))
+    const label = (await isModelCached(id))
       ? "Loading speech model from cache…"
       : "Downloading speech model…";
-    asrPromise = pipeline("automatic-speech-recognition", ASR_MODEL, {
-      dtype,
+    promise = pipeline("automatic-speech-recognition", id, {
+      dtype: dtype[device],
       device,
       progress_callback: makeDownloadTracker(label),
     }).catch((err) => {
       // WebGPU can fail on some drivers; retry once on plain WASM.
       if (device === "webgpu") {
-        return pipeline("automatic-speech-recognition", ASR_MODEL, {
-          dtype,
+        return pipeline("automatic-speech-recognition", id, {
+          dtype: dtype.wasm,
           device: "wasm",
           progress_callback: makeDownloadTracker(label),
         });
       }
       throw err;
     }) as Promise<AutomaticSpeechRecognitionPipeline>;
+    asrPromises.set(id, promise);
+    promise.catch(() => asrPromises.delete(id));
   }
-  return asrPromise;
+  return promise;
+}
+
+/**
+ * Build decoder input tokens implementing Whisper's "initial prompt"
+ * conditioning: `<|startofprev|> …prompt… <|startoftranscript|> <|lang|>
+ * <|transcribe|>`. transformers.js documents `prompt_ids` but does not
+ * implement it, so the tokens are constructed manually and passed as
+ * `decoder_input_ids` (which `generate` honors for every chunk). Returns
+ * null if any required token cannot be resolved.
+ */
+function buildPromptedDecoderIds(
+  transcriber: AutomaticSpeechRecognitionPipeline,
+  prompt: string,
+  language: string
+): number[] | null {
+  try {
+    // Tokenizer/config internals are untyped in transformers.js.
+    /* eslint-disable @typescript-eslint/no-explicit-any */
+    const tokenizer = transcriber.tokenizer as any;
+    const genCfg = (transcriber.model as any).generation_config;
+    /* eslint-enable @typescript-eslint/no-explicit-any */
+    const startOfPrev = tokenizer.encode("<|startofprev|>", { add_special_tokens: false });
+    const promptIds = tokenizer.encode(" " + prompt.trim(), { add_special_tokens: false });
+    const startId = genCfg?.decoder_start_token_id;
+    const langId = genCfg?.lang_to_id?.[`<|${language}|>`];
+    const taskId = genCfg?.task_to_id?.["transcribe"];
+    if (
+      startOfPrev?.length !== 1 ||
+      !promptIds?.length ||
+      startId == null ||
+      langId == null ||
+      taskId == null
+    ) {
+      return null;
+    }
+    return [startOfPrev[0], ...promptIds, startId, langId, taskId];
+  } catch {
+    return null;
+  }
 }
 
 interface DiarizationSegment {
@@ -197,9 +241,18 @@ function assignSpeakers(words: Word[], segments: DiarizationSegment[]) {
 }
 
 self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
-  const { audio, duration, language } = event.data;
+  const { audio, duration, model, language } = event.data;
   try {
-    const transcriber = await getAsr();
+    const choice = model ?? "fast";
+    const transcriber = await getAsr(choice);
+
+    const { verbatimPrompt } = MODELS[choice];
+    const promptedIds = verbatimPrompt
+      ? buildPromptedDecoderIds(transcriber, verbatimPrompt, language ?? "en")
+      : null;
+    if (verbatimPrompt && !promptedIds) {
+      console.warn("Could not build verbatim prompt tokens; using default decoding.");
+    }
     // Warm up the speaker model in parallel with transcription (errors are
     // handled when it is awaited later; this avoids an unhandled rejection).
     getDiarizer().catch(() => {});
@@ -243,7 +296,8 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
       chunk_length_s: chunkLength,
       stride_length_s: stride,
       return_timestamps: "word",
-      language,
+      // decoder_input_ids overrides language/task tokens when prompting.
+      ...(promptedIds ? { decoder_input_ids: promptedIds } : { language }),
       streamer,
     });
 
