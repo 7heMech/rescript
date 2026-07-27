@@ -475,9 +475,6 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
       reportProgress(0, 0);
     }
 
-    // Re-index after concatenation across segments.
-    for (let i = 0; i < rawWords.length; i++) rawWords[i]!.id = i;
-
     // Post-process: collapse leftover n-gram loops and drop known hallucination
     // phrases ("I'm sorry", "thanks for watching", …) that slip past decoding.
     const words = cleanTranscript(rawWords);
