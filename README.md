@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="./screenshots/logo.png" alt="Rescript logo" width="96" />
+</p>
+
 # Rescript
 
 **Edit videos like you edit text — fully offline, in your browser.**

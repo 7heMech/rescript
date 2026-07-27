@@ -51,7 +51,7 @@ const WordSpan = memo(function WordSpan({
     <span
       data-wid={word.id}
       onClick={() => onClick(word)}
-      className={`cursor-pointer transition-colors duration-75 ${word.deleted
+      className={`py-0.5 cursor-pointer transition-colors duration-75 ${word.deleted
         ? "word-deleted bg-red-50 text-red-400 line-through decoration-red-300"
         : active
           ? "bg-neutral-200/80 text-zinc-900"
