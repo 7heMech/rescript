@@ -54,8 +54,8 @@ const WordSpan = memo(function WordSpan({
         word.deleted
           ? "word-deleted bg-red-50 text-red-400 line-through decoration-red-300"
           : active
-            ? "bg-indigo-200/80 text-zinc-900"
-            : "text-zinc-800 hover:bg-indigo-50"
+            ? "bg-neutral-200/80 text-zinc-900"
+            : "text-zinc-800 hover:bg-neutral-50"
       }`}
     >
       {word.text}{" "}
@@ -243,7 +243,7 @@ export default function TranscriptPanel() {
             <div className="flex flex-col items-start gap-4">
               <div className="w-full rounded-xl border border-zinc-200 bg-zinc-50 p-4">
                 <div className="flex items-center gap-3">
-                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-neutral-500 border-t-transparent" />
                   <p className="text-sm font-medium text-zinc-700">{progress.message}</p>
                   {progress.value !== null && (
                     <span className="ml-auto text-xs tabular-nums text-zinc-400">
@@ -254,7 +254,7 @@ export default function TranscriptPanel() {
                 {progress.value !== null && (
                   <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-zinc-200">
                     <div
-                      className="h-full rounded-full bg-indigo-500 transition-[width] duration-300"
+                      className="h-full rounded-full bg-neutral-500 transition-[width] duration-300"
                       style={{ width: `${progress.value * 100}%` }}
                     />
                   </div>
@@ -263,7 +263,7 @@ export default function TranscriptPanel() {
               {partialText && (
                 <p className="text-[15px] leading-8 text-zinc-400">
                   {partialText}
-                  <span className="ml-0.5 inline-block h-4 w-0.5 animate-pulse bg-indigo-500 align-middle" />
+                  <span className="ml-0.5 inline-block h-4 w-0.5 animate-pulse bg-neutral-500 align-middle" />
                 </p>
               )}
             </div>

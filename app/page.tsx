@@ -8,7 +8,7 @@ const Editor = dynamic(() => import("@/components/Editor"), {
   ssr: false,
   loading: () => (
     <div className="flex h-dvh items-center justify-center bg-zinc-50">
-      <div className="h-5 w-5 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
+      <div className="h-5 w-5 animate-spin rounded-full border-2 border-neutral-500 border-t-transparent" />
     </div>
   ),
 });

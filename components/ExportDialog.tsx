@@ -81,9 +81,9 @@ export default function ExportDialog() {
               {cuts.length}
             </p>
           </div>
-          <div className="rounded-xl bg-indigo-50 p-3">
-            <p className="text-xs text-indigo-400">Edited</p>
-            <p className="mt-0.5 text-sm font-semibold tabular-nums text-indigo-700">
+          <div className="rounded-xl bg-neutral-50 p-3">
+            <p className="text-xs text-neutral-400">Edited</p>
+            <p className="mt-0.5 text-sm font-semibold tabular-nums text-neutral-700">
               {formatTime(editedDuration)}
             </p>
           </div>
@@ -101,7 +101,7 @@ export default function ExportDialog() {
             </div>
             <div className="h-2 overflow-hidden rounded-full bg-zinc-100">
               <div
-                className="h-full rounded-full bg-indigo-500 transition-[width] duration-300"
+                className="h-full rounded-full bg-neutral-500 transition-[width] duration-300"
                 style={{ width: `${progress * 100}%` }}
               />
             </div>
@@ -114,7 +114,7 @@ export default function ExportDialog() {
             <a
               href={exportUrl}
               download={fileName}
-              className="flex h-10 items-center justify-center gap-2 rounded-xl bg-indigo-600 text-sm font-medium text-white transition hover:bg-indigo-500"
+              className="flex h-10 items-center justify-center gap-2 rounded-xl bg-neutral-600 text-sm font-medium text-white transition hover:bg-neutral-500"
             >
               <Download size={15} />
               Download {fileName}
