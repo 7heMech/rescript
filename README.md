@@ -8,7 +8,7 @@
 
 **✨ Try it now: [wassgha.github.io/rescript](https://wassgha.github.io/rescript/)**
 
-![Rescript Demo](./screenshots/rescript.png)
+[![Rescript Demo](./screenshots/rescript.png)](https://wassgha.github.io/rescript/)
 
 Rescript is an open-source, transcript-based video editor. Drop in a video and
 it is transcribed locally with per-word timestamps and speaker labels. Delete
