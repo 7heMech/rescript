@@ -1,8 +1,9 @@
 "use client";
 
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Eye, EyeOff, Pencil, RotateCcw, Scissors, X } from "lucide-react";
+import { Eye, EyeOff, Pencil, RotateCcw, Scissors, WandSparkles, X } from "lucide-react";
 import { useEditorStore } from "@/lib/store";
+import { findFillerWordIds } from "@/lib/fillers";
 import type { SpeakerTurn, Word } from "@/lib/types";
 
 export const SPEAKER_COLORS = [
@@ -109,6 +110,11 @@ export default function TranscriptPanel() {
   }, [words]);
 
   const deletedCount = useMemo(() => words.filter((w) => w.deleted).length, [words]);
+  const fillerIds = useMemo(() => findFillerWordIds(words), [words]);
+
+  const removeFillers = useCallback(() => {
+    deleteWords(fillerIds);
+  }, [deleteWords, fillerIds]);
 
   const seekToWord = useCallback((word: Word) => {
     const { videoEl, setCurrentTime } = useEditorStore.getState();
@@ -280,6 +286,16 @@ export default function TranscriptPanel() {
             <span className="rounded-md bg-red-50 px-2 py-0.5 text-[9px] font-medium text-red-500">
               {deletedCount} word{deletedCount === 1 ? "" : "s"} cut
             </span>
+          )}
+          {status === "ready" && fillerIds.length > 0 && (
+            <button
+              onClick={removeFillers}
+              title='Cut filler words ("um", "uh", …) from the video'
+              className="flex h-7 items-center gap-1.5 rounded-lg px-2 text-xs text-zinc-500 transition hover:bg-zinc-100"
+            >
+              <WandSparkles size={14} />
+              Remove fillers ({fillerIds.length})
+            </button>
           )}
           <button
             onClick={toggleShowDeleted}
