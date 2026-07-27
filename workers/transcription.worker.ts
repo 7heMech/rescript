@@ -459,16 +459,41 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
 
     let speechDone = 0;
     let transcribed = 0;
+    let chunkFloor = 0;
+    let chunkTokens = 0;
+    let avgChunkDelta =
+      speechSamples > 0
+        ? Math.min(0.15, ((chunkLength - stride) * VAD_SAMPLE_RATE) / speechSamples)
+        : 0.05;
+
     const reportProgress = (segmentLocalT: number, segmentSamples: number) => {
       const local = Math.min(
         segmentSamples,
         Math.max(0, segmentLocalT * VAD_SAMPLE_RATE)
       );
-      transcribed = Math.max(
+      const next = Math.max(
         transcribed,
         Math.min(1, speechSamples > 0 ? (speechDone + local) / speechSamples : 1)
       );
+      const realDelta = next - chunkFloor;
+      if (realDelta > 0) avgChunkDelta = avgChunkDelta * 0.5 + realDelta * 0.5;
+      chunkFloor = next;
+      chunkTokens = 0;
+      transcribed = next;
       post({ type: "progress", message: "Transcribing…", value: transcribed });
+    };
+
+    /** Nudge the bar forward between chunk boundaries as tokens stream in. */
+    const interpolateProgress = () => {
+      chunkTokens++;
+      // n/(n+8): 0.11 at token 1, 0.5 at token 8, 0.9 at token 72 — strictly
+      // increasing, so it can never get stuck as long as tokens keep coming.
+      const frac = chunkTokens / (chunkTokens + 8);
+      const interpolated = Math.min(0.999, chunkFloor + frac * avgChunkDelta);
+      if (interpolated > transcribed) {
+        transcribed = interpolated;
+        post({ type: "progress", message: "Transcribing…", value: transcribed });
+      }
     };
 
     const asrOptions = {
@@ -496,14 +521,29 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
       const sliceDuration = slice.length / VAD_SAMPLE_RATE;
       const offsetS = seg.startSample / VAD_SAMPLE_RATE - WHISPER_LEAD_PAD_S;
 
+      // Each generate() window consumes `chunkLength - 2 * stride` seconds of
+      // new audio, and the streamer's timestamps rewind to ~0 when the next
+      // window starts. A timestamp lower than the last one seen marks that
+      // boundary; accumulate the offset to recover segment-local time.
+      const windowJumpS = chunkLength - 2 * stride;
+      let windowOffsetS = 0;
+      let lastChunkStartT = 0;
+
       const streamer = new WhisperTextStreamer(tokenizer, {
         skip_prompt: true,
         time_precision: timePrecision,
-        on_chunk_start: (t: number) =>
-          reportProgress(Math.max(0, t - WHISPER_LEAD_PAD_S), segmentSamples),
+        on_chunk_start: (t: number) => {
+          if (t < lastChunkStartT) windowOffsetS += windowJumpS;
+          lastChunkStartT = t;
+          reportProgress(
+            Math.max(0, windowOffsetS + t - WHISPER_LEAD_PAD_S),
+            segmentSamples
+          );
+        },
         callback_function: (text: string) => {
           partial += text;
           post({ type: "partial", text: partial });
+          interpolateProgress();
         },
       });
 
