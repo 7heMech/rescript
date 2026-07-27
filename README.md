@@ -26,11 +26,13 @@ Export the final cut to MP4 — without your video ever leaving your device.
 | Media processing | [ffmpeg.wasm](https://ffmpegwasm.netlify.app/) (multi-threaded) for audio extraction and export |
 | State | zustand |
 
-## Getting started
+## Development
 
 ```bash
-npm install   # also copies ffmpeg/onnxruntime WASM into public/vendor
-npm run dev
+npm install     # also copies ffmpeg/onnxruntime WASM into public/vendor
+npm run dev     # dev server
+npm run build   # production build
+npm run lint    # eslint
 ```
 
 Open [http://localhost:3000](http://localhost:3000) and drop in a video with an
@@ -53,34 +55,11 @@ audio track.
 4. **Export** — the kept ranges are trimmed and concatenated with an ffmpeg
    filter graph and re-encoded (`libx264`/`aac`), so cuts are word-accurate.
 
-See [PLAN.md](./PLAN.md) for architecture details and the roadmap.
-
 ## Browser support
 
 A Chromium-based browser is recommended. The app requires `SharedArrayBuffer`
 (served with COOP/COEP headers) and uses WebGPU for inference when available,
 falling back to WASM otherwise.
-
-## Development
-
-```bash
-npm run dev     # dev server
-npm run build   # production build
-npm run lint    # eslint
-```
-
-## Deployment
-
-Every push to `main` deploys automatically to
-[GitHub Pages](https://wassgha.github.io/rescript/) via
-[`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) (static export
-with `STATIC_EXPORT=1` and `NEXT_PUBLIC_BASE_PATH=/<repo>`). GitHub Pages
-cannot send the COOP/COEP headers that `SharedArrayBuffer` requires, so the
-exported site registers a small service worker
-([`coi-serviceworker`](https://github.com/gzuidhof/coi-serviceworker)) that
-injects them at runtime; the first visit reloads once to activate it. When
-self-hosting with a real server (`npm run build && npm run start`), the
-headers are sent directly and the service worker stays inactive.
 
 ## License
 
