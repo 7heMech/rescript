@@ -17,8 +17,9 @@
 /.next/
 /out/
 
-# production
-/build
+# electron compile + electron-builder packages
+/electron-dist/
+/dist/
 
 # misc
 .DS_Store

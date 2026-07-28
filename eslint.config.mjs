@@ -12,6 +12,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Electron main/preload (separate tsconfig) + packaged output.
+    "electron/**",
+    "electron-dist/**",
+    "dist/**",
     // Runtime assets copied from node_modules on postinstall.
     "public/vendor/**",
     "public/coi-serviceworker.js",
