@@ -11,7 +11,13 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { AudioLines, ChevronDown, Loader2, type LucideIcon } from "lucide-react";
+import {
+  AudioLines,
+  ChevronDown,
+  FileText,
+  Loader2,
+  type LucideIcon,
+} from "lucide-react";
 import { MODELS, isWhisperModel, type ModelChoice } from "@/lib/models";
 import { hydrateModelPreference, useEditorStore } from "@/lib/store";
 
@@ -46,6 +52,14 @@ type SelectorContextValue = {
 const ModelSelectorCtx = createContext<SelectorContextValue | null>(null);
 const OptionCtx = createContext<ModelOptionContextValue | null>(null);
 
+function useSelectorCtx(): SelectorContextValue {
+  const ctx = useContext(ModelSelectorCtx);
+  if (!ctx) {
+    throw new Error("Model option components must be used inside ModelSelector");
+  }
+  return ctx;
+}
+
 export function useModelOption(): ModelOptionContextValue {
   const ctx = useContext(OptionCtx);
   if (!ctx) {
@@ -73,6 +87,8 @@ export function useOptionTrigger(
  * Generic source / model dropdown. Pass option components as children
  * (`ModelOption`, or a custom option like `ImportTranscriptOption`).
  * With no children, renders the default Whisper Base / Small rows.
+ *
+ * Options stay mounted (hidden when closed) so custom triggers remain registered.
  */
 export default function ModelSelector({
   children,
@@ -149,11 +165,19 @@ export default function ModelSelector({
   );
 
   const activeTrigger = triggers[model];
-  const TriggerIcon = activeTrigger?.icon ?? AudioLines;
+  // Prefer the option's registered trigger. Fall back carefully so an unmounted
+  // custom option (e.g. import) never shows the raw id + default wave icon.
+  const TriggerIcon =
+    activeTrigger?.icon ?? (model === "import" ? FileText : AudioLines);
   const triggerLabel =
     activeTrigger?.label ??
-    (isWhisperModel(model) ? MODELS[model].label : model);
+    (isWhisperModel(model)
+      ? MODELS[model].label
+      : model === "import"
+        ? "Import transcript"
+        : String(model));
 
+  // Always mount options (hidden when closed) so custom triggers stay registered.
   const options = children ?? (
     <>
       <ModelOption id="base" />
@@ -187,30 +211,21 @@ export default function ModelSelector({
           />
         </button>
 
-        {open && (
-          <div
-            id={listId}
-            role="listbox"
-            aria-label={groupLabel}
-            className="absolute right-0 top-[calc(100%+0.5rem)] z-20 w-[18rem] overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-lg shadow-zinc-900/5"
-          >
-            <p className="px-3 pb-1 pt-2.5 text-[11px] font-medium tracking-wide text-zinc-400">
-              {groupLabel}
-            </p>
-            <div className="p-1 pb-1.5">{options}</div>
-          </div>
-        )}
+        <div
+          id={listId}
+          role="listbox"
+          aria-label={groupLabel}
+          hidden={!open}
+          className="absolute right-0 top-[calc(100%+0.5rem)] z-20 w-[18rem] overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-lg shadow-zinc-900/5"
+        >
+          <p className="px-3 pb-1 pt-2.5 text-[11px] font-medium tracking-wide text-zinc-400">
+            {groupLabel}
+          </p>
+          <div className="p-1 pb-1.5">{options}</div>
+        </div>
       </div>
     </ModelSelectorCtx.Provider>
   );
-}
-
-function useSelectorCtx(): SelectorContextValue {
-  const ctx = useContext(ModelSelectorCtx);
-  if (!ctx) {
-    throw new Error("Model option components must be used inside ModelSelector");
-  }
-  return ctx;
 }
 
 /** Default option row: icon + label + optional meta. Whisper ids fill in from MODELS. */
@@ -228,9 +243,7 @@ export function ModelOption({
   label?: string;
   meta?: string;
   icon?: LucideIcon;
-  /** Extra content under the main row (status, errors, …). */
   children?: ReactNode;
-  /** Override click handling. Defaults to set value + close. */
   onSelect?: (ctx: ModelOptionContextValue) => void;
   autoTrigger?: boolean;
 }) {
@@ -253,11 +266,7 @@ export function ModelOption({
     [selector, selected, id]
   );
 
-  useOptionTrigger(
-    id,
-    { label: resolvedLabel, icon: Icon },
-    autoTrigger
-  );
+  useOptionTrigger(id, { label: resolvedLabel, icon: Icon }, autoTrigger);
 
   const handleClick = () => {
     if (onSelect) {
