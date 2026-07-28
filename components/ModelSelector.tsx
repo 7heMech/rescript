@@ -110,15 +110,18 @@ export default function ModelSelector({
 
   useEffect(() => {
     if (!open) return;
-    const onPointer = (e: MouseEvent) => {
+    const onPointer = (e: PointerEvent | MouseEvent) => {
       if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setOpen(false);
     };
+    // pointerdown covers mouse + touch; mousedown kept for older engines.
+    document.addEventListener("pointerdown", onPointer);
     document.addEventListener("mousedown", onPointer);
     document.addEventListener("keydown", onKey);
     return () => {
+      document.removeEventListener("pointerdown", onPointer);
       document.removeEventListener("mousedown", onPointer);
       document.removeEventListener("keydown", onKey);
     };
