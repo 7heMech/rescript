@@ -304,7 +304,7 @@ export default function TranscriptPanel() {
 
   return (
     <section className="flex min-w-0 flex-1 flex-col bg-white">
-      <div className="flex h-10 shrink-0 items-center gap-2 border-b border-zinc-100 px-4">
+      <div className="flex h-10 shrink-0 items-center gap-2 border-b border-zinc-100 px-3 sm:px-4">
         <span className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
           Transcript
         </span>
@@ -326,7 +326,7 @@ export default function TranscriptPanel() {
               className="flex h-7 items-center gap-1.5 rounded-lg px-2 text-xs text-zinc-500 transition hover:bg-zinc-100"
             >
               <WandSparkles size={14} />
-              Remove fillers ({fillerIds.length})
+              <span className="hidden sm:inline">Remove fillers </span>({fillerIds.length})
             </button>
           )}
           {(status === "ready" || status === "error" || status === "transcribing") && (
@@ -337,7 +337,7 @@ export default function TranscriptPanel() {
                 className="flex h-7 items-center gap-1.5 rounded-lg px-2 text-xs text-zinc-500 transition hover:bg-zinc-100"
               >
                 <FileText size={14} />
-                Import
+                <span className="hidden sm:inline">Import</span>
               </button>
               <input
                 ref={importInputRef}
@@ -358,13 +358,15 @@ export default function TranscriptPanel() {
             className="flex h-7 items-center gap-1.5 rounded-lg px-2 text-xs text-zinc-500 transition hover:bg-zinc-100"
           >
             {showDeleted ? <Eye size={14} /> : <EyeOff size={14} />}
-            {showDeleted ? "Showing cuts" : "Hiding cuts"}
+            <span className="hidden sm:inline">
+              {showDeleted ? "Showing cuts" : "Hiding cuts"}
+            </span>
           </button>
         </div>
       </div>
 
       <div ref={scrollRef} className="relative min-h-0 flex-1 overflow-y-auto">
-        <div ref={containerRef} className="relative mx-auto max-w-2xl px-8 py-8">
+        <div ref={containerRef} className="relative mx-auto max-w-2xl px-4 py-6 sm:px-8 sm:py-8">
           {busy && (
             <div className="flex flex-col items-start gap-4">
               <div className="w-full bg-zinc-50 p-2">

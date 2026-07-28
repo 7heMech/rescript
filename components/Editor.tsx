@@ -90,10 +90,12 @@ export default function Editor() {
       ) : (
         <>
           <TopBar />
-          <div className="flex min-h-0 flex-1">
-            <TranscriptPanel />
-            <div className="flex w-[44%] min-w-[320px] shrink-0 flex-col border-l border-zinc-200">
+          <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+            <div className="order-1 flex h-[34vh] shrink-0 flex-col border-b border-zinc-200 lg:order-2 lg:h-auto lg:w-[44%] lg:min-w-[320px] lg:border-b-0 lg:border-l">
               <MediaPreview />
+            </div>
+            <div className="order-2 flex min-h-0 flex-1 lg:order-1">
+              <TranscriptPanel />
             </div>
             {/* <SideRail /> — hidden until the tools it exposes are functional */}
           </div>

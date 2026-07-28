@@ -122,10 +122,10 @@ export default function ExportDialog() {
             <a
               href={exportUrl}
               download={fileName}
-              className="flex h-10 items-center justify-center gap-2 rounded-xl bg-neutral-600 text-sm font-medium text-white transition hover:bg-neutral-500"
+              className="flex h-10 items-center justify-center gap-2 rounded-xl bg-neutral-600 px-4 text-sm font-medium text-white transition hover:bg-neutral-500"
             >
-              <Download size={15} />
-              Download {fileName}
+              <Download size={15} className="shrink-0" />
+              <span className="truncate">Download {fileName}</span>
             </a>
             <button
               onClick={start}
