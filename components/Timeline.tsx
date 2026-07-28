@@ -164,7 +164,7 @@ export default function Timeline() {
   const playheadX = currentTime * pps - scrollLeft;
 
   return (
-    <footer className="flex h-44 shrink-0 flex-col border-t border-zinc-200 bg-white">
+    <footer className="flex h-32 shrink-0 flex-col border-t border-zinc-200 bg-white sm:h-44">
       <div className="flex h-9 shrink-0 items-center gap-2 border-b border-zinc-100 px-3">
         <span className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
           Timeline

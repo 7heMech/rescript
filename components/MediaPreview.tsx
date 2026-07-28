@@ -96,7 +96,7 @@ export default function MediaPreview() {
   }, []);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col bg-zinc-50/70 p-4">
+    <div className="flex min-h-0 flex-1 flex-col bg-zinc-50/70 p-3 sm:p-4">
       <div className="flex min-h-0 flex-1 items-center justify-center">
         {mediaUrl && isAudio && (
           <>
@@ -139,7 +139,7 @@ export default function MediaPreview() {
       </div>
 
       <div className="mt-3 flex shrink-0 items-center justify-center gap-2">
-        <span className="mr-2 w-28 text-right text-xs tabular-nums text-zinc-500">
+        <span className="mr-1 w-24 text-right text-xs tabular-nums text-zinc-500 sm:mr-2 sm:w-28">
           {formatTime(originalToEdited(currentTime, cuts))}
           <span className="text-zinc-300"> / {formatTime(editedDuration)}</span>
         </span>
@@ -164,7 +164,7 @@ export default function MediaPreview() {
         >
           <SkipForward size={15} />
         </button>
-        <span className="ml-2 w-28 text-xs tabular-nums text-zinc-400">
+        <span className="ml-2 hidden w-28 text-xs tabular-nums text-zinc-400 sm:block">
           {editedDuration < duration - 0.01 && <>original {formatTime(duration)}</>}
         </span>
       </div>
