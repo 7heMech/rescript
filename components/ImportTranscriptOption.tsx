@@ -20,10 +20,11 @@ import {
  * ModelSelector option that opens a caption file picker and surfaces parse
  * status / errors on the row (and in the closed trigger).
  *
- * Do not set model to "import" until a file is chosen. Native file-picker
- * cancel often skips onChange — we close the menu before opening the picker
- * and restore the previous Whisper model on cancel so the dropdown cannot
- * get stuck open on a half-selected import.
+ * The file input must NOT be nested inside the option <button> — that invalid
+ * HTML makes some browsers stop delivering clicks to the selector after the
+ * OS dialog is cancelled. Cancel also must not call closeMenu(): the menu is
+ * already closed before the picker opens, and a delayed close would dismiss a
+ * menu the user just reopened.
  */
 export default function ImportTranscriptOption() {
   const pendingTranscript = useEditorStore((s) => s.pendingTranscript);
@@ -41,6 +42,7 @@ export default function ImportTranscriptOption() {
   const previousModelRef = useRef<"base" | "small">("base");
   const pickGenRef = useRef(0);
 
+  /** Reset import-pick state only — never touch the dropdown open state. */
   const finishCancel = useCallback(() => {
     setPicking(false);
     setReading(false);
@@ -48,7 +50,6 @@ export default function ImportTranscriptOption() {
     if (!useEditorStore.getState().pendingTranscript) {
       setModel(previousModelRef.current);
     }
-    menuRef.current?.closeMenu();
   }, [setModel]);
 
   // If the user switches to Whisper while a picker/parse is in flight, invalidate
@@ -106,38 +107,43 @@ export default function ImportTranscriptOption() {
     selected || picking || reading || Boolean(error) || Boolean(pendingTranscript);
 
   return (
-    <ModelOption
-      id="import"
-      label="Import transcript"
-      meta="SRT / VTT / JSON"
-      icon={FileText}
-      autoTrigger={false}
-      onSelect={(ctx) => {
-        menuRef.current = ctx;
-        const current = useEditorStore.getState().model;
-        if (isWhisperModel(current)) {
-          previousModelRef.current = current;
-        }
-        // Do not set model to "import" until a file is chosen. Close the menu
-        // before the OS dialog so cancel cannot leave it pinned open.
-        pickGenRef.current += 1;
-        setPicking(true);
-        setError(null);
-        ctx.closeMenu();
-        requestAnimationFrame(() => fileRef.current?.click());
-      }}
-    >
-      <ImportTrigger
-        label={triggerLabel}
-        busy={reading}
-        error={Boolean(error)}
-        enabled={triggerEnabled}
-      />
+    <>
+      <ModelOption
+        id="import"
+        label="Import transcript"
+        meta="SRT / VTT / JSON"
+        icon={FileText}
+        autoTrigger={false}
+        onSelect={(ctx) => {
+          menuRef.current = ctx;
+          const current = useEditorStore.getState().model;
+          if (isWhisperModel(current)) {
+            previousModelRef.current = current;
+          }
+          // Do not set model to "import" until a file is chosen. Close the menu
+          // before the OS dialog so cancel cannot leave it pinned open.
+          pickGenRef.current += 1;
+          setPicking(true);
+          setError(null);
+          ctx.closeMenu();
+          requestAnimationFrame(() => fileRef.current?.click());
+        }}
+      >
+        <ImportTrigger
+          label={triggerLabel}
+          busy={reading}
+          error={Boolean(error)}
+          enabled={triggerEnabled}
+        />
+        <ImportStatus reading={reading} error={error} picking={picking} />
+      </ModelOption>
+      {/* Sibling of the option button — never nest <input> inside <button>. */}
       <input
         ref={fileRef}
         type="file"
         accept={TRANSCRIPT_ACCEPT}
-        className="hidden"
+        tabIndex={-1}
+        className="sr-only"
         onChange={(e) => {
           const files = e.target.files;
           e.target.value = "";
@@ -184,8 +190,7 @@ export default function ImportTranscriptOption() {
           })();
         }}
       />
-      <ImportStatus reading={reading} error={error} picking={picking} />
-    </ModelOption>
+    </>
   );
 }
 

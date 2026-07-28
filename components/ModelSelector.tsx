@@ -110,19 +110,16 @@ export default function ModelSelector({
 
   useEffect(() => {
     if (!open) return;
-    const onPointer = (e: PointerEvent | MouseEvent) => {
+    const onPointer = (e: PointerEvent) => {
       if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setOpen(false);
     };
-    // pointerdown covers mouse + touch; mousedown kept for older engines.
     document.addEventListener("pointerdown", onPointer);
-    document.addEventListener("mousedown", onPointer);
     document.addEventListener("keydown", onKey);
     return () => {
       document.removeEventListener("pointerdown", onPointer);
-      document.removeEventListener("mousedown", onPointer);
       document.removeEventListener("keydown", onKey);
     };
   }, [open]);
@@ -219,7 +216,12 @@ export default function ModelSelector({
           role="listbox"
           aria-label={groupLabel}
           hidden={!open}
-          className="absolute right-0 top-[calc(100%+0.5rem)] z-20 w-[18rem] overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-lg shadow-zinc-900/5"
+          // Force display:none when closed so a lingering panel cannot eat clicks
+          // (HTML [hidden] can be overridden by author CSS in some setups).
+          className={`absolute right-0 top-[calc(100%+0.5rem)] z-20 w-[18rem] overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-lg shadow-zinc-900/5 ${
+            open ? "" : "pointer-events-none"
+          }`}
+          style={open ? undefined : { display: "none" }}
         >
           <p className="px-3 pb-1 pt-2.5 text-[11px] font-medium tracking-wide text-zinc-400">
             {groupLabel}
