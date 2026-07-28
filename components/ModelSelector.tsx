@@ -194,7 +194,7 @@ export default function ModelSelector({
           aria-expanded={open}
           aria-controls={listId}
           onClick={() => setOpen((v) => !v)}
-          className="inline-flex max-w-[14rem] items-center gap-2 rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-[13px] font-medium text-zinc-800 shadow-sm shadow-zinc-900/5 transition hover:border-zinc-300 hover:bg-zinc-50"
+          className="inline-flex max-w-[14rem] items-center gap-2 rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-[13px] font-medium text-zinc-800 cursor-pointer transition hover:border-zinc-300 hover:bg-zinc-50"
         >
           {activeTrigger?.busy ? (
             <Loader2 size={14} className="shrink-0 animate-spin text-zinc-500" />
@@ -226,7 +226,7 @@ export default function ModelSelector({
           <p className="px-3 pb-1 pt-2.5 text-[11px] font-medium tracking-wide text-zinc-400">
             {groupLabel}
           </p>
-          <div className="p-1 pb-1.5">{options}</div>
+          <div className="p-1 pb-1.5 space-y-1">{options}</div>
         </div>
       </div>
     </ModelSelectorCtx.Provider>
@@ -289,7 +289,7 @@ export function ModelOption({
         role="option"
         aria-selected={selected}
         onClick={handleClick}
-        className={`flex w-full flex-col gap-0.5 rounded-lg px-2.5 py-2 text-left transition ${
+        className={`flex w-full flex-col gap-0.5 rounded-lg px-2.5 py-2 text-left transition cursor-pointer ${
           selected
             ? "bg-zinc-100 text-zinc-900"
             : "text-zinc-700 hover:bg-zinc-50"
