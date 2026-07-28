@@ -1,22 +1,92 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
-import { AudioLines, ChevronDown } from "lucide-react";
-import { MODEL_ORDER, MODELS, type ModelChoice } from "@/lib/models";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import { AudioLines, ChevronDown, Loader2, type LucideIcon } from "lucide-react";
+import { MODELS, isWhisperModel, type ModelChoice } from "@/lib/models";
 import { hydrateModelPreference, useEditorStore } from "@/lib/store";
 
+export type ModelOptionContextValue = {
+  /** Currently selected source id. */
+  value: ModelChoice;
+  selected: boolean;
+  select: () => void;
+  /** Close the dropdown after a normal selection. */
+  closeMenu: () => void;
+  /** Keep the menu open (file pickers, async status, …). */
+  keepMenuOpen: () => void;
+};
+
+export type OptionTrigger = {
+  label: ReactNode;
+  icon?: LucideIcon;
+  iconClassName?: string;
+  /** Show a spinner instead of the icon in the closed trigger. */
+  busy?: boolean;
+};
+
+type SelectorContextValue = {
+  value: ModelChoice;
+  setValue: (id: ModelChoice) => void;
+  closeMenu: () => void;
+  keepMenuOpen: () => void;
+  registerTrigger: (id: string, trigger: OptionTrigger) => void;
+  unregisterTrigger: (id: string) => void;
+};
+
+const ModelSelectorCtx = createContext<SelectorContextValue | null>(null);
+const OptionCtx = createContext<ModelOptionContextValue | null>(null);
+
+export function useModelOption(): ModelOptionContextValue {
+  const ctx = useContext(OptionCtx);
+  if (!ctx) {
+    throw new Error("useModelOption must be used inside a ModelSelector option");
+  }
+  return ctx;
+}
+
+/** Let a custom option drive the closed trigger while it is selected. */
+export function useOptionTrigger(
+  id: ModelChoice,
+  trigger: OptionTrigger,
+  enabled = true
+) {
+  const selector = useSelectorCtx();
+  const { label, icon, iconClassName, busy } = trigger;
+  useEffect(() => {
+    if (!enabled) return;
+    selector.registerTrigger(id, { label, icon, iconClassName, busy });
+    return () => selector.unregisterTrigger(id);
+  }, [selector, id, label, icon, iconClassName, busy, enabled]);
+}
+
 /**
- * Compact model picker for the upload screen header. Opens downward under the
- * trigger: group label + icon/name rows, with the trigger showing the current
- * choice.
+ * Generic source / model dropdown. Pass option components as children
+ * (`ModelOption`, or a custom option like `ImportTranscriptOption`).
+ * With no children, renders the default Whisper Base / Small rows.
  */
-export default function ModelSelector() {
+export default function ModelSelector({
+  children,
+  groupLabel = "Speech model",
+}: {
+  children?: ReactNode;
+  groupLabel?: string;
+}) {
   const model = useEditorStore((s) => s.model);
   const setModel = useEditorStore((s) => s.setModel);
   const [open, setOpen] = useState(false);
+  const [triggers, setTriggers] = useState<Record<string, OptionTrigger>>({});
   const rootRef = useRef<HTMLDivElement>(null);
   const listId = useId();
-  const current = MODELS[model];
 
   useEffect(() => {
     hydrateModelPreference();
@@ -38,70 +108,198 @@ export default function ModelSelector() {
     };
   }, [open]);
 
-  const select = (choice: ModelChoice) => {
-    setModel(choice);
-    setOpen(false);
+  const closeMenu = useCallback(() => setOpen(false), []);
+  const keepMenuOpen = useCallback(() => setOpen(true), []);
+
+  const registerTrigger = useCallback((id: string, trigger: OptionTrigger) => {
+    setTriggers((prev) => {
+      const cur = prev[id];
+      if (
+        cur &&
+        cur.label === trigger.label &&
+        cur.icon === trigger.icon &&
+        cur.iconClassName === trigger.iconClassName &&
+        cur.busy === trigger.busy
+      ) {
+        return prev;
+      }
+      return { ...prev, [id]: trigger };
+    });
+  }, []);
+
+  const unregisterTrigger = useCallback((id: string) => {
+    setTriggers((prev) => {
+      if (!(id in prev)) return prev;
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+  }, []);
+
+  const ctx = useMemo(
+    () => ({
+      value: model,
+      setValue: setModel,
+      closeMenu,
+      keepMenuOpen,
+      registerTrigger,
+      unregisterTrigger,
+    }),
+    [model, setModel, closeMenu, keepMenuOpen, registerTrigger, unregisterTrigger]
+  );
+
+  const activeTrigger = triggers[model];
+  const TriggerIcon = activeTrigger?.icon ?? AudioLines;
+  const triggerLabel =
+    activeTrigger?.label ??
+    (isWhisperModel(model) ? MODELS[model].label : model);
+
+  const options = children ?? (
+    <>
+      <ModelOption id="base" />
+      <ModelOption id="small" />
+    </>
+  );
+
+  return (
+    <ModelSelectorCtx.Provider value={ctx}>
+      <div ref={rootRef} className="relative shrink-0">
+        <button
+          type="button"
+          aria-haspopup="listbox"
+          aria-expanded={open}
+          aria-controls={listId}
+          onClick={() => setOpen((v) => !v)}
+          className="inline-flex max-w-[14rem] items-center gap-2 rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-[13px] font-medium text-zinc-800 shadow-sm shadow-zinc-900/5 transition hover:border-zinc-300 hover:bg-zinc-50"
+        >
+          {activeTrigger?.busy ? (
+            <Loader2 size={14} className="shrink-0 animate-spin text-zinc-500" />
+          ) : (
+            <TriggerIcon
+              size={14}
+              className={`shrink-0 ${activeTrigger?.iconClassName ?? "text-zinc-500"}`}
+            />
+          )}
+          <span className="truncate">{triggerLabel}</span>
+          <ChevronDown
+            size={14}
+            className={`shrink-0 text-zinc-400 transition ${open ? "rotate-180" : ""}`}
+          />
+        </button>
+
+        {open && (
+          <div
+            id={listId}
+            role="listbox"
+            aria-label={groupLabel}
+            className="absolute right-0 top-[calc(100%+0.5rem)] z-20 w-[18rem] overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-lg shadow-zinc-900/5"
+          >
+            <p className="px-3 pb-1 pt-2.5 text-[11px] font-medium tracking-wide text-zinc-400">
+              {groupLabel}
+            </p>
+            <div className="p-1 pb-1.5">{options}</div>
+          </div>
+        )}
+      </div>
+    </ModelSelectorCtx.Provider>
+  );
+}
+
+function useSelectorCtx(): SelectorContextValue {
+  const ctx = useContext(ModelSelectorCtx);
+  if (!ctx) {
+    throw new Error("Model option components must be used inside ModelSelector");
+  }
+  return ctx;
+}
+
+/** Default option row: icon + label + optional meta. Whisper ids fill in from MODELS. */
+export function ModelOption({
+  id,
+  label,
+  meta,
+  icon: Icon = AudioLines,
+  children,
+  onSelect,
+  /** When false, a child owns the closed trigger via `useOptionTrigger`. */
+  autoTrigger = true,
+}: {
+  id: ModelChoice;
+  label?: string;
+  meta?: string;
+  icon?: LucideIcon;
+  /** Extra content under the main row (status, errors, …). */
+  children?: ReactNode;
+  /** Override click handling. Defaults to set value + close. */
+  onSelect?: (ctx: ModelOptionContextValue) => void;
+  autoTrigger?: boolean;
+}) {
+  const selector = useSelectorCtx();
+  const selected = selector.value === id;
+
+  const resolvedLabel =
+    label ?? (isWhisperModel(id) ? MODELS[id].label : id);
+  const resolvedMeta =
+    meta ?? (isWhisperModel(id) ? MODELS[id].size : undefined);
+
+  const optionCtx = useMemo<ModelOptionContextValue>(
+    () => ({
+      value: selector.value,
+      selected,
+      select: () => selector.setValue(id),
+      closeMenu: selector.closeMenu,
+      keepMenuOpen: selector.keepMenuOpen,
+    }),
+    [selector, selected, id]
+  );
+
+  useOptionTrigger(
+    id,
+    { label: resolvedLabel, icon: Icon },
+    autoTrigger
+  );
+
+  const handleClick = () => {
+    if (onSelect) {
+      onSelect(optionCtx);
+      return;
+    }
+    optionCtx.select();
+    optionCtx.closeMenu();
   };
 
   return (
-    <div ref={rootRef} className="relative shrink-0">
+    <OptionCtx.Provider value={optionCtx}>
       <button
         type="button"
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        aria-controls={listId}
-        onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-2 rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-[13px] font-medium text-zinc-800 shadow-sm shadow-zinc-900/5 transition hover:border-zinc-300 hover:bg-zinc-50"
+        role="option"
+        aria-selected={selected}
+        onClick={handleClick}
+        className={`flex w-full flex-col gap-0.5 rounded-lg px-2.5 py-2 text-left transition ${
+          selected
+            ? "bg-zinc-100 text-zinc-900"
+            : "text-zinc-700 hover:bg-zinc-50"
+        }`}
       >
-        <AudioLines size={14} className="text-zinc-500" />
-        <span>{current.label}</span>
-        <ChevronDown
-          size={14}
-          className={`text-zinc-400 transition ${open ? "rotate-180" : ""}`}
-        />
+        <span className="flex w-full items-center gap-2.5">
+          <Icon
+            size={15}
+            className={selected ? "text-zinc-700" : "text-zinc-400"}
+          />
+          <span className="min-w-0 flex-1 text-[13px] font-medium leading-tight">
+            {resolvedLabel}
+          </span>
+          {resolvedMeta && (
+            <span className="shrink-0 text-[11px] text-zinc-400">{resolvedMeta}</span>
+          )}
+        </span>
+        {children}
       </button>
-
-      {open && (
-        <div
-          id={listId}
-          role="listbox"
-          aria-label="Speech model"
-          className="absolute right-0 top-[calc(100%+0.5rem)] z-20 w-[18rem] overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-lg shadow-zinc-900/5"
-        >
-          <p className="px-3 pb-1 pt-2.5 text-[11px] font-medium tracking-wide text-zinc-400">
-            Speech model
-          </p>
-          <div className="p-1 pb-1.5">
-            {MODEL_ORDER.map((id) => {
-              const info = MODELS[id];
-              const selected = id === model;
-              return (
-                <button
-                  key={id}
-                  type="button"
-                  role="option"
-                  aria-selected={selected}
-                  onClick={() => select(id)}
-                  className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition ${
-                    selected
-                      ? "bg-zinc-100 text-zinc-900"
-                      : "text-zinc-700 hover:bg-zinc-50"
-                  }`}
-                >
-                  <AudioLines
-                    size={15}
-                    className={selected ? "text-zinc-700" : "text-zinc-400"}
-                  />
-                  <span className="min-w-0 flex-1 text-[13px] font-medium leading-tight">
-                    {info.label}
-                  </span>
-                  <span className="shrink-0 text-[11px] text-zinc-400">{info.size}</span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
-    </div>
+    </OptionCtx.Provider>
   );
+}
+
+/** Separator between option groups (e.g. Whisper vs import). */
+export function ModelOptionSeparator() {
+  return <div className="my-1 border-t border-zinc-100" role="separator" />;
 }

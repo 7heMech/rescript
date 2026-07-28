@@ -51,7 +51,7 @@ export interface WorkerRequest {
   audio: Float32Array;
   /** Total media duration in seconds (used for progress estimation). */
   duration: number;
-  /** Which transcription model to use (see lib/models.ts). */
-  model: import("./models").ModelChoice;
+  /** Which Whisper model to use (see lib/models.ts). */
+  model: import("./models").WhisperModel;
   language?: string;
 }

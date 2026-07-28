@@ -16,7 +16,11 @@ import {
 } from "lucide-react";
 import logo from "@/assets/logo.png";
 import GitHubLink from "./GitHubLink";
-import ModelSelector from "./ModelSelector";
+import ModelSelector, {
+  ModelOption,
+  ModelOptionSeparator,
+} from "./ModelSelector";
+import ImportTranscriptOption from "./ImportTranscriptOption";
 import { useCrossOriginIsolated } from "@/hooks/useCrossOriginIsolated";
 import { detectMediaKind, MEDIA_ACCEPT } from "@/lib/media";
 import { formatTime } from "@/lib/edits";
@@ -26,6 +30,7 @@ import {
   type ProjectMeta,
 } from "@/lib/projects";
 import { useEditorStore } from "@/lib/store";
+import type { Word } from "@/lib/types";
 
 // The three media cards that stand in for the upload icon. Each carries its
 // resting transform plus the fanned-out one, applied either on hover (via the
@@ -145,7 +150,11 @@ function RecentProjects({
   );
 }
 
-export default function UploadScreen({ onFile }: { onFile: (file: File) => void }) {
+export default function UploadScreen({
+  onFile,
+}: {
+  onFile: (file: File, options?: { words?: Word[] }) => void;
+}) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   const [projects, setProjects] = useState<ProjectMeta[]>([]);
@@ -155,6 +164,8 @@ export default function UploadScreen({ onFile }: { onFile: (file: File) => void 
   // would fail immediately and lose the file to that reload.
   const isolation = useCrossOriginIsolated();
   const ready = isolation === "ready";
+  const model = useEditorStore((s) => s.model);
+  const pendingTranscript = useEditorStore((s) => s.pendingTranscript);
   const openProject = useEditorStore((s) => s.openProject);
   const removeProject = useEditorStore((s) => s.removeProject);
 
@@ -190,6 +201,16 @@ export default function UploadScreen({ onFile }: { onFile: (file: File) => void 
       if (!file) return;
       if (!detectMediaKind(file)) {
         alert("Please choose a video or audio file.");
+        return;
+      }
+      const { model: source, pendingTranscript: pending } =
+        useEditorStore.getState();
+      if (source === "import") {
+        if (!pending) {
+          alert("Choose a transcript file from the source menu first.");
+          return;
+        }
+        onFile(file, { words: pending.words });
         return;
       }
       onFile(file);
@@ -245,7 +266,12 @@ export default function UploadScreen({ onFile }: { onFile: (file: File) => void 
             />
             <p className="ml-2 text-[15px] font-medium text-zinc-800">Rescript</p>
           </div>
-          <ModelSelector />
+          <ModelSelector groupLabel="Transcript source">
+            <ModelOption id="base" />
+            <ModelOption id="small" />
+            <ModelOptionSeparator />
+            <ImportTranscriptOption />
+          </ModelSelector>
         </div>
         <div
           role="button"
@@ -305,7 +331,11 @@ export default function UploadScreen({ onFile }: { onFile: (file: File) => void 
                 <span className="text-neutral-600">browse</span>
               </p>
               <p className="mt-1 text-[13px] text-zinc-400">
-                MP4, WebM, MOV, MP3, WAV, M4A, …
+                {model === "import"
+                  ? pendingTranscript
+                    ? `Will use ${pendingTranscript.name} · MP4, WebM, MOV, MP3, WAV, …`
+                    : "Pick a transcript in the menu above, then drop your media"
+                  : "MP4, WebM, MOV, MP3, WAV, M4A, …"}
               </p>
             </>
           ) : (
@@ -336,7 +366,7 @@ export default function UploadScreen({ onFile }: { onFile: (file: File) => void 
 
         <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
           {[
-            { icon: Type, title: "Transcribe", text: "Per-word timing and speaker labels." },
+            { icon: Type, title: "Transcribe", text: "Whisper locally, or import SRT / VTT." },
             { icon: Scissors, title: "Edit", text: "Select words and hit delete to edit." },
             { icon: Clapperboard, title: "Export", text: "Render the final cut to MP4 or M4A." },
           ].map(({ icon: Icon, title, text }) => (

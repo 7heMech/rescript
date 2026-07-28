@@ -21,7 +21,7 @@ import {
   type AutomaticSpeechRecognitionPipeline,
 } from "@huggingface/transformers";
 import type { Word, WorkerRequest, WorkerResponse } from "@/lib/types";
-import { MODELS, type ModelChoice } from "@/lib/models";
+import { MODELS, type WhisperModel } from "@/lib/models";
 import { cleanTranscript } from "@/lib/hallucinations";
 import {
   VAD_FRAME_SIZE,
@@ -140,7 +140,7 @@ async function pickDevice(): Promise<"webgpu" | "wasm"> {
 
 // Keyed by model id so choices that share weights reuse one pipeline.
 const asrPromises = new Map<string, Promise<AutomaticSpeechRecognitionPipeline>>();
-async function getAsr(choice: ModelChoice) {
+async function getAsr(choice: WhisperModel) {
   const { id, dtype } = MODELS[choice];
   let promise = asrPromises.get(id);
   if (!promise) {
@@ -418,7 +418,7 @@ function assignSpeakers(words: Word[], segments: DiarizationSegment[]) {
 self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
   const { audio, duration, model, language } = event.data;
   try {
-    const choice = model ?? "base";
+    const choice: WhisperModel = model ?? "base";
 
     // Overlap Whisper + Silero downloads; diarizer warms in the background.
     getDiarizer().catch(() => {});

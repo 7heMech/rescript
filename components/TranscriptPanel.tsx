@@ -1,9 +1,14 @@
 "use client";
 
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Eye, EyeOff, Pencil, RotateCcw, Scissors, WandSparkles, X } from "lucide-react";
+import { Eye, EyeOff, FileText, Pencil, RotateCcw, Scissors, WandSparkles, X } from "lucide-react";
 import { useEditorStore } from "@/lib/store";
 import { findFillerWordIds } from "@/lib/fillers";
+import {
+  isTranscriptFile,
+  parseTranscriptFile,
+  TRANSCRIPT_ACCEPT,
+} from "@/lib/parseTranscript";
 import type { SpeakerTurn, Word } from "@/lib/types";
 
 export const SPEAKER_COLORS = [
@@ -82,11 +87,13 @@ export default function TranscriptPanel() {
   const deleteWords = useEditorStore((s) => s.deleteWords);
   const restoreWords = useEditorStore((s) => s.restoreWords);
   const correctWords = useEditorStore((s) => s.correctWords);
+  const importWords = useEditorStore((s) => s.importWords);
   const playing = useEditorStore((s) => s.playing);
   const activeWordId = useEditorStore((s) => findActiveWordId(s.words, s.currentTime));
 
   const containerRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const importInputRef = useRef<HTMLInputElement>(null);
   const [selection, setSelection] = useState<SelectionInfo | null>(null);
   const [correcting, setCorrecting] = useState<{
     ids: number[];
@@ -115,6 +122,31 @@ export default function TranscriptPanel() {
   const removeFillers = useCallback(() => {
     deleteWords(fillerIds);
   }, [deleteWords, fillerIds]);
+
+  const handleImportTranscript = useCallback(
+    async (files: FileList | null) => {
+      const file = files?.[0];
+      if (!file) return;
+      if (!isTranscriptFile(file)) {
+        alert("Please choose an SRT, VTT, or JSON transcript.");
+        return;
+      }
+      if (
+        words.length > 0 &&
+        !confirm("Replace the current transcript with this file?")
+      ) {
+        return;
+      }
+      try {
+        const imported = await parseTranscriptFile(file);
+        importWords(imported);
+      } catch (err) {
+        console.error(err);
+        alert(err instanceof Error ? err.message : "Could not read that transcript.");
+      }
+    },
+    [words.length, importWords]
+  );
 
   const seekToWord = useCallback((word: Word) => {
     const { videoEl, setCurrentTime } = useEditorStore.getState();
@@ -296,6 +328,29 @@ export default function TranscriptPanel() {
               <WandSparkles size={14} />
               Remove fillers ({fillerIds.length})
             </button>
+          )}
+          {(status === "ready" || status === "error" || status === "transcribing") && (
+            <>
+              <button
+                onClick={() => importInputRef.current?.click()}
+                title="Replace transcript from SRT, VTT, or JSON"
+                className="flex h-7 items-center gap-1.5 rounded-lg px-2 text-xs text-zinc-500 transition hover:bg-zinc-100"
+              >
+                <FileText size={14} />
+                Import
+              </button>
+              <input
+                ref={importInputRef}
+                type="file"
+                accept={TRANSCRIPT_ACCEPT}
+                className="hidden"
+                onChange={(e) => {
+                  const files = e.target.files;
+                  e.target.value = "";
+                  void handleImportTranscript(files);
+                }}
+              />
+            </>
           )}
           <button
             onClick={toggleShowDeleted}

@@ -7,6 +7,7 @@
  */
 
 import type { ModelChoice } from "./models";
+import { isModelChoice } from "./models";
 import type { MediaKind } from "./media";
 import type { Word } from "./types";
 
@@ -119,7 +120,7 @@ export async function putProject(input: ProjectWrite): Promise<string> {
     name: input.name,
     mediaKind: input.mediaKind,
     duration: input.duration,
-    model: input.model,
+    model: isModelChoice(input.model) ? input.model : "base",
     words: input.words,
     showDeleted: input.showDeleted,
     media: input.media,
