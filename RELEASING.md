@@ -86,5 +86,5 @@ disabled in `npm run electron:dev` and only runs in packaged builds
 - App icons live in `build/` (`icon.png` ≥512px). electron-builder derives
   `.icns` / `.ico` from it.
 - Desktop builds set `NEXT_PUBLIC_ELECTRON=1` so the static export skips the
-  COI service worker (headers come from the `app://` protocol) and Google
-  Analytics.
+  COI service worker (headers come from the `app://` protocol). Google Analytics
+  still loads in the desktop app the same as on the web.

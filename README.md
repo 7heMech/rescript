@@ -77,9 +77,8 @@ audio track. For desktop packaging, signing, and cutting releases, see
 > *first* time you transcribe, then cached in browser / app storage. After that,
 > everything — transcription, editing, export — works with the network fully
 > disconnected. Your media and transcript never leave the device; the only
-> third-party request the **web** app makes is anonymous page analytics (Google
-> Analytics), which fails silently when offline. The desktop app does not load
-> analytics.
+> third-party request the app makes is anonymous page analytics (Google
+> Analytics), which fails silently when offline.
 
 ## How it works
 
