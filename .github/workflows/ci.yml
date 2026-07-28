@@ -30,7 +30,10 @@ jobs:
         run: npm run lint
 
       - name: Typecheck (web)
-        run: npx tsc --noEmit
+        run: |
+          # next-env.d.ts is gitignored; generate it (and route types) before tsc.
+          npx next typegen
+          npx tsc --noEmit
 
       - name: Typecheck (electron)
         run: npm run typecheck:electron
