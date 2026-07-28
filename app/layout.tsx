@@ -74,7 +74,7 @@ export default function RootLayout({
         )}
       </head>
       <body className="min-h-full">{children}</body>
-      {!isElectron && <GoogleAnalytics gaId="G-WZ055S858C" />}
+      <GoogleAnalytics gaId="G-WZ055S858C" />
     </html>
   );
 }
