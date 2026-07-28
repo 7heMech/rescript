@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { FileText, Loader2 } from "lucide-react";
 import {
   isTranscriptFile,
@@ -20,13 +20,10 @@ import {
  * ModelSelector option that opens a caption file picker and surfaces parse
  * status / errors on the row (and in the closed trigger).
  *
- * Do not set model to "import" until a file is successfully parsed (or we
- * have a concrete error to show). Native file-picker cancel often does not
- * fire onChange — previously `select()` ran first, then the menu unmounted
- * and dropped the custom trigger, leaving the closed button stuck on the
- * literal label "import" with the default wave icon. That same stuck
- * `model === "import"` (with no pending file) is what made media drops
- * complain about choosing a transcript while the UI looked like Whisper.
+ * Do not set model to "import" until a file is chosen. Native file-picker
+ * cancel often skips onChange — we close the menu before opening the picker
+ * and restore the previous Whisper model on cancel so the dropdown cannot
+ * get stuck open on a half-selected import.
  */
 export default function ImportTranscriptOption() {
   const pendingTranscript = useEditorStore((s) => s.pendingTranscript);
@@ -39,10 +36,20 @@ export default function ImportTranscriptOption() {
   const fileRef = useRef<HTMLInputElement>(null);
   const menuRef = useRef<Pick<
     ModelOptionContextValue,
-    "keepMenuOpen" | "select"
+    "keepMenuOpen" | "closeMenu" | "select"
   > | null>(null);
   const previousModelRef = useRef<"base" | "small">("base");
   const pickGenRef = useRef(0);
+
+  const finishCancel = useCallback(() => {
+    setPicking(false);
+    setReading(false);
+    setError(null);
+    if (!useEditorStore.getState().pendingTranscript) {
+      setModel(previousModelRef.current);
+    }
+    menuRef.current?.closeMenu();
+  }, [setModel]);
 
   // If the user switches to Whisper while a picker/parse is in flight, invalidate
   // so a late onChange/parse cannot flip model back to import.
@@ -58,25 +65,31 @@ export default function ImportTranscriptOption() {
     });
   }, []);
 
-  // If the OS file dialog is cancelled, onChange often never fires. When focus
-  // returns without a successful pick, clear the transient picking state and
-  // ensure we are not left on import without a transcript.
+  // Native file-input "cancel" (not in React's input prop types yet).
+  useEffect(() => {
+    const input = fileRef.current;
+    if (!input) return;
+    const onCancel = () => {
+      pickGenRef.current += 1;
+      finishCancel();
+    };
+    input.addEventListener("cancel", onCancel);
+    return () => input.removeEventListener("cancel", onCancel);
+  }, [finishCancel]);
+
+  // Fallback when the OS dialog is cancelled without firing onChange/cancel.
   useEffect(() => {
     if (!picking) return;
     const gen = pickGenRef.current;
     const onFocus = () => {
       window.setTimeout(() => {
         if (pickGenRef.current !== gen) return;
-        setPicking(false);
-        const state = useEditorStore.getState();
-        if (state.model === "import" && !state.pendingTranscript) {
-          setModel(previousModelRef.current);
-        }
+        finishCancel();
       }, 400);
     };
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
-  }, [picking, setModel]);
+  }, [picking, finishCancel]);
 
   const triggerLabel = reading
     ? "Import…"
@@ -105,11 +118,12 @@ export default function ImportTranscriptOption() {
         if (isWhisperModel(current)) {
           previousModelRef.current = current;
         }
-        // Do not set model to "import" until parse succeeds (or errors).
+        // Do not set model to "import" until a file is chosen. Close the menu
+        // before the OS dialog so cancel cannot leave it pinned open.
         pickGenRef.current += 1;
         setPicking(true);
         setError(null);
-        ctx.keepMenuOpen();
+        ctx.closeMenu();
         requestAnimationFrame(() => fileRef.current?.click());
       }}
     >
@@ -132,11 +146,7 @@ export default function ImportTranscriptOption() {
             const menu = menuRef.current;
             const gen = ++pickGenRef.current; // invalidate focus-cancel timer
             if (!file) {
-              setPicking(false);
-              setError(null);
-              if (!useEditorStore.getState().pendingTranscript) {
-                setModel(previousModelRef.current);
-              }
+              finishCancel();
               return;
             }
             if (!isTranscriptFile(file)) {
@@ -148,15 +158,15 @@ export default function ImportTranscriptOption() {
               return;
             }
             setReading(true);
+            setPicking(false);
             setError(null);
-            menu?.keepMenuOpen();
+            setModel("import"); // so the closed trigger can show progress
             try {
               const words = await parseTranscriptFile(file);
               if (pickGenRef.current !== gen) return;
               setPendingTranscript({ name: file.name, words });
               setModel("import");
-              setPicking(false);
-              menu?.keepMenuOpen();
+              menu?.closeMenu();
             } catch (err) {
               if (pickGenRef.current !== gen) return;
               console.error(err);
@@ -167,7 +177,6 @@ export default function ImportTranscriptOption() {
                   : "Could not read that transcript."
               );
               setModel("import");
-              setPicking(false);
               menu?.keepMenuOpen();
             } finally {
               if (pickGenRef.current === gen) setReading(false);
