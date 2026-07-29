@@ -52,7 +52,7 @@ const WordSpan = memo(function WordSpan({
   /** True when the word is removed from the edited media (deleted or covered by a cut). */
   cutOut: boolean;
   active: boolean;
-  onClick: (word: Word) => void;
+  onClick: (word: Word, el: HTMLElement) => void;
 }) {
   // The trailing space lives inside the span so that selection and deletion
   // highlights are continuous across words instead of breaking at each gap.
@@ -60,7 +60,7 @@ const WordSpan = memo(function WordSpan({
     <span
       data-wid={word.id}
       data-cut={cutOut ? "" : undefined}
-      onClick={() => onClick(word)}
+      onClick={(e) => onClick(word, e.currentTarget)}
       className={`py-0.5 cursor-pointer transition-colors duration-75 ${cutOut
         ? "word-deleted bg-red-50 text-red-400 line-through decoration-red-300"
         : active
@@ -179,27 +179,74 @@ export default function TranscriptPanel() {
   // The native ::selection highlight is made transparent over the words, and
   // the marking is done imperatively so dragging doesn't re-render the panel.
   const markedRef = useRef<Set<HTMLElement>>(new Set());
+  // True while the current selection came from clicking a single word. There is
+  // no native range in that case, so the collapsed-selection branch of the
+  // selectionchange handler must not wipe it.
+  const clickSelectionRef = useRef(false);
+
+  const clearMarks = useCallback(() => {
+    for (const el of markedRef.current) el.removeAttribute("data-sel");
+    markedRef.current.clear();
+  }, []);
+
+  const clearSelection = useCallback(() => {
+    clearMarks();
+    clickSelectionRef.current = false;
+    setSelection(null);
+    window.getSelection()?.removeAllRanges();
+  }, [clearMarks]);
+
+  // Clicking a word seeks to it and selects it, so the toolbar and the
+  // Delete/Backspace shortcut work on single words too — not just drags.
+  const handleWordClick = useCallback(
+    (word: Word, el: HTMLElement) => {
+      const nativeSel = window.getSelection();
+      // A drag ends with a click on the word under the cursor; leave the
+      // range-based selection (and the playhead) alone in that case.
+      if (nativeSel && !nativeSel.isCollapsed) return;
+      seekToWord(word);
+      const container = containerRef.current;
+      if (!container) return;
+      clearMarks();
+      el.setAttribute("data-sel", "");
+      markedRef.current.add(el);
+      clickSelectionRef.current = true;
+      const rect = el.getBoundingClientRect();
+      const containerRect = container.getBoundingClientRect();
+      const cutOut = cutOutIds.has(word.id);
+      setSelection({
+        ids: [word.id],
+        anyDeleted: cutOut,
+        anyKept: !cutOut,
+        top: rect.top - containerRect.top - 44,
+        left: Math.max(8, rect.left - containerRect.left + rect.width / 2),
+      });
+    },
+    [seekToWord, clearMarks, cutOutIds]
+  );
+
   useEffect(() => {
-    const clearMarks = () => {
-      for (const el of markedRef.current) el.removeAttribute("data-sel");
-      markedRef.current.clear();
-    };
     const handler = () => {
       // Keep the highlight frozen on the words being corrected.
       if (correctingRef.current) return;
       const container = containerRef.current;
       const sel = window.getSelection();
       if (!container || !sel || sel.isCollapsed || sel.rangeCount === 0) {
+        // A click collapses the native selection; that must not clear the
+        // single-word selection the click itself is about to create.
+        if (clickSelectionRef.current) return;
         clearMarks();
         setSelection(null);
         return;
       }
       const range = sel.getRangeAt(0);
       if (!container.contains(range.commonAncestorContainer)) {
+        if (clickSelectionRef.current) return;
         clearMarks();
         setSelection(null);
         return;
       }
+      clickSelectionRef.current = false;
       const wordMap = new Map(words.map((w) => [w.id, w]));
       const ids: number[] = [];
       let anyDeleted = false;
@@ -236,24 +283,37 @@ export default function TranscriptPanel() {
     };
     document.addEventListener("selectionchange", handler);
     return () => {
-      clearMarks();
+      // A click selection has no native range to track, so keep its highlight
+      // across the re-subscriptions this effect goes through.
+      if (!clickSelectionRef.current) clearMarks();
       document.removeEventListener("selectionchange", handler);
     };
-  }, [words, cutOutIds]);
+  }, [words, cutOutIds, clearMarks]);
+
+  // A click-based selection has no native range, so nothing else would drop it:
+  // clear it when the next mousedown lands outside the words and the toolbar.
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (!clickSelectionRef.current || correctingRef.current) return;
+      const target = e.target as HTMLElement | null;
+      if (target?.closest("[data-wid], [data-transcript-toolbar]")) return;
+      clearSelection();
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [clearSelection]);
 
   const cutSelection = useCallback(() => {
     if (!selection) return;
     deleteWords(selection.ids);
-    window.getSelection()?.removeAllRanges();
-    setSelection(null);
-  }, [selection, deleteWords]);
+    clearSelection();
+  }, [selection, deleteWords, clearSelection]);
 
   const restoreSelection = useCallback(() => {
     if (!selection) return;
     restoreWords(selection.ids);
-    window.getSelection()?.removeAllRanges();
-    setSelection(null);
-  }, [selection, restoreWords]);
+    clearSelection();
+  }, [selection, restoreWords, clearSelection]);
 
   const openCorrect = useCallback(() => {
     if (!selection) return;
@@ -263,6 +323,7 @@ export default function TranscriptPanel() {
       .map((w) => w.text)
       .join(" ");
     correctingRef.current = true;
+    clickSelectionRef.current = false;
     setCorrectText(text);
     setCorrecting({
       ids: selection.ids,
@@ -301,17 +362,18 @@ export default function TranscriptPanel() {
   // Delete / Backspace cuts the selected words.
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.key !== "Delete" && e.key !== "Backspace") return;
+      if (e.key !== "Delete" && e.key !== "Backspace" && e.key !== "Escape") return;
       const target = e.target as HTMLElement;
       if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)
         return;
       if (!selection || selection.ids.length === 0) return;
       e.preventDefault();
-      cutSelection();
+      if (e.key === "Escape") clearSelection();
+      else cutSelection();
     };
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
-  }, [selection, cutSelection]);
+  }, [selection, cutSelection, clearSelection]);
 
   // Keep the active word in view during playback.
   useEffect(() => {
@@ -437,7 +499,7 @@ export default function TranscriptPanel() {
                           word={w}
                           cutOut={cutOutIds.has(w.id)}
                           active={w.id === activeWordId}
-                          onClick={seekToWord}
+                          onClick={handleWordClick}
                         />
                       ))}
                     </p>
@@ -449,6 +511,7 @@ export default function TranscriptPanel() {
 
           {selection && !correcting && (
             <div
+              data-transcript-toolbar
               className="absolute z-20 flex -translate-x-1/2 items-center gap-0.5 rounded-xl border border-zinc-200 bg-white p-1 shadow-lg shadow-zinc-900/10"
               style={{ top: selection.top, left: selection.left }}
               onMouseDown={(e) => e.preventDefault()}
