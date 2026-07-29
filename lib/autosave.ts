@@ -3,7 +3,7 @@
  */
 
 import { useEditorStore } from "./store";
-import { getProject, putProject } from "./projects";
+import { putProject } from "./projects";
 
 const DEBOUNCE_MS = 500;
 
@@ -51,11 +51,8 @@ async function writeSnapshot() {
   if (!s.videoFile || !s.mediaKind || s.words.length === 0) return;
 
   try {
-    let createdAt: number | undefined;
-    if (s.projectId) {
-      const existing = await getProject(s.projectId);
-      createdAt = existing?.createdAt;
-    }
+    // putProject preserves createdAt for an existing id within its own
+    // transaction, so no separate read pass here.
     const id = await putProject({
       id: s.projectId ?? undefined,
       name: s.videoFile.name,
@@ -64,9 +61,10 @@ async function writeSnapshot() {
       model: s.model,
       words: s.words,
       showDeleted: s.showDeleted,
+      manualCuts: s.manualCuts,
+      sceneBoundaries: s.sceneBoundaries,
       media: s.videoFile,
       mediaType: s.videoFile.type,
-      createdAt,
     });
     if (useEditorStore.getState().projectId !== id) {
       useEditorStore.setState({ projectId: id });
