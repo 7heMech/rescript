@@ -23,7 +23,7 @@ import LogoLoader from "./LogoLoader";
  *  underneath isn't revealed mid-resize. */
 const WINDOW_MODE_OVERLAY_MS = 380;
 
-/** Matches Tailwind `lg` — resizable split only above this width. */
+/** Matches Tailwind `lg` — below this the panes stack vertically. */
 const DESKTOP_MQ = "(min-width: 1024px)";
 
 function useIsDesktopLayout() {
@@ -40,52 +40,77 @@ function useIsDesktopLayout() {
   return isDesktop;
 }
 
-function EditorWorkspace() {
-  const isDesktop = useIsDesktopLayout();
+/** Transcript and preview split, resizable in both orientations. Wide screens
+ *  put the transcript first (left of the preview); stacked screens lead with
+ *  the preview on top. Each orientation remembers its own sizes. */
+function SplitWorkspace({ orientation }: { orientation: "horizontal" | "vertical" }) {
+  const horizontal = orientation === "horizontal";
   const { defaultLayout, onLayoutChanged } = useDefaultLayout({
-    id: "editor-workspace",
+    id: `editor-workspace-${orientation}`,
     storage: typeof window !== "undefined" ? localStorage : undefined,
   });
 
-  // Mobile keeps the fixed preview height + stacked column from before.
-  if (!isDesktop) {
-    return (
-      <div className="flex min-h-0 flex-1 flex-col">
-        <div className="flex h-[34vh] shrink-0 flex-col border-b border-zinc-200">
-          <MediaPreview />
-        </div>
-        <div className="flex min-h-0 flex-1">
-          <TranscriptPanel />
-        </div>
-      </div>
-    );
-  }
+  const preview = (
+    <Panel
+      id="media"
+      defaultSize={horizontal ? "44%" : "34vh"}
+      minSize={horizontal ? 320 : 140}
+      className="flex min-h-0 min-w-0 flex-col"
+    >
+      <MediaPreview />
+    </Panel>
+  );
+  const transcript = (
+    <Panel
+      id="transcript"
+      defaultSize={horizontal ? "56%" : "66%"}
+      minSize={horizontal ? "20%" : 160}
+      className="flex min-h-0 min-w-0 flex-col"
+    >
+      <TranscriptPanel />
+    </Panel>
+  );
+  const separator = (
+    <Separator
+      className={`${horizontal ? "w-px" : "h-px"} bg-zinc-200 outline-none transition-colors hover:bg-zinc-300 data-[separator=active]:bg-zinc-400 data-[separator=focus]:bg-zinc-400`}
+    />
+  );
 
   return (
     <Group
-      orientation="horizontal"
+      orientation={orientation}
       className="min-h-0 flex-1"
       defaultLayout={defaultLayout}
       onLayoutChanged={onLayoutChanged}
+      // The hairline divider is too small to hit with a finger; widen the
+      // touch target well past its visual size.
+      resizeTargetMinimumSize={{ coarse: 32, fine: 10 }}
     >
-      <Panel
-        id="transcript"
-        defaultSize="56%"
-        minSize="20%"
-        className="flex min-h-0 flex-col"
-      >
-        <TranscriptPanel />
-      </Panel>
-      <Separator className="w-px bg-zinc-200 outline-none transition-colors hover:bg-zinc-300 data-[separator=active]:bg-zinc-400" />
-      <Panel
-        id="media"
-        defaultSize="44%"
-        minSize={320}
-        className="flex min-h-0 flex-col"
-      >
-        <MediaPreview />
-      </Panel>
+      {horizontal ? (
+        <>
+          {transcript}
+          {separator}
+          {preview}
+        </>
+      ) : (
+        <>
+          {preview}
+          {separator}
+          {transcript}
+        </>
+      )}
     </Group>
+  );
+}
+
+function EditorWorkspace() {
+  const isDesktop = useIsDesktopLayout();
+  // Keyed so crossing the breakpoint remounts the group and restores that
+  // orientation's saved layout instead of carrying sizes across.
+  return isDesktop ? (
+    <SplitWorkspace key="horizontal" orientation="horizontal" />
+  ) : (
+    <SplitWorkspace key="vertical" orientation="vertical" />
   );
 }
 
