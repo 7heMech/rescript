@@ -489,9 +489,6 @@ export default function Timeline() {
         <span className="text-xs tabular-nums text-zinc-400">
           {formatTime(currentTime)}
         </span>
-        <span className="hidden text-[11px] text-zinc-300 lg:inline">
-          scroll to zoom · drag cut edges to trim
-        </span>
 
         <div className="mx-auto flex items-center">
           <button

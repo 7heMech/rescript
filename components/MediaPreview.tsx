@@ -108,7 +108,7 @@ export default function MediaPreview() {
             <button
               type="button"
               onClick={togglePlay}
-              className="flex w-full max-w-md cursor-pointer flex-col items-center gap-3 rounded-2xl border border-zinc-200 bg-white px-8 py-14 text-center shadow-sm transition hover:border-zinc-300"
+              className="flex max-w-md cursor-pointer flex-col items-center gap-3 px-8 py-14 text-center transition"
             >
               <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-zinc-900 text-white">
                 <AudioLines size={24} />
@@ -138,7 +138,7 @@ export default function MediaPreview() {
             onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
             onPlay={() => setPlaying(true)}
             onPause={() => setPlaying(false)}
-            className="max-h-full max-w-full cursor-pointer rounded-xl bg-black shadow-lg shadow-zinc-900/10"
+            className="max-h-full max-w-full cursor-pointer rounded-sm bg-black shadow-lg shadow-zinc-900/10"
           />
         )}
       </div>

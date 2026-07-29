@@ -329,11 +329,6 @@ export default function TranscriptPanel() {
           Transcript
         </span>
         <div className="ml-auto flex items-center gap-2">
-          {status === "ready" && (
-            <span className="hidden text-xs text-zinc-400 md:inline">
-              select words and press ⌫ to cut
-            </span>
-          )}
           {deletedCount > 0 && (
             <span className="rounded-md bg-red-50 px-2 py-0.5 text-[9px] font-medium text-red-500">
               {deletedCount} word{deletedCount === 1 ? "" : "s"} cut
@@ -343,10 +338,10 @@ export default function TranscriptPanel() {
             <button
               onClick={removeFillers}
               title='Cut filler words ("um", "uh", …) from the video'
-              className="flex h-7 items-center gap-1.5 rounded-lg px-2 text-xs text-zinc-500 transition hover:bg-zinc-100"
+              className="flex cursor-pointer h-7 items-center gap-1.5 rounded-lg px-2 text-xs text-zinc-500 transition hover:bg-zinc-100 line-clamp-1"
             >
               <WandSparkles size={14} />
-              <span className="hidden sm:inline">Remove fillers </span>({fillerIds.length})
+              <span className="hidden sm:inline">Remove filler words ({fillerIds.length})</span>
             </button>
           )}
           {(status === "ready" || status === "error" || status === "transcribing") && (
@@ -354,7 +349,7 @@ export default function TranscriptPanel() {
               <button
                 onClick={() => importInputRef.current?.click()}
                 title="Replace transcript from SRT, VTT, or JSON"
-                className="flex h-7 items-center gap-1.5 rounded-lg px-2 text-xs text-zinc-500 transition hover:bg-zinc-100"
+                className="flex cursor-pointer h-7 items-center gap-1.5 rounded-lg px-2 text-xs text-zinc-500 transition hover:bg-zinc-100"
               >
                 <FileText size={14} />
                 <span className="hidden sm:inline">Import</span>
@@ -375,12 +370,9 @@ export default function TranscriptPanel() {
           <button
             onClick={toggleShowDeleted}
             title={showDeleted ? "Hide deleted words" : "Show deleted words"}
-            className="flex h-7 items-center gap-1.5 rounded-lg px-2 text-xs text-zinc-500 transition hover:bg-zinc-100"
+            className="flex cursor-pointer h-7 items-center gap-1.5 rounded-lg px-2 text-xs text-zinc-500 transition hover:bg-zinc-100"
           >
             {showDeleted ? <Eye size={14} /> : <EyeOff size={14} />}
-            <span className="hidden sm:inline">
-              {showDeleted ? "Showing cuts" : "Hiding cuts"}
-            </span>
           </button>
         </div>
       </div>
