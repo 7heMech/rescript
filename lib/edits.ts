@@ -454,67 +454,89 @@ export function addManualCut(
 }
 
 /**
- * Trim one edge of a clip. Shrinking adds a manual cut and marks fully covered
- * words deleted; expanding shrinks manual cuts and restores words fully
- * contained in the reclaimed span.
+ * Range a trim drag may move one clip edge through: from shrinking the clip to
+ * MIN_CLIP_DURATION, out to fully reclaiming the adjacent gap — but never past
+ * it, since beyond the gap lies the neighbouring clip's own edge.
  */
-export function trimClipEdgeResult(
-  words: Word[],
-  manualCuts: ManualCut[],
+export function trimEdgeBounds(
   clip: ClipSegment,
   edge: "in" | "out",
-  rawTime: number,
-  duration: number,
-  nextCutId: number
-): {
-  words: Word[];
-  manualCuts: ManualCut[];
-  nextCutId: number;
-} | null {
-  let t = Math.max(0, Math.min(duration, rawTime));
-  if (edge === "in") {
-    t = Math.min(t, clip.end - MIN_CLIP_DURATION);
-    t = Math.max(t, 0);
-    if (Math.abs(t - clip.start) < 1e-4) return null;
+  cuts: TimeRange[]
+): { lo: number; hi: number } {
+  const eps = 1e-3;
+  const gap = cuts.find((c) =>
+    edge === "in"
+      ? Math.abs(c.end - clip.start) < eps
+      : Math.abs(c.start - clip.end) < eps
+  );
+  const lo =
+    edge === "in" ? (gap ? gap.start : clip.start) : clip.start + MIN_CLIP_DURATION;
+  const hi =
+    edge === "in" ? clip.end - MIN_CLIP_DURATION : gap ? gap.end : clip.end;
+  return { lo: Math.min(lo, hi), hi: Math.max(lo, hi) };
+}
 
-    if (t > clip.start) {
-      // Shrink: cut [clip.start, t)
-      const { cuts, nextId } = addManualCut(manualCuts, clip.start, t, nextCutId);
-      return {
-        words: deleteWordsCoveredBy(words, clip.start, t),
-        manualCuts: cuts,
-        nextCutId: nextId,
-      };
-    }
-
-    // Expand left: reclaim [t, clip.start)
-    const shrunk = shrinkManualCuts(manualCuts, t, clip.start, nextCutId);
-    return {
-      words: restoreWordsCoveredBy(words, t, clip.start),
-      manualCuts: shrunk.cuts,
-      nextCutId: shrunk.nextId,
-    };
+/**
+ * Carry a split point that sits exactly on a dragged edge along with it.
+ * A boundary left behind at the old position keeps splitting the keep range once
+ * the edge moves past it, which slices the reclaimed span off into its own
+ * orphan clip instead of letting it join the clip being trimmed.
+ */
+export function carrySceneBoundaries(
+  boundaries: SceneBoundary[],
+  from: number,
+  to: number
+): SceneBoundary[] {
+  if (!boundaries.some((b) => Math.abs(b.time - from) < SPLIT_EPSILON)) {
+    return boundaries;
   }
+  const moved = boundaries
+    .map((b) => (Math.abs(b.time - from) < SPLIT_EPSILON ? { ...b, time: to } : b))
+    .sort((a, b) => a.time - b.time);
 
-  // out edge
-  t = Math.max(t, clip.start + MIN_CLIP_DURATION);
-  t = Math.min(t, duration);
-  if (Math.abs(t - clip.end) < 1e-4) return null;
+  // Closing a gap completely can land two split points on top of each other.
+  const out: SceneBoundary[] = [];
+  for (const b of moved) {
+    const last = out[out.length - 1];
+    if (last && b.time - last.time < SPLIT_EPSILON) continue;
+    out.push(b);
+  }
+  return out;
+}
 
-  if (t < clip.end) {
-    const { cuts, nextId } = addManualCut(manualCuts, t, clip.end, nextCutId);
+/**
+ * Move one kept-region edge from `from` to `to`. `edge` names the side that
+ * stays kept ("out" = the clip left of the edge, "in" = the clip right of it),
+ * which is what decides whether the move cuts the span away or reclaims it.
+ * Edges are addressed by time rather than by clip index because a trim can merge
+ * or split clips — and renumber them — while the drag is still in progress.
+ */
+export function trimEdgeResult(
+  words: Word[],
+  manualCuts: ManualCut[],
+  edge: "in" | "out",
+  from: number,
+  to: number,
+  nextCutId: number
+): { words: Word[]; manualCuts: ManualCut[]; nextCutId: number } | null {
+  if (Math.abs(to - from) < 1e-4) return null;
+  const lo = Math.min(from, to);
+  const hi = Math.max(from, to);
+  const cutting = edge === "out" ? to < from : to > from;
+
+  if (cutting) {
+    const { cuts, nextId } = addManualCut(manualCuts, lo, hi, nextCutId);
     return {
-      words: deleteWordsCoveredBy(words, t, clip.end),
+      words: deleteWordsCoveredBy(words, lo, hi),
       manualCuts: cuts,
       nextCutId: nextId,
     };
   }
-
-  const shrunk = shrinkManualCuts(manualCuts, clip.end, t, nextCutId);
+  const { cuts, nextId } = shrinkManualCuts(manualCuts, lo, hi, nextCutId);
   return {
-    words: restoreWordsCoveredBy(words, clip.end, t),
-    manualCuts: shrunk.cuts,
-    nextCutId: shrunk.nextId,
+    words: restoreWordsCoveredBy(words, lo, hi),
+    manualCuts: cuts,
+    nextCutId: nextId,
   };
 }
 

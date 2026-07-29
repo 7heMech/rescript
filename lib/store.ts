@@ -13,13 +13,14 @@ import type {
 import {
   applyWordBounds,
   canSplitAt,
+  carrySceneBoundaries,
   getAdjustedWordCuts,
   getClipSegments,
   getCutRanges,
   getKeepRanges,
   getWordCutRanges,
   shrinkManualCuts,
-  trimClipEdgeResult,
+  trimEdgeResult,
 } from "./edits";
 import {
   isModelChoice,
@@ -131,12 +132,14 @@ interface EditorState {
   splitAtPlayhead: () => boolean;
   /** Remove a scene boundary by id (join adjacent clips). */
   removeSceneBoundary: (id: number) => void;
-  /** Trim the in or out edge of a clip segment by index. */
-  trimClipEdge: (
-    clipIndex: number,
-    edge: "in" | "out",
-    time: number
-  ) => void;
+  /**
+   * Move one edge of a kept region from `from` to `to` (original-media times).
+   * `edge` names the side that stays kept ("in" = the clip to the right of the
+   * edge, "out" = the clip to the left), which is what decides whether the move
+   * cuts or reclaims. Edges are addressed by time, not clip index, because a
+   * trim can merge or split clips mid-drag and renumber them.
+   */
+  trimEdge: (edge: "in" | "out", from: number, to: number) => void;
   /**
    * Set one edge of a word-derived cut's override (absolute original-media time).
    * Use beginGesture/endGesture around a drag so the whole drag is one undo step.
@@ -565,33 +568,41 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     });
   },
 
-  trimClipEdge: (clipIndex, edge, time) => {
+  trimEdge: (edge, from, to) => {
     const s = get();
-    const cuts = getCutRanges(
-      s.words,
-      s.duration,
-      s.manualCuts,
-      s.cutAdjustments
-    );
-    const keeps = getKeepRanges(cuts, s.duration);
-    const clips = getClipSegments(keeps, s.sceneBoundaries);
-    const clip = clips[clipIndex];
-    if (!clip) return;
-    const result = trimClipEdgeResult(
+    const result = trimEdgeResult(
       s.words,
       s.manualCuts,
-      clip,
       edge,
-      time,
-      s.duration,
+      from,
+      to,
       s.nextManualCutId
     );
     if (!result) return;
+
+    // A split point sitting on the dragged edge *is* that edge — it has to move
+    // with it, or the span the drag reclaims becomes an orphan clip.
+    const sceneBoundaries = carrySceneBoundaries(s.sceneBoundaries, from, to);
+
+    // Clip indices shift whenever a trim merges or splits keep ranges, so
+    // re-find the clip that owns the moved edge instead of keeping an index.
+    const clips = getClipSegments(
+      getKeepRanges(
+        getCutRanges(result.words, s.duration, result.manualCuts, s.cutAdjustments),
+        s.duration
+      ),
+      sceneBoundaries
+    );
+    const owner =
+      clips.find((c) => Math.abs((edge === "in" ? c.start : c.end) - to) < 1e-3) ??
+      clips.find((c) => to >= c.start && to <= c.end);
+
     pushEdit(get, set, {
       words: result.words,
       manualCuts: result.manualCuts,
+      sceneBoundaries,
       nextManualCutId: result.nextCutId,
-      selectedClipIndex: clipIndex,
+      selectedClipIndex: owner?.index ?? s.selectedClipIndex,
     });
   },
 

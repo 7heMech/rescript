@@ -7,12 +7,15 @@ import {
   applyCutAdjustments,
   applyWordBounds,
   canSplitAt,
+  carrySceneBoundaries,
   getAdjustedWordCuts,
   getClipSegments,
   getCutRanges,
   getKeepRanges,
   getWordCutRanges,
-  trimClipEdgeResult,
+  MIN_CLIP_DURATION,
+  trimEdgeBounds,
+  trimEdgeResult,
 } from "../lib/edits";
 import type { CutAdjustments, ManualCut, SceneBoundary, Word } from "../lib/types";
 
@@ -90,8 +93,7 @@ function nearly(a: number, b: number, eps = 1e-3) {
 // --- Trim shrink adds manual cut ---
 {
   const words = [word(1, "a", 0, 3)];
-  const clip = { id: "c", start: 0, end: 3, index: 0 };
-  const result = trimClipEdgeResult(words, [], clip, "in", 1, 3, 1);
+  const result = trimEdgeResult(words, [], "in", 0, 1, 1);
   assert(result !== null, "trim ok");
   assert(result!.manualCuts.length === 1, "one manual cut");
   assert(
@@ -107,8 +109,7 @@ function nearly(a: number, b: number, eps = 1e-3) {
     word(2, "gone", 1.1, 1.9),
     word(3, "also", 2.0, 2.8),
   ];
-  const clip = { id: "c", start: 0, end: 3, index: 0 };
-  const result = trimClipEdgeResult(words, [], clip, "out", 1.0, 3, 1);
+  const result = trimEdgeResult(words, [], "out", 3, 1.0, 1);
   assert(result !== null, "trim ok");
   assert(result!.words[0].deleted === false, "keep stays");
   assert(result!.words[1].deleted === true, "gone deleted");
@@ -123,11 +124,126 @@ function nearly(a: number, b: number, eps = 1e-3) {
     word(3, "c", 2, 3),
   ];
   const manual: ManualCut[] = [{ id: 1, start: 1, end: 2 }];
-  const clip = { id: "c", start: 2, end: 3, index: 0 };
-  const result = trimClipEdgeResult(words, manual, clip, "in", 1, 3, 10);
+  const result = trimEdgeResult(words, manual, "in", 2, 1, 10);
   assert(result !== null, "expand ok");
   assert(result!.words[1].deleted === false, "b restored");
   assert(result!.manualCuts.length === 0, "manual cut reclaimed");
+}
+
+// --- A trim edge may close the gap beside it, but not cross the next clip ---
+{
+  const words = [word(1, "a", 0, 5), word(2, "b", 5, 10, true), word(3, "c", 10, 20)];
+  const cuts = getCutRanges(words, 20, []);
+  const clips = getClipSegments(getKeepRanges(cuts, 20), []);
+  assert(clips.length === 2, `two clips, got ${clips.length}`);
+
+  const out = trimEdgeBounds(clips[0], "out", cuts);
+  assert(nearly(out.hi, clips[1].start), "out edge stops at the next clip's start");
+  assert(nearly(out.lo, clips[0].start + MIN_CLIP_DURATION), "out edge floor");
+
+  const inb = trimEdgeBounds(clips[1], "in", cuts);
+  assert(nearly(inb.lo, clips[0].end), "in edge stops at the previous clip's end");
+  assert(nearly(inb.hi, clips[1].end - MIN_CLIP_DURATION), "in edge ceiling");
+}
+
+// --- Clips only touching via a scene boundary can't absorb each other ---
+{
+  const words = [word(1, "a", 0, 3)];
+  const cuts = getCutRanges(words, 3, []);
+  const clips = getClipSegments(getKeepRanges(cuts, 3), [{ id: 1, time: 1.5 }]);
+  assert(clips.length === 2, "split into two adjacent clips");
+  assert(nearly(trimEdgeBounds(clips[0], "out", cuts).hi, clips[0].end), "no gap to reclaim");
+  assert(nearly(trimEdgeBounds(clips[1], "in", cuts).lo, clips[1].start), "no gap to reclaim");
+}
+
+// --- Closing a gap merges the two keep ranges (no leftover cut) ---
+{
+  const words = [word(1, "a", 0, 5), word(2, "b", 5, 10, true), word(3, "c", 10, 20)];
+  const cuts = getCutRanges(words, 20, []);
+  const clips = getClipSegments(getKeepRanges(cuts, 20), []);
+  const { hi } = trimEdgeBounds(clips[0], "out", cuts);
+  const result = trimEdgeResult(words, [], "out", clips[0].end, hi, 1);
+  assert(result !== null, "reclaim ok");
+  assert(result!.words[1].deleted === false, "b restored");
+  const merged = getKeepRanges(getCutRanges(result!.words, 20, result!.manualCuts), 20);
+  assert(merged.length === 1, `keeps merged into one, got ${merged.length}`);
+}
+
+// --- Dragging an edge out and back leaves no residue ---
+{
+  const words = [word(1, "a", 0, 4), word(2, "b", 4, 5)];
+  let state = { words, manualCuts: [] as ManualCut[], nextCutId: 1 };
+  // Shrink 5 -> 4.5 -> 4.2 in steps, the way a drag applies deltas.
+  for (const [from, to] of [[5, 4.5], [4.5, 4.2]] as const) {
+    const r = trimEdgeResult(state.words, state.manualCuts, "out", from, to, state.nextCutId);
+    state = { words: r!.words, manualCuts: r!.manualCuts, nextCutId: r!.nextCutId };
+  }
+  assert(state.manualCuts.length === 1, "steps merge into one cut");
+  assert(nearly(state.manualCuts[0].start, 4.2), "cut starts where the drag stopped");
+  // Drag back to where it started.
+  const back = trimEdgeResult(state.words, state.manualCuts, "out", 4.2, 5, state.nextCutId);
+  assert(back!.manualCuts.length === 0, "no leftover cut after returning");
+  assert(back!.words.every((w) => !w.deleted), "no words left deleted");
+}
+
+// --- Split, pull the second clip away, then close the gap from the first ---
+{
+  // The reported repro: an orphan clip used to appear between clip 1 and the gap.
+  const words = [word(1, "a", 0, 8), word(2, "b", 8, 16), word(3, "c", 16, 24)];
+  const duration = 24;
+  let st = {
+    words,
+    manualCuts: [] as ManualCut[],
+    boundaries: [{ id: 1, time: 8 }] as SceneBoundary[],
+    nextCutId: 1,
+  };
+  const clipsOf = (s: typeof st) =>
+    getClipSegments(
+      getKeepRanges(getCutRanges(s.words, duration, s.manualCuts), duration),
+      s.boundaries
+    );
+  const trim = (edge: "in" | "out", from: number, to: number) => {
+    const r = trimEdgeResult(st.words, st.manualCuts, edge, from, to, st.nextCutId);
+    assert(r !== null, `trim ${edge} ${from}->${to}`);
+    st = {
+      words: r!.words,
+      manualCuts: r!.manualCuts,
+      boundaries: carrySceneBoundaries(st.boundaries, from, to),
+      nextCutId: r!.nextCutId,
+    };
+  };
+
+  assert(clipsOf(st).length === 2, "split gives two clips");
+
+  // Drag clip 2's start right to 10, opening a gap.
+  trim("in", 8, 10);
+  let clips = clipsOf(st);
+  assert(clips.length === 2, `still two clips, got ${clips.length}`);
+  assert(nearly(clips[0].end, 8) && nearly(clips[1].start, 10), "gap 8–10");
+
+  // Drag clip 1's end right toward the gap, one pointer step at a time.
+  let edge = 8;
+  for (const to of [8.5, 9, 9.5, 10]) {
+    trim("out", edge, to);
+    edge = to;
+    clips = clipsOf(st);
+    assert(clips.length === 2, `no orphan clip at ${to}, got ${clips.length}`);
+    assert(nearly(clips[0].end, to), `clip 1 ends at the dragged edge (${to})`);
+  }
+  assert(st.manualCuts.length === 0, "gap fully reclaimed");
+  assert(nearly(clips[1].start, 10), "clip 2 untouched");
+  assert(st.words.every((w) => !w.deleted), "words restored");
+}
+
+// --- Boundary carrying keeps a trim reversible ---
+{
+  const boundaries: SceneBoundary[] = [{ id: 1, time: 8 }];
+  assert(nearly(carrySceneBoundaries(boundaries, 8, 10)[0].time, 10), "carried along");
+  assert(nearly(carrySceneBoundaries(boundaries, 5, 6)[0].time, 8), "unrelated edge");
+  assert(
+    carrySceneBoundaries([{ id: 1, time: 8 }, { id: 2, time: 10 }], 8, 10).length === 1,
+    "collapsed duplicates"
+  );
 }
 
 // --- Cut edge adjustments override word bounds without changing words ---
