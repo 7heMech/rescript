@@ -12,9 +12,9 @@ export default function TopBar({children}: {children?: React.ReactNode}) {
 
   return (
     <header
-      className={`flex h-13 shrink-0 items-center gap-2 border-b border-zinc-200 bg-white pr-3 ${
+      className={`flex h-13 shrink-0 items-center gap-2 border-b border-zinc-200 bg-white pr-3 transition-[padding-left] duration-200 ease-out ${
         draggable ? "app-drag" : ""
-      } ${trafficLights ? "pl-24" : "pl-3"}`}
+      } ${trafficLights ? "pl-22" : "pl-3"}`}
     >
       <button
         onClick={reset}
