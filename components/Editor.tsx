@@ -146,6 +146,7 @@ export default function Editor() {
         <>
           <TopBar>
             <SocialLinks />
+            <div className="mx-1 h-5 w-px bg-zinc-200" />
             <button
               onClick={undo}
               disabled={!canUndo}
@@ -166,7 +167,7 @@ export default function Editor() {
             <button
               onClick={() => setExportOpen(true)}
               disabled={status !== "ready" && status !== "exporting"}
-              className="flex h-8 items-center gap-1.5 rounded-full bg-zinc-900 px-4 text-[13px] font-medium text-white transition hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-40"
+              className="flex ml-1 h-8 items-center gap-1.5 rounded-full bg-zinc-900 px-4 text-[13px] font-medium text-white transition hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-40"
             >
               <Download size={14} />
               Export
