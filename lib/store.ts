@@ -128,7 +128,7 @@ interface EditorState {
   correctWords: (ids: number[], text: string) => void;
   /** Nudge a word's start/end on the timeline (may steal time from neighbors). */
   adjustWordBounds: (id: number, start: number, end: number) => void;
-  /** Insert a scene boundary at the playhead (Descript-style split). */
+  /** Insert a scene boundary at the playhead. */
   splitAtPlayhead: () => boolean;
   /** Remove a scene boundary by id (join adjacent clips). */
   removeSceneBoundary: (id: number) => void;
