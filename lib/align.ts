@@ -2,23 +2,33 @@
  * Word-timestamp refinement against voice activity.
  *
  * Whisper derives word timestamps by running DTW over the decoder's
- * cross-attention, and the result runs systematically late: on a 24 s test clip
- * the transcript trailed the audio by ~0.2 s from start to finish (speech /
- * silence agreement 61% as decoded, 78% once shifted back). The bias survives
- * every knob in the decode path — VAD slicing, the Whisper lead pad, chunk
- * length, decoder quantization — so it has to be corrected after decoding.
+ * cross-attention, and the result runs late. The error is not a constant offset:
+ * on a 24 s test clip (2 s of digital silence at each end, so both endpoints are
+ * unambiguous ground truth) the transcript trailed the audio by 0.34 s at t=2 s
+ * but only 0.01 s at t=22 s, decaying steeply over the first few seconds. A
+ * single global shift therefore under-corrects the opening and over-corrects the
+ * tail. The bias survives every knob in the decode path — VAD slicing, the
+ * Whisper lead pad, chunk length, decoder quantization — so it has to be
+ * corrected after decoding.
  *
- * We already know where speech is: the per-frame VAD flags computed to slice
- * the audio. Two passes over them:
+ * We already know where speech is: the per-frame VAD flags computed to slice the
+ * audio. So:
  *
- * 1. `estimateSpeechLag` picks one global shift, the one that best lines the
- *    transcript's pause boundaries up with the VAD's. Self-calibrating, so there
- *    is no per-model magic constant to keep in sync with model choices.
- * 2. `snapWordsToSpeech` then nudges individual boundaries onto nearby VAD
- *    edges, bounded so word order and a minimum word length always hold.
+ * 1. `buildSpeechAnchors` matches each pause-adjacent word start to a VAD speech
+ *    onset, giving a list of (decoded time → observed time) pairs.
+ * 2. `alignWordsToSpeech` interpolates the correction linearly between those
+ *    anchors, holding it constant outside them, which tracks the decay instead of
+ *    assuming it away. Guards keep the map strictly increasing.
+ * 3. `snapWordsToSpeech` then nudges remaining starts onto nearby onsets, and a
+ *    small fixed `ALIGN_LEAD_S` is applied so words land a hair early.
  *
- * `alignWordsToSpeech` runs both. All three are pure and take the frame flags
- * directly so they can be tested without loading a model.
+ * Only *starts* are snapped, and only onsets are used as anchors. Silero holds a
+ * speech flag for ~150 ms after speech actually stops, so anchoring word ends to
+ * VAD offsets pushed the final word 0.16 s past the true end of the audio.
+ *
+ * `estimateSpeechLag` remains as the fallback for clips with too few pauses to
+ * anchor. Everything here is pure and takes the frame flags directly, so it can
+ * be tested without loading a model.
  */
 import type { Word } from "./types";
 import { VAD_FRAME_SIZE, VAD_SAMPLE_RATE } from "./vad";
@@ -30,7 +40,7 @@ export interface AlignOptions {
   maxLagS?: number;
   /** Lag search granularity in seconds. Default 0.01. */
   lagStepS?: number;
-  /** How far one boundary may move to land on a VAD edge. Default 0.2. */
+  /** How far a word start may move to land on a VAD onset. Default 0.08. */
   maxSnapS?: number;
   /**
    * A word boundary counts as a pause landmark when the neighbouring word is at
@@ -42,6 +52,12 @@ export interface AlignOptions {
   landmarkTolS?: number;
   /** Words are never shortened below this. Default 0.02. */
   minWordS?: number;
+  /**
+   * Extra seconds subtracted from every timestamp after alignment, so words land
+   * a hair early rather than a hair late. Default `ALIGN_LEAD_S`; set 0 to
+   * measure raw alignment accuracy.
+   */
+  leadS?: number;
   /** Media duration; times are clamped to it when > 0. */
   duration?: number;
 }
@@ -223,6 +239,95 @@ export function estimateSpeechLag(
   ).bestLag;
 }
 
+/**
+ * One matched landmark: the decoded time of a word start, and the VAD onset it
+ * belongs to. `from - to` is the correction to apply there.
+ */
+export interface SpeechAnchor {
+  from: number;
+  to: number;
+}
+
+/**
+ * Slack in the monotonicity guard. Between consecutive anchors the correction may
+ * change by at most this fraction of the interval, which keeps the warped time
+ * map strictly increasing (its slope stays >= 1 - MAX_DRIFT_RATE > 0).
+ */
+const MAX_DRIFT_RATE = 0.9;
+
+/** Anchors are only trusted to describe a curve once there are at least two. */
+const MIN_ANCHORS = 2;
+
+/**
+ * Match pause-adjacent word starts to VAD speech onsets.
+ *
+ * `lag` is a rough prior used only to decide which onset a landmark belongs to,
+ * so a late transcript still matches the right pause. The result is strictly
+ * increasing in both coordinates and rate-limited, so interpolating between the
+ * anchors can never reorder time.
+ */
+export function buildSpeechAnchors(
+  words: Word[],
+  speechFrames: boolean[],
+  lag: number,
+  options: AlignOptions = {}
+): SpeechAnchor[] {
+  const { minGapS = 0.06, landmarkTolS = 0.3 } = options;
+  const { onsets } = speechEdgesFromFrames(speechFrames, options);
+  if (onsets.length === 0) return [];
+
+  const anchors: SpeechAnchor[] = [];
+  words.forEach((w, i) => {
+    if (i > 0 && w.start - words[i - 1].end < minGapS) return;
+    let onset: number | null = null;
+    let bestDist = Infinity;
+    for (const o of onsets) {
+      const d = Math.abs(w.start - lag - o);
+      if (d < bestDist) {
+        bestDist = d;
+        onset = o;
+      }
+    }
+    if (onset === null || bestDist > landmarkTolS) return;
+
+    const prev = anchors[anchors.length - 1];
+    if (!prev) {
+      anchors.push({ from: w.start, to: onset });
+      return;
+    }
+    // Strictly increasing in both coordinates, and rate-limited so the warp
+    // built from these anchors cannot fold time back on itself.
+    if (w.start <= prev.from || onset <= prev.to) return;
+    const delta = Math.abs(w.start - onset - (prev.from - prev.to));
+    if (delta > MAX_DRIFT_RATE * (w.start - prev.from)) return;
+    anchors.push({ from: w.start, to: onset });
+  });
+  return anchors;
+}
+
+/**
+ * The correction to subtract at time `t`: linear between anchors, constant
+ * outside them. Extrapolating a slope past the last anchor overshot badly on
+ * real audio (the tail landed 0.17 s late), so the ends are deliberately flat.
+ */
+export function correctionAt(anchors: SpeechAnchor[], fallbackLag: number, t: number): number {
+  if (anchors.length === 0) return fallbackLag;
+  const first = anchors[0];
+  if (t <= first.from) return first.from - first.to;
+  const last = anchors[anchors.length - 1];
+  if (t >= last.from) return last.from - last.to;
+  for (let k = 0; k + 1 < anchors.length; k++) {
+    const a = anchors[k];
+    const b = anchors[k + 1];
+    if (t >= a.from && t <= b.from) {
+      const da = a.from - a.to;
+      const db = b.from - b.to;
+      return da + ((db - da) * (t - a.from)) / (b.from - a.from);
+    }
+  }
+  return fallbackLag;
+}
+
 /** Nearest value in `sorted` to `target`, within `maxDist` and inside [lo, hi]. */
 function nearestEdge(
   sorted: number[],
@@ -247,49 +352,68 @@ function nearestEdge(
 }
 
 /**
- * Move word boundaries onto nearby VAD edges without reordering the transcript.
+ * Move word starts onto nearby VAD onsets without reordering the transcript.
  *
- * Each start may only move to an onset that sits after the previous word's
- * (already snapped) end, and each end only to an offset before the next word's
- * start — so a boundary can never jump across a neighbour and claim its audio.
- * Words the VAD has nothing to say about are left exactly where they were.
+ * A start may only move to an onset that sits after the previous word's end and
+ * before this word's own end, so a boundary can never jump across a neighbour and
+ * claim its audio. Words the VAD has nothing to say about are left exactly where
+ * they were. Ends are deliberately not snapped — see the file header.
  */
 export function snapWordsToSpeech(
   words: Word[],
   speechFrames: boolean[],
   options: AlignOptions = {}
 ): Word[] {
-  const { maxSnapS = 0.2, minWordS = 0.02, duration = 0 } = options;
+  const { maxSnapS = 0.08, minWordS = 0.02, duration = 0 } = options;
   const out = words.map((w) => ({ ...w }));
   if (out.length === 0) return out;
 
-  const { onsets, offsets } = speechEdgesFromFrames(speechFrames, options);
+  const { onsets } = speechEdgesFromFrames(speechFrames, options);
   for (let i = 0; i < out.length; i++) {
     const w = out[i];
     const prevEnd = i > 0 ? out[i - 1].end : 0;
-    const nextStart = i + 1 < out.length ? out[i + 1].start : Infinity;
     const onset = nearestEdge(onsets, w.start, maxSnapS, prevEnd, w.end);
     if (onset !== null) w.start = onset;
-    const offset = nearestEdge(offsets, w.end, maxSnapS, w.start, nextStart);
-    if (offset !== null) w.end = offset;
   }
+  return normalizeWords(out, minWordS, duration);
+}
 
-  // Keep starts non-decreasing and every word at least minWordS long. The
-  // minimum is applied after the duration clamp, matching the worker's own
-  // guarantee that end is always strictly greater than start.
+/**
+ * Keep starts non-decreasing and every word at least `minWordS` long, inside
+ * [0, duration]. The minimum length is applied after the duration clamp, matching
+ * the worker's own guarantee that end is always strictly greater than start.
+ * Mutates and returns `words`.
+ */
+function normalizeWords(words: Word[], minWordS: number, duration: number): Word[] {
   const maxT = duration > 0 ? duration : Infinity;
   let prevStart = 0;
-  for (const w of out) {
+  for (const w of words) {
     w.start = Math.min(Math.max(w.start, prevStart, 0), maxT);
     w.end = Math.max(Math.min(w.end, maxT), w.start + minWordS);
     prevStart = w.start;
   }
-  return out;
+  return words;
 }
 
 /**
- * Correct Whisper's late-biased word timestamps against the VAD flags: one
- * global shift, then per-boundary snapping. Returns new Word objects; the
+ * Fixed extra lead applied after alignment, in seconds.
+ *
+ * Alignment can only ever be as good as its reference, and the reference is a
+ * hair late in both directions: Silero raises its speech flag ~40 ms after speech
+ * actually starts, and a highlight that lands a touch early reads as in sync
+ * whereas one that lands late reads as lagging. This is a deliberate perceptual
+ * nudge, not a measured correction — against acoustic ground truth it slightly
+ * increases absolute error, so keep it small and change it here.
+ */
+export const ALIGN_LEAD_S = 0.08;
+
+/**
+ * Correct Whisper's late word timestamps against the VAD flags.
+ *
+ * Interpolates the correction between matched pause anchors so the decay across
+ * the clip is tracked rather than averaged away, then snaps remaining starts onto
+ * nearby onsets, then applies `leadS`. Falls back to a single global shift when
+ * there are too few anchors to describe a curve. Returns new Word objects; the
  * input is untouched.
  */
 export function alignWordsToSpeech(
@@ -297,10 +421,22 @@ export function alignWordsToSpeech(
   speechFrames: boolean[],
   options: AlignOptions = {}
 ): Word[] {
+  if (words.length === 0) return [];
+  const { leadS = ALIGN_LEAD_S, minWordS = 0.02, duration = 0 } = options;
   const lag = estimateSpeechLag(words, speechFrames, options);
-  const shifted =
-    lag === 0
-      ? words
-      : words.map((w) => ({ ...w, start: w.start - lag, end: w.end - lag }));
-  return snapWordsToSpeech(shifted, speechFrames, options);
+  const anchors = buildSpeechAnchors(words, speechFrames, lag, options);
+  const usable = anchors.length >= MIN_ANCHORS ? anchors : [];
+  const warped = words.map((w) => ({
+    ...w,
+    start: w.start - correctionAt(usable, lag, w.start),
+    end: w.end - correctionAt(usable, lag, w.end),
+  }));
+  const snapped = snapWordsToSpeech(warped, speechFrames, options);
+  if (leadS === 0) return snapped;
+  // After snapping, so the snap cannot pull the lead back onto the VAD onset.
+  for (const w of snapped) {
+    w.start -= leadS;
+    w.end -= leadS;
+  }
+  return normalizeWords(snapped, minWordS, duration);
 }
