@@ -1,4 +1,4 @@
-import { app, BrowserWindow, protocol, shell, net } from "electron";
+import { app, BrowserWindow, ipcMain, protocol, screen, shell, net } from "electron";
 import { join, normalize, extname } from "node:path";
 import { pathToFileURL } from "node:url";
 import { existsSync, statSync } from "node:fs";
@@ -6,6 +6,22 @@ import { initAutoUpdater } from "./updater";
 
 const isDev = !app.isPackaged;
 const DEV_SERVER_URL = process.env.ELECTRON_START_URL ?? "http://localhost:3000";
+const isMac = process.platform === "darwin";
+
+type WindowMode = "compact" | "expanded";
+
+/** The shell has two resting sizes: a small window for the upload screen, and a
+ *  roomy one once the editor (transcript + preview + timeline) takes over. */
+const WINDOW_SIZES: Record<WindowMode, { width: number; height: number }> = {
+  compact: { width: 560, height: 400 },
+  expanded: { width: 1280, height: 840 },
+};
+const MIN_SIZE = { width: 560, height: 400 };
+
+/** Height of the in-page drag strip (`h-12`), used to centre the traffic lights. */
+const TITLE_BAR_HEIGHT = 48;
+/** macOS traffic light buttons are 12px tall. */
+const TRAFFIC_LIGHT_HEIGHT = 12;
 
 /** MIME types for the custom app:// protocol that serves the Next static export. */
 const MIME: Record<string, string> = {
@@ -88,15 +104,68 @@ function registerAppProtocol(): void {
   });
 }
 
+/** Tracks each window's current mode so repeated requests are no-ops. */
+const windowModes = new WeakMap<BrowserWindow, WindowMode>();
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
+}
+
+/** Resize a window to the given mode's resting size, keeping it centred on
+ *  wherever the user left it rather than snapping to a corner. */
+function applyWindowMode(win: BrowserWindow, mode: WindowMode): void {
+  if (windowModes.get(win) === mode) return;
+  windowModes.set(win, mode);
+  // A maximized or full-screen window is already the size the user asked for.
+  if (win.isFullScreen() || win.isMaximized()) return;
+
+  const current = win.getBounds();
+  const { workArea } = screen.getDisplayMatching(current);
+  const width = Math.min(WINDOW_SIZES[mode].width, workArea.width);
+  const height = Math.min(WINDOW_SIZES[mode].height, workArea.height);
+  win.setBounds(
+    {
+      width,
+      height,
+      x: Math.round(
+        clamp(
+          current.x + (current.width - width) / 2,
+          workArea.x,
+          workArea.x + workArea.width - width
+        )
+      ),
+      y: Math.round(
+        clamp(
+          current.y + (current.height - height) / 2,
+          workArea.y,
+          workArea.y + workArea.height - height
+        )
+      ),
+    },
+    true // animate (macOS)
+  );
+}
+
 function createWindow(): BrowserWindow {
   const win = new BrowserWindow({
-    width: 1280,
-    height: 840,
-    minWidth: 900,
-    minHeight: 600,
+    ...WINDOW_SIZES.compact,
+    minWidth: MIN_SIZE.width,
+    minHeight: MIN_SIZE.height,
     backgroundColor: "#fafafa",
     title: "Rescript",
     show: false,
+    // macOS: drop the native title bar and let the page's top bar / upload drag
+    // strip move the window instead. Windows and Linux keep their native frame
+    // — hiding it there would take the caption buttons with it.
+    ...(isMac
+      ? {
+          titleBarStyle: "hidden" as const,
+          trafficLightPosition: {
+            x: 16,
+            y: Math.round((TITLE_BAR_HEIGHT - TRAFFIC_LIGHT_HEIGHT) / 2),
+          },
+        }
+      : {}),
     webPreferences: {
       preload: join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -104,8 +173,19 @@ function createWindow(): BrowserWindow {
       sandbox: false,
     },
   });
+  windowModes.set(win, "compact");
 
   win.once("ready-to-show", () => win.show());
+
+  // The page pads its top bar for the traffic lights, which macOS hides in
+  // full screen; tell it when that changes so the gap can collapse.
+  const emitFullScreen = () => {
+    if (!win.isDestroyed()) {
+      win.webContents.send("window:full-screen-changed", win.isFullScreen());
+    }
+  };
+  win.on("enter-full-screen", emitFullScreen);
+  win.on("leave-full-screen", emitFullScreen);
 
   // Open external http(s) links in the OS browser; keep app:// / localhost in-app.
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -147,6 +227,16 @@ if (!gotLock) {
       win.focus();
     }
   });
+
+  ipcMain.on("window:set-mode", (event, mode: unknown) => {
+    if (mode !== "compact" && mode !== "expanded") return;
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (win) applyWindowMode(win, mode);
+  });
+  ipcMain.handle(
+    "window:is-full-screen",
+    (event) => BrowserWindow.fromWebContents(event.sender)?.isFullScreen() ?? false
+  );
 
   app.whenReady().then(() => {
     if (!isDev) registerAppProtocol();

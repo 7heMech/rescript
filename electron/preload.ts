@@ -1,9 +1,10 @@
-import { contextBridge } from "electron";
+import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
 
 /**
  * Minimal bridge for the renderer. Rescript's UI is still a normal web
  * surface; we only expose host metadata so the page can adapt chrome / skip
- * the COI service worker (headers come from the app:// protocol instead).
+ * the COI service worker (headers come from the app:// protocol instead),
+ * plus the few window controls the page drives (sizing, title-bar state).
  */
 contextBridge.exposeInMainWorld("rescriptDesktop", {
   platform: process.platform as NodeJS.Platform,
@@ -11,5 +12,17 @@ contextBridge.exposeInMainWorld("rescriptDesktop", {
     electron: process.versions.electron,
     chrome: process.versions.chrome,
     node: process.versions.node,
+  },
+  /** Switch between the compact upload window and the full editor window. */
+  setWindowMode: (mode: "compact" | "expanded") => {
+    ipcRenderer.send("window:set-mode", mode);
+  },
+  isFullScreen: (): Promise<boolean> => ipcRenderer.invoke("window:is-full-screen"),
+  onFullScreenChange: (callback: (value: boolean) => void) => {
+    const listener = (_event: IpcRendererEvent, value: boolean) => callback(value);
+    ipcRenderer.on("window:full-screen-changed", listener);
+    return () => {
+      ipcRenderer.off("window:full-screen-changed", listener);
+    };
   },
 });

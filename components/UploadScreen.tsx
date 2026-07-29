@@ -68,9 +68,8 @@ function MediaCards({ dragging }: { dragging: boolean }) {
       {CARDS.map(({ icon: Icon, size, iconSize, bars, rest, fan }, i) => (
         <div
           key={i}
-          className={`absolute flex flex-col items-center justify-center gap-1.5 rounded-xl border border-zinc-200 bg-white transition-transform duration-300 ease-out ${size} ${
-            dragging ? fan : rest
-          }`}
+          className={`absolute flex flex-col items-center justify-center gap-1.5 rounded-xl border border-zinc-200 bg-white transition-transform duration-300 ease-out ${size} ${dragging ? fan : rest
+            }`}
         >
           <Icon size={iconSize} className="text-neutral-400" />
           <div className="flex flex-col items-center gap-1">
@@ -155,6 +154,7 @@ export default function UploadScreen({
 }: {
   onFile: (file: File, options?: { words?: Word[] }) => void;
 }) {
+  const isElectron = /electron/i.test(navigator.userAgent);
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   const [projects, setProjects] = useState<ProjectMeta[]>([]);
@@ -254,138 +254,136 @@ export default function UploadScreen({
           overflow-y-auto still lets short viewports (mobile) scroll the top. */}
       <div className="flex min-h-full items-center justify-center p-6">
         <div className="w-full max-w-xl">
-        <div className="mb-6 flex items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center">
-            <Image
-              src={logo}
-              alt="Rescript"
-              width={24}
-              height={24}
-              priority
-              className="rounded-sm border border-zinc-200"
-            />
-            <p className="ml-2 text-[15px] font-medium text-zinc-800">Rescript</p>
-          </div>
-          <ModelSelector groupLabel="Transcript source">
-            <ModelOption id="base" />
-            <ModelOption id="small" />
-            <ModelOptionSeparator />
-            <ImportTranscriptOption />
-          </ModelSelector>
-        </div>
-        <div
-          role="button"
-          aria-disabled={!ready}
-          tabIndex={ready ? 0 : -1}
-          onClick={() => ready && inputRef.current?.click()}
-          onKeyDown={(e) => ready && e.key === "Enter" && inputRef.current?.click()}
-          onDragOver={(e) => {
-            e.preventDefault();
-            if (ready) setDragging(true);
-          }}
-          onDragLeave={() => setDragging(false)}
-          onDrop={(e) => {
-            e.preventDefault();
-            setDragging(false);
-            handleFiles(e.dataTransfer.files);
-          }}
-          className={`group flex flex-col items-center justify-center rounded-2xl border-2 border-dashed bg-white/80 px-8 py-14 text-center transition ${
-            !ready
-              ? "cursor-default border-zinc-200"
-              : dragging
-                ? "cursor-pointer border-neutral-500 bg-neutral-50/80"
-                : "cursor-pointer border-zinc-300 hover:border-neutral-400 hover:bg-white"
-          }`}
-        >
-          {ready ? (
-            <MediaCards dragging={dragging} />
-          ) : (
-            <div
-              className={`mb-3 flex h-12 w-12 items-center justify-center rounded-full ${
-                isolation === "unavailable"
-                  ? "bg-amber-50 text-amber-600"
-                  : "bg-neutral-100 text-neutral-600"
+          {!isElectron && <div className="mb-6 flex items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center">
+              <Image
+                src={logo}
+                alt="Rescript"
+                width={24}
+                height={24}
+                priority
+                className="rounded-sm border border-zinc-200"
+              />
+              <p className="ml-2 text-[15px] font-medium text-zinc-800">Rescript</p>
+            </div>
+            <ModelSelector groupLabel="Transcript source">
+              <ModelOption id="base" />
+              <ModelOption id="small" />
+              <ModelOptionSeparator />
+              <ImportTranscriptOption />
+            </ModelSelector>
+          </div>}
+          <div
+            role="button"
+            aria-disabled={!ready}
+            tabIndex={ready ? 0 : -1}
+            onClick={() => ready && inputRef.current?.click()}
+            onKeyDown={(e) => ready && e.key === "Enter" && inputRef.current?.click()}
+            onDragOver={(e) => {
+              e.preventDefault();
+              if (ready) setDragging(true);
+            }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDragging(false);
+              handleFiles(e.dataTransfer.files);
+            }}
+            className={`group flex flex-col items-center justify-center rounded-2xl border-2 border-dashed bg-white/80 px-8 py-14 text-center transition ${!ready
+                ? "cursor-default border-zinc-200"
+                : dragging
+                  ? "cursor-pointer border-neutral-500 bg-neutral-50/80"
+                  : "cursor-pointer border-zinc-300 hover:border-neutral-400 hover:bg-white"
               }`}
-            >
-              {isolation === "unavailable" ? (
-                <ShieldAlert size={20} />
-              ) : (
-                <Loader2 size={20} className="animate-spin" />
-              )}
-            </div>
+          >
+            {ready ? (
+              <MediaCards dragging={dragging} />
+            ) : (
+              <div
+                className={`mb-3 flex h-12 w-12 items-center justify-center rounded-full ${isolation === "unavailable"
+                    ? "bg-amber-50 text-amber-600"
+                    : "bg-neutral-100 text-neutral-600"
+                  }`}
+              >
+                {isolation === "unavailable" ? (
+                  <ShieldAlert size={20} />
+                ) : (
+                  <Loader2 size={20} className="animate-spin" />
+                )}
+              </div>
+            )}
+            {isolation === "unavailable" ? (
+              <>
+                <p className="text-[15px] font-medium text-zinc-800">
+                  This browser can&apos;t run the editor
+                </p>
+                <p className="mt-1 max-w-sm text-[13px] leading-relaxed text-zinc-400">
+                  Editing needs SharedArrayBuffer, which requires a cross-origin-isolated page.
+                  Try a recent Chrome, Edge or Firefox over HTTPS.
+                </p>
+              </>
+            ) : ready ? (
+              <>
+                <p className="text-[15px] font-medium text-zinc-800">
+                  Drop a video or audio file here, or{" "}
+                  <span className="text-neutral-600">browse</span>
+                </p>
+                <p className="mt-1 text-[13px] text-zinc-400">
+                  {model === "import"
+                    ? pendingTranscript
+                      ? `Will use ${pendingTranscript.name} · MP4, WebM, MOV, MP3, WAV, …`
+                      : "Pick a transcript in the menu above, then drop your media"
+                    : "MP4, WebM, MOV, MP3, WAV, M4A, …"}
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-[15px] font-medium text-zinc-800">Getting things ready</p>
+                <p className="mt-1 text-[13px] text-zinc-400">
+                  Setting up the media engine, this only happens once.
+                </p>
+              </>
+            )}
+            <input
+              ref={inputRef}
+              type="file"
+              accept={MEDIA_ACCEPT}
+              className="hidden"
+              onChange={(e) => handleFiles(e.target.files)}
+            />
+          </div>
+
+          {ready && (
+            <RecentProjects
+              projects={projects}
+              busyId={busyId}
+              onOpen={handleOpen}
+              onRemove={handleRemove}
+            />
           )}
-          {isolation === "unavailable" ? (
-            <>
-              <p className="text-[15px] font-medium text-zinc-800">
-                This browser can&apos;t run the editor
-              </p>
-              <p className="mt-1 max-w-sm text-[13px] leading-relaxed text-zinc-400">
-                Editing needs SharedArrayBuffer, which requires a cross-origin-isolated page.
-                Try a recent Chrome, Edge or Firefox over HTTPS.
-              </p>
-            </>
-          ) : ready ? (
-            <>
-              <p className="text-[15px] font-medium text-zinc-800">
-                Drop a video or audio file here, or{" "}
-                <span className="text-neutral-600">browse</span>
-              </p>
-              <p className="mt-1 text-[13px] text-zinc-400">
-                {model === "import"
-                  ? pendingTranscript
-                    ? `Will use ${pendingTranscript.name} · MP4, WebM, MOV, MP3, WAV, …`
-                    : "Pick a transcript in the menu above, then drop your media"
-                  : "MP4, WebM, MOV, MP3, WAV, M4A, …"}
-              </p>
-            </>
-          ) : (
-            <>
-              <p className="text-[15px] font-medium text-zinc-800">Getting things ready</p>
-              <p className="mt-1 text-[13px] text-zinc-400">
-                Setting up the media engine, this only happens once.
-              </p>
-            </>
-          )}
-          <input
-            ref={inputRef}
-            type="file"
-            accept={MEDIA_ACCEPT}
-            className="hidden"
-            onChange={(e) => handleFiles(e.target.files)}
-          />
-        </div>
 
-        {ready && (
-          <RecentProjects
-            projects={projects}
-            busyId={busyId}
-            onOpen={handleOpen}
-            onRemove={handleRemove}
-          />
-        )}
+          {!isElectron && <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
+            {[
+              { icon: Type, title: "Transcribe", text: "Whisper locally, or import SRT / VTT." },
+              { icon: Scissors, title: "Edit", text: "Select words and hit delete to edit." },
+              { icon: Clapperboard, title: "Export", text: "Render the final cut to MP4 or M4A." },
+            ].map(({ icon: Icon, title, text }) => (
+              <div key={title} className="rounded-xl border border-zinc-200 bg-white/70 p-4">
+                <Icon size={16} className="mb-2 text-neutral-500" />
+                <p className="text-[13px] font-semibold text-zinc-800">{title}</p>
+                <p className="mt-0.5 text-xs leading-relaxed text-zinc-500">{text}</p>
+              </div>
+            ))}
+          </div>}
 
-        <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
-          {[
-            { icon: Type, title: "Transcribe", text: "Whisper locally, or import SRT / VTT." },
-            { icon: Scissors, title: "Edit", text: "Select words and hit delete to edit." },
-            { icon: Clapperboard, title: "Export", text: "Render the final cut to MP4 or M4A." },
-          ].map(({ icon: Icon, title, text }) => (
-            <div key={title} className="rounded-xl border border-zinc-200 bg-white/70 p-4">
-              <Icon size={16} className="mb-2 text-neutral-500" />
-              <p className="text-[13px] font-semibold text-zinc-800">{title}</p>
-              <p className="mt-0.5 text-xs leading-relaxed text-zinc-500">{text}</p>
-            </div>
-          ))}
+          {!isElectron && <div className="mt-6 flex flex-col items-center gap-2">
+            <p className="flex items-center justify-center gap-1.5 text-center text-xs text-zinc-400">
+              <Lock size={12} />
+              No uploads, no accounts — your media never leaves this device.
+            </p>
+            <GitHubLink variant="text" />
+          </div>}
         </div>
-
-        <div className="mt-6 flex flex-col items-center gap-2">
-          <p className="flex items-center justify-center gap-1.5 text-center text-xs text-zinc-400">
-            <Lock size={12} />
-            No uploads, no accounts — your media never leaves this device.
-          </p>
-          <GitHubLink variant="text" />
-        </div>
-      </div>
       </div>
     </div>
   );

@@ -26,6 +26,19 @@ body {
   background-color: rgb(254 202 202 / 0.7);
 }
 
+/*
+ * Electron (macOS): the shell hides the native title bar, so the page supplies
+ * the window's drag handle instead. Every interactive element inside a
+ * .app-drag region must opt out with .app-no-drag, or its clicks turn into
+ * window drags. No-ops in a normal browser tab.
+ */
+.app-drag {
+  -webkit-app-region: drag;
+}
+.app-no-drag {
+  -webkit-app-region: no-drag;
+}
+
 /* Slim scrollbars for panels and the timeline */
 .scrollbar-thin {
   scrollbar-width: thin;

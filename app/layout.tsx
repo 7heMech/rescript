@@ -17,7 +17,7 @@ const geistMono = Geist_Mono({
 const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 /** Set at desktop static-export time so we skip the COI service worker
  *  (the Electron `app://` protocol sets COOP/COEP headers directly). */
-const isElectron = process.env.NEXT_PUBLIC_ELECTRON === "1";
+const isElectron = /electron/i.test(navigator.userAgent);
 
 const title = "Rescript — edit videos like you edit text";
 const description =
