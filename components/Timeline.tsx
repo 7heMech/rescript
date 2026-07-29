@@ -9,7 +9,7 @@ import {
   useState,
   type PointerEvent as ReactPointerEvent,
 } from "react";
-import { Maximize2, Scissors, ZoomIn, ZoomOut } from "lucide-react";
+import { Maximize2, Scissors, SquareSplitHorizontal, ZoomIn, ZoomOut } from "lucide-react";
 import { useEditorStore } from "@/lib/store";
 import {
   canSplitAt,
@@ -459,8 +459,6 @@ export default function Timeline() {
   const doSplit = useCallback(() => {
     const ok = useEditorStore.getState().splitAtPlayhead();
     if (!ok) return;
-    setSplitFlash(true);
-    window.setTimeout(() => setSplitFlash(false), 420);
   }, []);
 
   // Word labels for the visible window
@@ -505,23 +503,21 @@ export default function Timeline() {
                 ? "Split clip at playhead (S)"
                 : "Move the playhead onto a kept region to split"
             }
-            className={`group relative flex h-8 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-all duration-200 ${
+            className={`group relative flex h-6 items-center gap-1 rounded-sm px-1 text-xs font-medium transition-all duration-200 ${
               ready && splitOk
-                ? "bg-zinc-900 text-white shadow-sm shadow-zinc-900/10 hover:bg-zinc-800 active:scale-[0.97]"
-                : "cursor-not-allowed bg-zinc-100 text-zinc-400"
-            } ${splitFlash ? "tl-split-flash" : ""}`}
+                ? "text-black hover:bg-neutral-100 active:scale-[0.97]"
+                : "cursor-not-allowed text-zinc-400"
+            }`}
           >
-            <Scissors
+            <SquareSplitHorizontal
               size={13}
-              className={`transition-transform duration-300 ${
-                splitFlash ? "rotate-[-18deg] scale-110" : "group-hover:rotate-[-8deg]"
-              }`}
+              className={`transition-transform duration-300`}
             />
             Split
             <kbd
               className={`ml-0.5 rounded px-1 py-px text-[10px] font-normal ${
                 ready && splitOk
-                  ? "bg-white/15 text-zinc-200"
+                  ? "bg-zinc-200/80 text-zinc-800"
                   : "bg-zinc-200/80 text-zinc-400"
               }`}
             >
@@ -661,7 +657,7 @@ export default function Timeline() {
                   </div>
                   {selected && (
                     <div
-                      className="pointer-events-none absolute z-[4] rounded-sm ring-1 ring-indigo-400/40"
+                      className="pointer-events-none absolute z-[4] rounded-sm ring-1 ring-neutral-400/40"
                       style={{
                         left: clip.start * pps,
                         width: Math.max(2, (clip.end - clip.start) * pps),
@@ -688,7 +684,7 @@ export default function Timeline() {
                     cutOut
                       ? "border-red-200/90 bg-red-50/95 text-red-400 line-through"
                       : hovered
-                        ? "border-indigo-300 bg-white text-zinc-700 shadow-sm shadow-indigo-500/10"
+                        ? "border-neutral-300 bg-white text-zinc-700 shadow-sm shadow-neutral-500/10"
                         : "border-zinc-200/90 bg-white/95 text-zinc-600"
                   }`}
                   style={{
@@ -734,7 +730,7 @@ export default function Timeline() {
                         <span
                           className={`absolute inset-y-1 left-0 w-0.5 rounded-full transition-all duration-150 ${
                             hovered
-                              ? "bg-indigo-500 opacity-100"
+                              ? "bg-neutral-500 opacity-100"
                               : "bg-zinc-300 opacity-0 group-hover:opacity-100"
                           }`}
                           style={{ opacity: hovered ? 1 : 0.55 }}
@@ -747,7 +743,7 @@ export default function Timeline() {
                         className="tl-word-handle absolute inset-y-0 right-0 z-10 w-1.5 cursor-ew-resize"
                       >
                         <span
-                          className="absolute inset-y-1 right-0 w-0.5 rounded-full bg-indigo-500 transition-opacity duration-150"
+                          className="absolute inset-y-1 right-0 w-0.5 rounded-full bg-neutral-500 transition-opacity duration-150"
                           style={{ opacity: hovered ? 1 : 0.55 }}
                         />
                       </span>
