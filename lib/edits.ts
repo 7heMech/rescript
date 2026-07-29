@@ -1,5 +1,7 @@
 import type {
   ClipSegment,
+  CutAdjustments,
+  CutRange,
   ManualCut,
   SceneBoundary,
   TimeRange,
@@ -15,24 +17,29 @@ export const MIN_CLIP_DURATION = 0.05;
 /** Ignore splits this close to an existing edge (seconds). */
 export const SPLIT_EPSILON = 0.04;
 
+/** Smallest cut a cut-edge drag may leave, so edges never invert. */
+export const MIN_CUT_DURATION = 0.03;
+
 /**
  * Compute cut ranges from deleted words only (silence between adjacent
- * deleted words is included).
+ * deleted words is included). Each cut is keyed by the first deleted word's id
+ * so edge overrides can stay attached as the transcript changes.
  */
-export function getWordCutRanges(words: Word[], duration: number): TimeRange[] {
-  const ranges: TimeRange[] = [];
+export function getWordCutRanges(words: Word[], duration: number): CutRange[] {
+  const ranges: CutRange[] = [];
   for (let i = 0; i < words.length; i++) {
     const w = words[i];
     if (!w.deleted) continue;
+    const key = w.id;
     const start = w.start;
     let end = w.end;
     while (i + 1 < words.length && words[i + 1].deleted) {
       i++;
       end = Math.max(end, words[i].end);
     }
-    ranges.push({ start, end });
+    ranges.push({ start, end, key });
   }
-  return mergeCutRanges(ranges, duration);
+  return mergeKeyedCutRanges(ranges, duration);
 }
 
 /** Merge overlapping / near-adjacent ranges and clamp to [0, duration]. */
@@ -58,16 +65,84 @@ export function mergeCutRanges(ranges: TimeRange[], duration: number): TimeRange
   return merged;
 }
 
+/** Like mergeCutRanges, but preserves the earlier cut's key when merging. */
+export function mergeKeyedCutRanges(ranges: CutRange[], duration: number): CutRange[] {
+  if (ranges.length === 0) return [];
+  const sorted = [...ranges]
+    .map((r) => ({
+      start: Math.max(0, Math.min(duration, r.start)),
+      end: Math.max(0, Math.min(duration, r.end)),
+      key: r.key,
+    }))
+    .filter((r) => r.end - r.start > 1e-4)
+    .sort((a, b) => a.start - b.start);
+
+  const merged: CutRange[] = [];
+  for (const r of sorted) {
+    const last = merged[merged.length - 1];
+    if (last && r.start - last.end < MERGE_GAP) {
+      last.end = Math.max(last.end, r.end);
+    } else {
+      merged.push({ ...r });
+    }
+  }
+  return merged;
+}
+
 /**
- * All cut ranges: deleted-word spans ∪ manual blade/trim cuts.
+ * Apply manual cut-edge overrides on top of word-derived cuts. An override
+ * replaces either edge with an absolute time; unset edges keep tracking the
+ * word boundary. Result is re-sorted and made non-overlapping.
+ */
+export function applyCutAdjustments(
+  cuts: CutRange[],
+  adjustments: CutAdjustments,
+  duration: number
+): CutRange[] {
+  if (!adjustments || Object.keys(adjustments).length === 0) {
+    return cuts.map((c) => ({ ...c }));
+  }
+  const clamp = (t: number) => Math.min(Math.max(0, t), duration);
+  const adjusted = cuts.map((c) => {
+    const a = adjustments[c.key];
+    if (!a) return { ...c };
+    const start = clamp(a.start ?? c.start);
+    let end = clamp(a.end ?? c.end);
+    if (end < start) end = start;
+    return { ...c, start, end };
+  });
+  adjusted.sort((a, b) => a.start - b.start);
+  for (let i = 1; i < adjusted.length; i++) {
+    if (adjusted[i].start < adjusted[i - 1].end) {
+      adjusted[i].start = adjusted[i - 1].end;
+    }
+    if (adjusted[i].end < adjusted[i].start) {
+      adjusted[i].end = adjusted[i].start;
+    }
+  }
+  return adjusted;
+}
+
+/** Word-derived cuts with edge overrides applied (for cut-handle UI). */
+export function getAdjustedWordCuts(
+  words: Word[],
+  duration: number,
+  adjustments: CutAdjustments = {}
+): CutRange[] {
+  return applyCutAdjustments(getWordCutRanges(words, duration), adjustments, duration);
+}
+
+/**
+ * All cut ranges: (deleted-word spans ± edge overrides) ∪ manual blade/trim cuts.
  * Manual cuts may be passed as bare TimeRanges or ManualCut objects.
  */
 export function getCutRanges(
   words: Word[],
   duration: number,
-  manualCuts: Array<TimeRange | ManualCut> = []
+  manualCuts: Array<TimeRange | ManualCut> = [],
+  cutAdjustments: CutAdjustments = {}
 ): TimeRange[] {
-  const fromWords = getWordCutRanges(words, duration);
+  const fromWords = getAdjustedWordCuts(words, duration, cutAdjustments);
   const fromManual = manualCuts.map((c) => ({ start: c.start, end: c.end }));
   return mergeCutRanges([...fromWords, ...fromManual], duration);
 }

@@ -3,6 +3,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -13,9 +14,11 @@ import { useEditorStore } from "@/lib/store";
 import {
   canSplitAt,
   formatTime,
+  getAdjustedWordCuts,
   getClipSegments,
   getCutRanges,
   getKeepRanges,
+  MIN_CUT_DURATION,
 } from "@/lib/edits";
 import type { Word } from "@/lib/types";
 
@@ -27,16 +30,24 @@ const TICK_STEPS = [0.1, 0.25, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600];
 const WORD_VIS_PPS = 22;
 /** Pixels-per-second above which edge handles appear on words. */
 const HANDLE_VIS_PPS = 40;
+const MIN_ZOOM = 1;
+const MAX_ZOOM = 256;
+/** Wheel-zoom sensitivity (higher = faster zoom per scroll tick). */
+const ZOOM_SPEED = 0.0028;
+/** Grab width (px) of a cut-edge handle's hit area. */
+const CUT_HANDLE_HIT = 14;
 
 type DragKind =
   | { type: "seek" }
   | { type: "word"; wordId: number; edge: "start" | "end"; origStart: number; origEnd: number }
-  | { type: "trim"; clipIndex: number; edge: "in" | "out" };
+  | { type: "trim"; clipIndex: number; edge: "in" | "out" }
+  | { type: "cut"; key: number; edge: "start" | "end" };
 
 export default function Timeline() {
   const audio = useEditorStore((s) => s.audio);
   const words = useEditorStore((s) => s.words);
   const manualCuts = useEditorStore((s) => s.manualCuts);
+  const cutAdjustments = useEditorStore((s) => s.cutAdjustments);
   const sceneBoundaries = useEditorStore((s) => s.sceneBoundaries);
   const duration = useEditorStore((s) => s.duration);
   const currentTime = useEditorStore((s) => s.currentTime);
@@ -45,8 +56,13 @@ export default function Timeline() {
   const status = useEditorStore((s) => s.status);
 
   const cuts = useMemo(
-    () => getCutRanges(words, duration, manualCuts),
-    [words, duration, manualCuts]
+    () => getCutRanges(words, duration, manualCuts, cutAdjustments),
+    [words, duration, manualCuts, cutAdjustments]
+  );
+  /** Word-derived cuts (with edge overrides) — source of cut-edge handles. */
+  const wordCuts = useMemo(
+    () => getAdjustedWordCuts(words, duration, cutAdjustments),
+    [words, duration, cutAdjustments]
   );
   const keeps = useMemo(() => getKeepRanges(cuts, duration), [cuts, duration]);
   const clips = useMemo(
@@ -76,6 +92,23 @@ export default function Timeline() {
   const pps = fitPps * zoom;
   const totalWidth = Math.max(width, duration * pps);
   const ready = status === "ready" && duration > 0;
+
+  // Live mirrors for imperative wheel/drag handlers (avoid stale closures).
+  const ppsRef = useRef(pps);
+  const zoomRef = useRef(zoom);
+  const widthRef = useRef(width);
+  const durationRef = useRef(duration);
+  const wordCutsRef = useRef(wordCuts);
+  useEffect(() => {
+    ppsRef.current = pps;
+    zoomRef.current = zoom;
+    widthRef.current = width;
+    durationRef.current = duration;
+    wordCutsRef.current = wordCuts;
+  });
+
+  // Scroll position to apply after a wheel-zoom re-renders the track width.
+  const pendingScrollRef = useRef<number | null>(null);
 
   useEffect(() => {
     const el = outerRef.current;
@@ -221,6 +254,49 @@ export default function Timeline() {
     }
   }, [currentTime, playing, pps, width]);
 
+  // Vertical wheel / pinch zooms (anchored at the pointer); horizontal
+  // trackpad side-scroll pans via native overflow-x. Non-passive so zoom
+  // can preventDefault.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (durationRef.current <= 0) return;
+      // Horizontal intent → pan: don't preventDefault, let native scroll run.
+      if (!e.ctrlKey && Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+      e.preventDefault();
+      const curZoom = zoomRef.current;
+      const curPps = ppsRef.current;
+      if (curPps <= 0) return;
+      const rect = el.getBoundingClientRect();
+      const pointerX = e.clientX - rect.left;
+      const tAnchor = (el.scrollLeft + pointerX) / curPps;
+      const nextZoom = Math.min(
+        MAX_ZOOM,
+        Math.max(MIN_ZOOM, curZoom * Math.exp(-e.deltaY * ZOOM_SPEED))
+      );
+      if (nextZoom === curZoom) return;
+      const fit =
+        widthRef.current > 0 && durationRef.current > 0
+          ? widthRef.current / durationRef.current
+          : 50;
+      const nextPps = fit * nextZoom;
+      pendingScrollRef.current = Math.max(0, tAnchor * nextPps - pointerX);
+      setZoom(nextZoom);
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []);
+
+  // Apply the anchor-preserving scroll once wheel-zoom has re-rendered.
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el || pendingScrollRef.current == null) return;
+    el.scrollLeft = pendingScrollRef.current;
+    pendingScrollRef.current = null;
+    setScrollLeft(el.scrollLeft);
+  }, [zoom]);
+
   const timeFromClientX = useCallback(
     (clientX: number) => {
       const el = scrollRef.current;
@@ -285,6 +361,28 @@ export default function Timeline() {
       }
       if (drag.type === "trim") {
         store.trimClipEdge(drag.clipIndex, drag.edge, t);
+        return;
+      }
+      if (drag.type === "cut") {
+        const list = wordCutsRef.current;
+        const idx = list.findIndex((c) => c.key === drag.key);
+        if (idx === -1) return;
+        const cut = list[idx];
+        const prev = list[idx - 1];
+        const next = list[idx + 1];
+        let edgeT = t;
+        if (drag.edge === "start") {
+          const lo = prev ? prev.end : 0;
+          const hi = Math.max(lo, cut.end - MIN_CUT_DURATION);
+          edgeT = Math.min(Math.max(edgeT, lo), hi);
+        } else {
+          const hi = next ? next.start : durationRef.current;
+          const lo = Math.min(hi, cut.start + MIN_CUT_DURATION);
+          edgeT = Math.min(Math.max(edgeT, lo), hi);
+        }
+        store.adjustCut(drag.key, drag.edge, edgeT);
+        // Scrub preview to the edge for precise, audible/visible trimming.
+        seekTo(edgeT);
       }
     },
     [clips, seekTo, timeFromClientX]
@@ -340,6 +438,23 @@ export default function Timeline() {
     []
   );
 
+  const startCutDrag = useCallback(
+    (e: ReactPointerEvent, key: number, edge: "start" | "end") => {
+      e.stopPropagation();
+      e.preventDefault();
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+      useEditorStore.getState().beginGesture();
+      dragRef.current = { type: "cut", key, edge };
+      setDragging(true);
+    },
+    []
+  );
+
+  const resetCutEdge = useCallback((e: React.MouseEvent, key: number) => {
+    e.stopPropagation();
+    useEditorStore.getState().resetCutAdjust(key);
+  }, []);
+
   const doSplit = useCallback(() => {
     const ok = useEditorStore.getState().splitAtPlayhead();
     if (!ok) return;
@@ -355,6 +470,14 @@ export default function Timeline() {
     return words.filter((w) => w.end >= t0 && w.start <= t1);
   }, [words, pps, scrollLeft, width]);
 
+  // Only mount cut handles for word-cuts intersecting the viewport.
+  const visibleWordCuts = useMemo(() => {
+    if (width === 0) return wordCuts;
+    const t0 = scrollLeft / pps - 1;
+    const t1 = (scrollLeft + width) / pps + 1;
+    return wordCuts.filter((c) => c.end >= t0 && c.start <= t1);
+  }, [wordCuts, pps, scrollLeft, width]);
+
   const playheadX = currentTime * pps - scrollLeft;
   const showHandles = pps >= HANDLE_VIS_PPS;
 
@@ -366,6 +489,9 @@ export default function Timeline() {
         </span>
         <span className="text-xs tabular-nums text-zinc-400">
           {formatTime(currentTime)}
+        </span>
+        <span className="hidden text-[11px] text-zinc-300 lg:inline">
+          scroll to zoom · drag cut edges to trim
         </span>
 
         <div className="mx-auto flex items-center">
@@ -406,7 +532,7 @@ export default function Timeline() {
         <div className="flex items-center gap-0.5">
           <button
             type="button"
-            onClick={() => setZoom((z) => Math.max(1, z / 1.5))}
+            onClick={() => setZoom((z) => Math.max(MIN_ZOOM, z / 1.5))}
             title="Zoom out"
             className="flex h-7 w-7 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-100"
           >
@@ -422,7 +548,7 @@ export default function Timeline() {
           </button>
           <button
             type="button"
-            onClick={() => setZoom((z) => Math.min(256, z * 1.5))}
+            onClick={() => setZoom((z) => Math.min(MAX_ZOOM, z * 1.5))}
             title="Zoom in — drag word edges to refine timing"
             className="flex h-7 w-7 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-100"
           >
@@ -464,6 +590,44 @@ export default function Timeline() {
                 >
                   <div className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-amber-400/80 transition group-hover/boundary:bg-amber-500" />
                   <div className="absolute top-[3px] left-1/2 h-2 w-2 -translate-x-1/2 rotate-45 rounded-[1px] bg-amber-400 shadow-sm shadow-amber-500/30 transition group-hover/boundary:scale-125 group-hover/boundary:bg-amber-500" />
+                </div>
+              );
+            })}
+
+            {/* Cut-edge handles on word-derived cuts (refine ASR bleed) */}
+            {visibleWordCuts.map((cut) => {
+              const adjusted = Boolean(cutAdjustments[cut.key]);
+              return (
+                <div key={`cut-${cut.key}`}>
+                  {(["start", "end"] as const).map((edge) => (
+                    <div
+                      key={edge}
+                      data-tl-interactive
+                      aria-label={`Drag to trim cut ${edge}`}
+                      onPointerDown={(e) => startCutDrag(e, cut.key, edge)}
+                      onDoubleClick={(e) => resetCutEdge(e, cut.key)}
+                      title={
+                        adjusted
+                          ? `Drag to trim · double-click to reset (cut ${edge})`
+                          : `Drag to trim the cut ${edge}`
+                      }
+                      className="group absolute z-[7] flex touch-none cursor-ew-resize justify-center"
+                      style={{
+                        left: cut[edge] * pps - CUT_HANDLE_HIT / 2,
+                        top: RULER_H + WORDBAR_H,
+                        bottom: 0,
+                        width: CUT_HANDLE_HIT,
+                      }}
+                    >
+                      <span
+                        className={`pointer-events-none h-full w-0.5 rounded-full transition-colors group-hover:w-1 ${
+                          adjusted
+                            ? "bg-red-500"
+                            : "bg-red-400/70 group-hover:bg-red-500"
+                        }`}
+                      />
+                    </div>
+                  ))}
                 </div>
               );
             })}

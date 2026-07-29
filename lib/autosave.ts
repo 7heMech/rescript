@@ -66,6 +66,7 @@ async function writeSnapshot() {
       showDeleted: s.showDeleted,
       manualCuts: s.manualCuts,
       sceneBoundaries: s.sceneBoundaries,
+      cutAdjustments: s.cutAdjustments,
       media: s.videoFile,
       mediaType: s.videoFile.type,
       createdAt,

@@ -20,6 +20,27 @@ export interface TimeRange {
 }
 
 /**
+ * A cut range tagged with a stable `key` (the id of the first deleted word in
+ * the run that produced it), so manual edge adjustments can be attached to a
+ * specific cut even as the derived set changes.
+ */
+export interface CutRange extends TimeRange {
+  key: number;
+}
+
+/**
+ * A manual override of a word-derived cut's edges, in original media seconds.
+ * Either edge may be set independently; an unset edge tracks the word boundary.
+ */
+export interface CutAdjustment {
+  start?: number;
+  end?: number;
+}
+
+/** Manual cut-edge overrides, keyed by CutRange.key. */
+export type CutAdjustments = Record<number, CutAdjustment>;
+
+/**
  * A user-placed cut that is not owned by a deleted word.
  * Used for blade/trim edits after splitting clips.
  */
@@ -43,6 +64,7 @@ export interface EditSnapshot {
   words: Word[];
   manualCuts: ManualCut[];
   sceneBoundaries: SceneBoundary[];
+  cutAdjustments: CutAdjustments;
 }
 
 /** A contiguous kept segment of media, optionally subdivided by scene boundaries. */
