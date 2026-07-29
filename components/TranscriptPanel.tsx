@@ -330,8 +330,8 @@ export default function TranscriptPanel() {
         </span>
         <div className="ml-auto flex items-center gap-2">
           {deletedCount > 0 && (
-            <span className="rounded-md bg-red-50 px-2 py-0.5 text-[9px] font-medium text-red-500">
-              {deletedCount} word{deletedCount === 1 ? "" : "s"} cut
+            <span className="rounded-md bg-red-50 px-2 py-0.5 text-[9px] font-medium text-red-400 line-clamp-1 line-through">
+              {deletedCount} word{deletedCount === 1 ? "" : "s"}
             </span>
           )}
           {status === "ready" && fillerIds.length > 0 && (
