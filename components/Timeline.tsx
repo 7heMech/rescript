@@ -9,12 +9,13 @@ import {
   useState,
   type PointerEvent as ReactPointerEvent,
 } from "react";
-import { Maximize2, Scissors, SquareSplitHorizontal, ZoomIn, ZoomOut } from "lucide-react";
+import { Maximize2, SquareSplitHorizontal, Unlink, ZoomIn, ZoomOut } from "lucide-react";
 import { useEditorStore } from "@/lib/store";
 import {
   canSplitAt,
   formatTime,
   getAdjustedWordCuts,
+  getActiveSceneBoundaries,
   getClipSegments,
   getCutRanges,
   getKeepRanges,
@@ -38,6 +39,8 @@ const MAX_ZOOM = 256;
 const ZOOM_SPEED = 0.0028;
 /** Grab width (px) of a cut-edge handle's hit area. */
 const CUT_HANDLE_HIT = 14;
+/** How close (px) the pointer must be to a split marker to reveal its join button. */
+const SPLIT_HOVER_PX = 10;
 
 type DragKind =
   | { type: "seek" }
@@ -80,6 +83,11 @@ export default function Timeline() {
     () => canSplitAt(currentTime, duration, cuts, sceneBoundaries),
     [currentTime, duration, cuts, sceneBoundaries]
   );
+  /** Splits that divide two touching clips — the joinable ones. */
+  const splits = useMemo(
+    () => getActiveSceneBoundaries(sceneBoundaries, keeps),
+    [sceneBoundaries, keeps]
+  );
 
   const outerRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -97,6 +105,8 @@ export default function Timeline() {
   const [hoveredClipIndex, setHoveredClipIndex] = useState<number | null>(null);
   /** Index into `cuts` of the skipped region under the pointer, if any. */
   const [hoveredCutIndex, setHoveredCutIndex] = useState<number | null>(null);
+  /** Id of the split marker under the pointer, if any. */
+  const [hoveredSplitId, setHoveredSplitId] = useState<number | null>(null);
 
   const fitPps = duration > 0 && width > 0 ? width / duration : 50;
   const pps = fitPps * zoom;
@@ -360,8 +370,13 @@ export default function Timeline() {
         // Hover clip under cursor (waveform area)
         const clip = clips.find((c) => t >= c.start && t < c.end);
         setHoveredClipIndex(clip?.index ?? null);
+        const split = splits.find(
+          (b) => Math.abs(t - b.time) * pps <= SPLIT_HOVER_PX
+        );
+        setHoveredSplitId(split?.id ?? null);
         return;
       }
+      setHoveredSplitId(null);
       const store = useEditorStore.getState();
 
       if (drag.type === "seek") {
@@ -405,13 +420,20 @@ export default function Timeline() {
         seekTo(edgeT);
       }
     },
-    [clips, cuts, pps, seekTo, timeFromClientX]
+    [clips, cuts, pps, seekTo, splits, timeFromClientX]
   );
 
   const onPointerLeave = useCallback(() => {
     if (dragRef.current) return;
     setHoveredClipIndex(null);
     setHoveredCutIndex(null);
+    setHoveredSplitId(null);
+  }, []);
+
+  const joinAtSplit = useCallback((e: ReactPointerEvent | React.MouseEvent, id: number) => {
+    e.stopPropagation();
+    useEditorStore.getState().removeSceneBoundary(id);
+    setHoveredSplitId(null);
   }, []);
 
   const onBackgroundPointerDown = useCallback(
@@ -631,6 +653,37 @@ export default function Timeline() {
           style={{ cursor: dragging ? "col-resize" : "default" }}
         >
           <div className="relative h-full" style={{ width: totalWidth }}>
+            {/* Split markers between touching clips — hover to reveal "join" */}
+            {splits.map((b) => {
+              const hovered = hoveredSplitId === b.id;
+              return (
+                <div
+                  key={`split-${b.id}`}
+                  className="pointer-events-none absolute z-[8] flex -translate-x-1/2 justify-center"
+                  style={{ left: b.time * pps, top: RULER_H, bottom: 0, width: 18 }}
+                >
+                  <span
+                    className={`h-full border-l border-dashed transition-colors ${
+                      hovered ? "border-zinc-500" : "border-zinc-300"
+                    }`}
+                  />
+                  {hovered && (
+                    <button
+                      type="button"
+                      data-tl-interactive
+                      title="Join these clips (remove split)"
+                      aria-label="Join clips"
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onClick={(e) => joinAtSplit(e, b.id)}
+                      className="pointer-events-auto absolute top-1 flex h-4 w-4 cursor-pointer items-center justify-center rounded-full border border-zinc-300 bg-white text-zinc-500 shadow-sm transition hover:border-zinc-400 hover:bg-zinc-100 hover:text-zinc-800"
+                    >
+                      <Unlink size={9} />
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+
             {/* Cut-edge handles on word-derived cuts (refine ASR bleed) */}
             {visibleCutHandles.map(({ key, edge, time }) => {
               const adjusted = Boolean(cutAdjustments[key]);

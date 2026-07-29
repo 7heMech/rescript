@@ -196,6 +196,23 @@ export function getClipSegments(
   return clips;
 }
 
+/**
+ * Scene boundaries that actually divide two touching clips — the ones worth
+ * showing a split marker for. A boundary sitting at the edge of a skipped region
+ * is inert: the gap already separates the clips, and its own edges are what you
+ * would drag. Matches the filter getClipSegments applies.
+ */
+export function getActiveSceneBoundaries(
+  boundaries: SceneBoundary[],
+  keepRanges: TimeRange[]
+): SceneBoundary[] {
+  return boundaries.filter((b) =>
+    keepRanges.some(
+      (k) => b.time > k.start + SPLIT_EPSILON && b.time < k.end - SPLIT_EPSILON
+    )
+  );
+}
+
 /** Duration of the edited video (sum of kept ranges). */
 export function getEditedDuration(cuts: TimeRange[], duration: number): number {
   const cut = cuts.reduce((acc, r) => acc + (r.end - r.start), 0);
