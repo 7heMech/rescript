@@ -9,7 +9,7 @@ import {
   useState,
   type PointerEvent as ReactPointerEvent,
 } from "react";
-import { Maximize2, SquareSplitHorizontal, Unlink, ZoomIn, ZoomOut } from "lucide-react";
+import { Maximize2, Merge, SquareSplitHorizontal, ZoomIn, ZoomOut } from "lucide-react";
 import { useEditorStore } from "@/lib/store";
 import {
   canSplitAt,
@@ -559,14 +559,9 @@ export default function Timeline() {
               return (
                 <div
                   key={`split-${b.id}`}
-                  className="pointer-events-none absolute z-[8] flex -translate-x-1/2 justify-center"
-                  style={{ left: b.time * pps, top: RULER_H, bottom: 0, width: 18 }}
+                  className="pointer-events-none absolute z-[8] flex -translate-x-1/2 justify-center items-center"
+                  style={{ left: b.time * pps, top: RULER_H + WORDBAR_H + 4, bottom: 0, width: 18 }}
                 >
-                  <span
-                    className={`h-full border-l border-dashed transition-colors ${
-                      hovered ? "border-zinc-500" : "border-zinc-300"
-                    }`}
-                  />
                   {hovered && (
                     <button
                       type="button"
@@ -575,9 +570,9 @@ export default function Timeline() {
                       aria-label="Join clips"
                       onPointerDown={(e) => e.stopPropagation()}
                       onClick={(e) => joinAtSplit(e, b.id)}
-                      className="pointer-events-auto absolute top-1 flex h-4 w-4 cursor-pointer items-center justify-center rounded-full border border-zinc-300 bg-white text-zinc-500 shadow-sm transition hover:border-zinc-400 hover:bg-zinc-100 hover:text-zinc-800"
+                      className="pointer-events-auto flex h-4 w-4 cursor-pointer items-center justify-center rounded-full border border-zinc-300 bg-white text-zinc-500 shadow-sm transition hover:border-zinc-400 hover:bg-zinc-100 hover:text-zinc-800"
                     >
-                      <Unlink size={9} />
+                      <Merge size={9} />
                     </button>
                   )}
                 </div>

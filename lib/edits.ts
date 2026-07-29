@@ -139,6 +139,27 @@ export function getActiveSceneBoundaries(
   );
 }
 
+/**
+ * Place each split in the transcript: the word it reads as sitting in front of.
+ * Returns wordId → boundary. A split landing mid-word snaps to the nearer side so
+ * the marker always falls in a gap between words; one in trailing silence has no
+ * word to anchor to and is left out (the timeline still shows it).
+ */
+export function mapSplitsToWords(
+  words: Word[],
+  boundaries: SceneBoundary[]
+): Map<number, SceneBoundary> {
+  const map = new Map<number, SceneBoundary>();
+  for (const b of boundaries) {
+    let i = words.findIndex((w) => w.start >= b.time);
+    if (i === -1) i = words.length;
+    const prev = words[i - 1];
+    if (prev && b.time < prev.end && b.time < (prev.start + prev.end) / 2) i -= 1;
+    if (i < words.length) map.set(words[i].id, b);
+  }
+  return map;
+}
+
 /** Duration of the edited video (sum of kept ranges). */
 export function getEditedDuration(cuts: TimeRange[], duration: number): number {
   const cut = cuts.reduce((acc, r) => acc + (r.end - r.start), 0);

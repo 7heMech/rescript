@@ -7,10 +7,12 @@ import {
   applyWordBounds,
   canSplitAt,
   carrySceneBoundaries,
+  getActiveSceneBoundaries,
   getClipSegments,
   getCutRanges,
   getKeepRanges,
   getWordCutRanges,
+  mapSplitsToWords,
   MIN_CLIP_DURATION,
   trimEdgeBounds,
   trimEdgeResult,
@@ -240,6 +242,39 @@ function nearly(a: number, b: number, eps = 1e-3) {
   assert(
     carrySceneBoundaries([{ id: 1, time: 8 }, { id: 2, time: 10 }], 8, 10).length === 1,
     "collapsed duplicates"
+  );
+}
+
+// --- Split markers: only where clips touch, anchored to the nearest word gap ---
+{
+  const words = [
+    word(1, "a", 0, 1),
+    word(2, "b", 1, 2),
+    word(3, "c", 2, 3, true), // deleted -> cut [2,3)
+    word(4, "d", 3, 4),
+  ];
+  const keeps = getKeepRanges(getCutRanges(words, 4), 4);
+
+  // A split inside a kept run divides two touching clips; one sitting on the cut
+  // edge does not (the skipped region already separates them).
+  const inside: SceneBoundary[] = [{ id: 1, time: 1 }];
+  const onCutEdge: SceneBoundary[] = [{ id: 2, time: 2 }];
+  assert(getActiveSceneBoundaries(inside, keeps).length === 1, "split inside a clip");
+  assert(getActiveSceneBoundaries(onCutEdge, keeps).length === 0, "split on a cut edge");
+
+  // Anchoring: exactly in a gap, and mid-word snapping to the nearer side.
+  assert(mapSplitsToWords(words, inside).get(2)?.id === 1, "sits in front of 'b'");
+  assert(
+    mapSplitsToWords(words, [{ id: 3, time: 1.2 }]).get(2)?.id === 3,
+    "early in 'b' snaps before it"
+  );
+  assert(
+    mapSplitsToWords(words, [{ id: 4, time: 1.8 }]).get(3)?.id === 4,
+    "late in 'b' snaps after it"
+  );
+  assert(
+    mapSplitsToWords(words, [{ id: 5, time: 3.9 }]).size === 0,
+    "split in trailing silence has no anchor word"
   );
 }
 

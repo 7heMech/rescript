@@ -1,7 +1,17 @@
 "use client";
 
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Eye, EyeOff, FileText, Pencil, RotateCcw, Scissors, WandSparkles, X } from "lucide-react";
+import {
+  Eye,
+  EyeOff,
+  FileText,
+  Merge,
+  Pencil,
+  RotateCcw,
+  Scissors,
+  WandSparkles,
+  X,
+} from "lucide-react";
 import { useEditorStore } from "@/lib/store";
 import { findFillerWordIds } from "@/lib/fillers";
 import {
@@ -10,7 +20,13 @@ import {
   TRANSCRIPT_ACCEPT,
 } from "@/lib/parseTranscript";
 import type { SpeakerTurn, Word } from "@/lib/types";
-import { getCutRanges, isWordCutOut } from "@/lib/edits";
+import {
+  getActiveSceneBoundaries,
+  getCutRanges,
+  getKeepRanges,
+  isWordCutOut,
+  mapSplitsToWords,
+} from "@/lib/edits";
 
 export const SPEAKER_COLORS = [
   "#16a34a", // green
@@ -73,6 +89,35 @@ const WordSpan = memo(function WordSpan({
   );
 });
 
+/**
+ * Descript-style edit boundary: the "|" between two clips created by a split.
+ * Click it to join them back together (the inverse of Split / S).
+ */
+const SplitMarker = memo(function SplitMarker({
+  boundaryId,
+  onJoin,
+}: {
+  boundaryId: number;
+  onJoin: (id: number) => void;
+}) {
+  return (
+    <button
+      type="button"
+      title="Clip split — click to join these clips"
+      aria-label="Join clips"
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={() => onJoin(boundaryId)}
+      className="group relative mx-0.5 inline-flex h-4 w-2 cursor-pointer select-none items-center justify-center align-middle"
+    >
+      <span className="h-4 w-0.5 rounded-full bg-zinc-300 transition-colors group-hover:bg-zinc-600" />
+      <span className="pointer-events-none absolute -top-5 left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-md bg-zinc-900 px-1.5 py-0.5 text-[10px] font-medium whitespace-nowrap text-white opacity-0 transition-opacity group-hover:opacity-100">
+        <Merge size={9} />
+        Join
+      </span>
+    </button>
+  );
+});
+
 interface SelectionInfo {
   ids: number[];
   anyDeleted: boolean;
@@ -84,6 +129,7 @@ interface SelectionInfo {
 export default function TranscriptPanel() {
   const words = useEditorStore((s) => s.words);
   const manualCuts = useEditorStore((s) => s.manualCuts);
+  const sceneBoundaries = useEditorStore((s) => s.sceneBoundaries);
   const duration = useEditorStore((s) => s.duration);
   const status = useEditorStore((s) => s.status);
   const progress = useEditorStore((s) => s.progress);
@@ -95,6 +141,7 @@ export default function TranscriptPanel() {
   const restoreWords = useEditorStore((s) => s.restoreWords);
   const correctWords = useEditorStore((s) => s.correctWords);
   const importWords = useEditorStore((s) => s.importWords);
+  const removeSceneBoundary = useEditorStore((s) => s.removeSceneBoundary);
   const playing = useEditorStore((s) => s.playing);
   const activeWordId = useEditorStore((s) => findActiveWordId(s.words, s.currentTime));
 
@@ -109,6 +156,17 @@ export default function TranscriptPanel() {
     }
     return ids;
   }, [words, cuts]);
+
+  // Splits get a joinable edit boundary in the transcript, like the timeline's
+  // marker. Splits at the edge of a skipped region are inert and hidden in both.
+  const splitBeforeWordId = useMemo(
+    () =>
+      mapSplitsToWords(
+        words,
+        getActiveSceneBoundaries(sceneBoundaries, getKeepRanges(cuts, duration))
+      ),
+    [sceneBoundaries, cuts, duration, words]
+  );
 
   const containerRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -165,6 +223,13 @@ export default function TranscriptPanel() {
       }
     },
     [words.length, importWords]
+  );
+
+  const joinSplit = useCallback(
+    (id: number) => {
+      removeSceneBoundary(id);
+    },
+    [removeSceneBoundary]
   );
 
   const seekToWord = useCallback((word: Word) => {
@@ -492,15 +557,22 @@ export default function TranscriptPanel() {
                       Speaker {turn.speaker + 1}
                     </div>
                     <p className="select-text text-[15px] leading-8">
-                      {visible.map((w) => (
-                        <WordSpan
-                          key={w.id}
-                          word={w}
-                          cutOut={cutOutIds.has(w.id)}
-                          active={w.id === activeWordId}
-                          onClick={handleWordClick}
-                        />
-                      ))}
+                      {visible.map((w) => {
+                        const split = splitBeforeWordId.get(w.id);
+                        return (
+                          <React.Fragment key={w.id}>
+                            {split && (
+                              <SplitMarker boundaryId={split.id} onJoin={joinSplit} />
+                            )}
+                            <WordSpan
+                              word={w}
+                              cutOut={cutOutIds.has(w.id)}
+                              active={w.id === activeWordId}
+                              onClick={handleWordClick}
+                            />
+                          </React.Fragment>
+                        );
+                      })}
                     </p>
                   </div>
                 );
