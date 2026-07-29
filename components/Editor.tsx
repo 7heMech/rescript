@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { Group, Panel, Separator, useDefaultLayout } from "react-resizable-panels";
 import { useEditorStore } from "@/lib/store";
 import { extractAudio, getFFmpeg } from "@/lib/ffmpeg";
 import { useTranscriber } from "@/hooks/useTranscriber";
@@ -21,6 +22,72 @@ import LogoLoader from "./LogoLoader";
  *  `setBounds(..., animate)` duration plus a small buffer so the layout
  *  underneath isn't revealed mid-resize. */
 const WINDOW_MODE_OVERLAY_MS = 380;
+
+/** Matches Tailwind `lg` — resizable split only above this width. */
+const DESKTOP_MQ = "(min-width: 1024px)";
+
+function useIsDesktopLayout() {
+  const [isDesktop, setIsDesktop] = useState(() =>
+    typeof window !== "undefined" ? window.matchMedia(DESKTOP_MQ).matches : true
+  );
+  useEffect(() => {
+    const mq = window.matchMedia(DESKTOP_MQ);
+    const onChange = () => setIsDesktop(mq.matches);
+    onChange();
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+  return isDesktop;
+}
+
+function EditorWorkspace() {
+  const isDesktop = useIsDesktopLayout();
+  const { defaultLayout, onLayoutChanged } = useDefaultLayout({
+    id: "editor-workspace",
+    storage: typeof window !== "undefined" ? localStorage : undefined,
+  });
+
+  // Mobile keeps the fixed preview height + stacked column from before.
+  if (!isDesktop) {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div className="flex h-[34vh] shrink-0 flex-col border-b border-zinc-200">
+          <MediaPreview />
+        </div>
+        <div className="flex min-h-0 flex-1">
+          <TranscriptPanel />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <Group
+      orientation="horizontal"
+      className="min-h-0 flex-1"
+      defaultLayout={defaultLayout}
+      onLayoutChanged={onLayoutChanged}
+    >
+      <Panel
+        id="transcript"
+        defaultSize="56%"
+        minSize="20%"
+        className="flex min-h-0 flex-col"
+      >
+        <TranscriptPanel />
+      </Panel>
+      <Separator className="w-px bg-zinc-200 outline-none transition-colors hover:bg-zinc-300 data-[separator=active]:bg-zinc-400" />
+      <Panel
+        id="media"
+        defaultSize="44%"
+        minSize={320}
+        className="flex min-h-0 flex-col"
+      >
+        <MediaPreview />
+      </Panel>
+    </Group>
+  );
+}
 
 export default function Editor() {
   const status = useEditorStore((s) => s.status);
@@ -173,15 +240,8 @@ export default function Editor() {
               Export
             </button>
           </TopBar>
-          <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
-            <div className="order-1 flex h-[34vh] shrink-0 flex-col border-b border-zinc-200 lg:order-2 lg:h-auto lg:w-[44%] lg:min-w-[320px] lg:border-b-0 lg:border-l">
-              <MediaPreview />
-            </div>
-            <div className="order-2 flex min-h-0 flex-1 lg:order-1">
-              <TranscriptPanel />
-            </div>
-            {/* <SideRail /> — hidden until the tools it exposes are functional */}
-          </div>
+          <EditorWorkspace />
+          {/* <SideRail /> — hidden until the tools it exposes are functional */}
           <Timeline />
         </>
       )}
