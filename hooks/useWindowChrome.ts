@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 
 export interface WindowChrome {
   /** The native title bar is hidden — the page must supply its own drag region. */
@@ -9,6 +9,18 @@ export interface WindowChrome {
   trafficLights: boolean;
 }
 
+function subscribeFocus(onChange: () => void) {
+  window.addEventListener("focus", onChange);
+  window.addEventListener("blur", onChange);
+  return () => {
+    window.removeEventListener("focus", onChange);
+    window.removeEventListener("blur", onChange);
+  };
+}
+
+const isFocused = () => document.hasFocus();
+const isFocusedOnServer = () => true;
+
 /**
  * Describes how much window chrome the page is responsible for drawing. In a
  * browser tab this is all false; in the Electron shell on macOS the title bar
@@ -16,7 +28,7 @@ export interface WindowChrome {
  */
 export function useWindowChrome(): WindowChrome {
   const [fullScreen, setFullScreen] = useState(false);
-  const [focused, setFocused] = useState(true);
+  const focused = useSyncExternalStore(subscribeFocus, isFocused, isFocusedOnServer);
 
   useEffect(() => {
     const desktop = window.rescriptDesktop;
@@ -30,18 +42,6 @@ export function useWindowChrome(): WindowChrome {
     return () => {
       active = false;
       unsubscribe();
-    };
-  }, []);
-
-  useEffect(() => {
-    setFocused(document.hasFocus());
-    const onFocus = () => setFocused(true);
-    const onBlur = () => setFocused(false);
-    window.addEventListener("focus", onFocus);
-    window.addEventListener("blur", onBlur);
-    return () => {
-      window.removeEventListener("focus", onFocus);
-      window.removeEventListener("blur", onBlur);
     };
   }, []);
 

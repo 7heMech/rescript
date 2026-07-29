@@ -15,7 +15,7 @@ import {
   Type,
 } from "lucide-react";
 import logo from "@/assets/logo.png";
-import GitHubLink from "./GitHubLink";
+import SocialLinks from "./SocialLinks";
 import ModelSelector, {
   ModelOption,
   ModelOptionSeparator,
@@ -381,7 +381,7 @@ export default function UploadScreen({
               <Lock size={12} />
               No uploads, no accounts — your media never leaves this device.
             </p>
-            <GitHubLink variant="text" />
+            <SocialLinks variant="text" />
           </div>}
         </div>
       </div>
