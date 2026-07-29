@@ -12,6 +12,7 @@ export default function ExportDialog() {
   const videoFile = useEditorStore((s) => s.videoFile);
   const mediaKind = useEditorStore((s) => s.mediaKind);
   const words = useEditorStore((s) => s.words);
+  const manualCuts = useEditorStore((s) => s.manualCuts);
   const duration = useEditorStore((s) => s.duration);
   const status = useEditorStore((s) => s.status);
   const setStatus = useEditorStore((s) => s.setStatus);
@@ -21,7 +22,10 @@ export default function ExportDialog() {
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
-  const cuts = useMemo(() => getCutRanges(words, duration), [words, duration]);
+  const cuts = useMemo(
+    () => getCutRanges(words, duration, manualCuts),
+    [words, duration, manualCuts]
+  );
   const editedDuration = useMemo(() => getEditedDuration(cuts, duration), [cuts, duration]);
   const exporting = status === "exporting";
   const isAudio = mediaKind === "audio";
@@ -122,10 +126,10 @@ export default function ExportDialog() {
             <a
               href={exportUrl}
               download={fileName}
-              className="flex h-10 items-center justify-center gap-2 rounded-xl bg-neutral-600 text-sm font-medium text-white transition hover:bg-neutral-500"
+              className="flex h-10 items-center justify-center gap-2 rounded-xl bg-neutral-600 px-4 text-sm font-medium text-white transition hover:bg-neutral-500"
             >
-              <Download size={15} />
-              Download {fileName}
+              <Download size={15} className="shrink-0" />
+              <span className="truncate">Download {fileName}</span>
             </a>
             <button
               onClick={start}

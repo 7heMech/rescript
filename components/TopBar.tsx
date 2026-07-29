@@ -17,7 +17,7 @@ export default function TopBar() {
   const setExportOpen = useEditorStore((s) => s.setExportOpen);
 
   return (
-    <header className="flex h-12 shrink-0 items-center gap-2 border-b border-zinc-100 bg-white px-3">
+    <header className="flex h-12 shrink-0 items-center gap-2 border-b border-zinc-200 bg-white px-3">
       <button
         onClick={reset}
         title="Start over"

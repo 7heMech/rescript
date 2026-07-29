@@ -46,7 +46,7 @@ export default function Editor() {
     })();
   }, [videoFile, skipTranscription, transcribe]);
 
-  // Global shortcuts: space = play/pause, ⌘Z / ⇧⌘Z = undo / redo.
+  // Global shortcuts: space = play/pause, ⌘Z / ⇧⌘Z = undo / redo, S = split.
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
@@ -61,6 +61,16 @@ export default function Editor() {
         e.preventDefault();
         if (e.shiftKey) s.redo();
         else s.undo();
+      } else if (
+        e.key.toLowerCase() === "s" &&
+        !e.metaKey &&
+        !e.ctrlKey &&
+        !e.altKey &&
+        s.status === "ready" &&
+        !s.exportOpen
+      ) {
+        e.preventDefault();
+        s.splitAtPlayhead();
       }
     };
     document.addEventListener("keydown", handler);
@@ -90,10 +100,12 @@ export default function Editor() {
       ) : (
         <>
           <TopBar />
-          <div className="flex min-h-0 flex-1">
-            <TranscriptPanel />
-            <div className="flex w-[44%] min-w-[320px] shrink-0 flex-col border-l border-zinc-200">
+          <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+            <div className="order-1 flex h-[34vh] shrink-0 flex-col border-b border-zinc-200 lg:order-2 lg:h-auto lg:w-[44%] lg:min-w-[320px] lg:border-b-0 lg:border-l">
               <MediaPreview />
+            </div>
+            <div className="order-2 flex min-h-0 flex-1 lg:order-1">
+              <TranscriptPanel />
             </div>
             {/* <SideRail /> — hidden until the tools it exposes are functional */}
           </div>

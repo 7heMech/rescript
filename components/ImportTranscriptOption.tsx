@@ -108,37 +108,8 @@ export default function ImportTranscriptOption() {
 
   return (
     <>
-      <ModelOption
-        id="import"
-        label="Import transcript"
-        meta="SRT / VTT / JSON"
-        icon={FileText}
-        autoTrigger={false}
-        onSelect={(ctx) => {
-          menuRef.current = ctx;
-          const current = useEditorStore.getState().model;
-          if (isWhisperModel(current)) {
-            previousModelRef.current = current;
-          }
-          // Do not set model to "import" until a file is chosen. Close the menu
-          // before the OS dialog so cancel cannot leave it pinned open.
-          pickGenRef.current += 1;
-          setPicking(true);
-          setError(null);
-          ctx.closeMenu();
-          requestAnimationFrame(() => fileRef.current?.click());
-        }}
-      >
-        <ImportTrigger
-          label={triggerLabel}
-          busy={reading}
-          error={Boolean(error)}
-          enabled={triggerEnabled}
-        />
-        <ImportStatus reading={reading} error={error} picking={picking} />
-      </ModelOption>
-      {/* Sibling of the option button — never nest <input> inside <button>. */}
-      <input
+    {/* Sibling of the option button — never nest <input> inside <button>. */}
+    <input
         ref={fileRef}
         type="file"
         accept={TRANSCRIPT_ACCEPT}
@@ -190,6 +161,35 @@ export default function ImportTranscriptOption() {
           })();
         }}
       />
+      <ModelOption
+        id="import"
+        label="Import transcript"
+        meta="SRT / VTT / JSON"
+        icon={FileText}
+        autoTrigger={false}
+        onSelect={(ctx) => {
+          menuRef.current = ctx;
+          const current = useEditorStore.getState().model;
+          if (isWhisperModel(current)) {
+            previousModelRef.current = current;
+          }
+          // Do not set model to "import" until a file is chosen. Close the menu
+          // before the OS dialog so cancel cannot leave it pinned open.
+          pickGenRef.current += 1;
+          setPicking(true);
+          setError(null);
+          ctx.closeMenu();
+          requestAnimationFrame(() => fileRef.current?.click());
+        }}
+      >
+        <ImportTrigger
+          label={triggerLabel}
+          busy={reading}
+          error={Boolean(error)}
+          enabled={triggerEnabled}
+        />
+        <ImportStatus reading={reading} error={error} picking={picking} />
+      </ModelOption>
     </>
   );
 }

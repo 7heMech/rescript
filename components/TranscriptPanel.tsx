@@ -1,7 +1,17 @@
 "use client";
 
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Eye, EyeOff, FileText, Pencil, RotateCcw, Scissors, WandSparkles, X } from "lucide-react";
+import {
+  Eye,
+  EyeOff,
+  FileText,
+  Merge,
+  Pencil,
+  RotateCcw,
+  Scissors,
+  WandSparkles,
+  X,
+} from "lucide-react";
 import { useEditorStore } from "@/lib/store";
 import { findFillerWordIds } from "@/lib/fillers";
 import {
@@ -10,6 +20,13 @@ import {
   TRANSCRIPT_ACCEPT,
 } from "@/lib/parseTranscript";
 import type { SpeakerTurn, Word } from "@/lib/types";
+import {
+  getActiveSceneBoundaries,
+  getCutRanges,
+  getKeepRanges,
+  isWordCutOut,
+  mapSplitsToWords,
+} from "@/lib/edits";
 
 export const SPEAKER_COLORS = [
   "#16a34a", // green
@@ -43,20 +60,24 @@ function findActiveWordId(words: Word[], t: number): number {
 
 const WordSpan = memo(function WordSpan({
   word,
+  cutOut,
   active,
   onClick,
 }: {
   word: Word;
+  /** True when the word is removed from the edited media (deleted or covered by a cut). */
+  cutOut: boolean;
   active: boolean;
-  onClick: (word: Word) => void;
+  onClick: (word: Word, el: HTMLElement) => void;
 }) {
   // The trailing space lives inside the span so that selection and deletion
   // highlights are continuous across words instead of breaking at each gap.
   return (
     <span
       data-wid={word.id}
-      onClick={() => onClick(word)}
-      className={`py-0.5 cursor-pointer transition-colors duration-75 ${word.deleted
+      data-cut={cutOut ? "" : undefined}
+      onClick={(e) => onClick(word, e.currentTarget)}
+      className={`py-0.5 cursor-pointer transition-colors duration-75 ${cutOut
         ? "word-deleted bg-red-50 text-red-400 line-through decoration-red-300"
         : active
           ? "bg-neutral-200/80 text-zinc-900"
@@ -65,6 +86,35 @@ const WordSpan = memo(function WordSpan({
     >
       {word.text}{" "}
     </span>
+  );
+});
+
+/**
+ * Descript-style edit boundary: the "|" between two clips created by a split.
+ * Click it to join them back together (the inverse of Split / S).
+ */
+const SplitMarker = memo(function SplitMarker({
+  boundaryId,
+  onJoin,
+}: {
+  boundaryId: number;
+  onJoin: (id: number) => void;
+}) {
+  return (
+    <button
+      type="button"
+      title="Clip split — click to join these clips"
+      aria-label="Join clips"
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={() => onJoin(boundaryId)}
+      className="group relative mx-0.5 inline-flex h-4 w-2 cursor-pointer select-none items-center justify-center align-middle"
+    >
+      <span className="h-4 w-0.5 rounded-full bg-zinc-300 transition-colors group-hover:bg-zinc-600" />
+      <span className="pointer-events-none absolute -top-5 left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-md bg-zinc-900 px-1.5 py-0.5 text-[10px] font-medium whitespace-nowrap text-white opacity-0 transition-opacity group-hover:opacity-100">
+        <Merge size={9} />
+        Join
+      </span>
+    </button>
   );
 });
 
@@ -78,6 +128,9 @@ interface SelectionInfo {
 
 export default function TranscriptPanel() {
   const words = useEditorStore((s) => s.words);
+  const manualCuts = useEditorStore((s) => s.manualCuts);
+  const sceneBoundaries = useEditorStore((s) => s.sceneBoundaries);
+  const duration = useEditorStore((s) => s.duration);
   const status = useEditorStore((s) => s.status);
   const progress = useEditorStore((s) => s.progress);
   const partialText = useEditorStore((s) => s.partialText);
@@ -88,8 +141,34 @@ export default function TranscriptPanel() {
   const restoreWords = useEditorStore((s) => s.restoreWords);
   const correctWords = useEditorStore((s) => s.correctWords);
   const importWords = useEditorStore((s) => s.importWords);
+  const removeSceneBoundary = useEditorStore((s) => s.removeSceneBoundary);
+  const selectedWordIds = useEditorStore((s) => s.selectedWordIds);
+  const setSelectedWords = useEditorStore((s) => s.setSelectedWords);
   const playing = useEditorStore((s) => s.playing);
   const activeWordId = useEditorStore((s) => findActiveWordId(s.words, s.currentTime));
+
+  const cuts = useMemo(
+    () => getCutRanges(words, duration, manualCuts),
+    [words, duration, manualCuts]
+  );
+  const cutOutIds = useMemo(() => {
+    const ids = new Set<number>();
+    for (const w of words) {
+      if (isWordCutOut(w, cuts)) ids.add(w.id);
+    }
+    return ids;
+  }, [words, cuts]);
+
+  // Splits get a joinable edit boundary in the transcript, like the timeline's
+  // marker. Splits at the edge of a skipped region are inert and hidden in both.
+  const splitBeforeWordId = useMemo(
+    () =>
+      mapSplitsToWords(
+        words,
+        getActiveSceneBoundaries(sceneBoundaries, getKeepRanges(cuts, duration))
+      ),
+    [sceneBoundaries, cuts, duration, words]
+  );
 
   const containerRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -116,7 +195,7 @@ export default function TranscriptPanel() {
     return out;
   }, [words]);
 
-  const deletedCount = useMemo(() => words.filter((w) => w.deleted).length, [words]);
+  const deletedCount = useMemo(() => cutOutIds.size, [cutOutIds]);
   const fillerIds = useMemo(() => findFillerWordIds(words), [words]);
 
   const removeFillers = useCallback(() => {
@@ -148,6 +227,13 @@ export default function TranscriptPanel() {
     [words.length, importWords]
   );
 
+  const joinSplit = useCallback(
+    (id: number) => {
+      removeSceneBoundary(id);
+    },
+    [removeSceneBoundary]
+  );
+
   const seekToWord = useCallback((word: Word) => {
     const { videoEl, setCurrentTime } = useEditorStore.getState();
     if (videoEl) videoEl.currentTime = word.start + 0.001;
@@ -159,27 +245,78 @@ export default function TranscriptPanel() {
   // The native ::selection highlight is made transparent over the words, and
   // the marking is done imperatively so dragging doesn't re-render the panel.
   const markedRef = useRef<Set<HTMLElement>>(new Set());
+  // True while the current selection came from clicking a single word. There is
+  // no native range in that case, so the collapsed-selection branch of the
+  // selectionchange handler must not wipe it.
+  const clickSelectionRef = useRef(false);
+
+  const clearMarks = useCallback(() => {
+    for (const el of markedRef.current) el.removeAttribute("data-sel");
+    markedRef.current.clear();
+  }, []);
+
+  const clearSelection = useCallback(() => {
+    clearMarks();
+    clickSelectionRef.current = false;
+    setSelection(null);
+    setSelectedWords([]);
+    window.getSelection()?.removeAllRanges();
+  }, [clearMarks, setSelectedWords]);
+
+  // Clicking a word seeks to it and selects it, so the toolbar and the
+  // Delete/Backspace shortcut work on single words too — not just drags.
+  const handleWordClick = useCallback(
+    (word: Word, el: HTMLElement) => {
+      const nativeSel = window.getSelection();
+      // A drag ends with a click on the word under the cursor; leave the
+      // range-based selection (and the playhead) alone in that case.
+      if (nativeSel && !nativeSel.isCollapsed) return;
+      seekToWord(word);
+      const container = containerRef.current;
+      if (!container) return;
+      clearMarks();
+      el.setAttribute("data-sel", "");
+      markedRef.current.add(el);
+      clickSelectionRef.current = true;
+      const rect = el.getBoundingClientRect();
+      const containerRect = container.getBoundingClientRect();
+      const cutOut = cutOutIds.has(word.id);
+      setSelection({
+        ids: [word.id],
+        anyDeleted: cutOut,
+        anyKept: !cutOut,
+        top: rect.top - containerRect.top - 44,
+        left: Math.max(8, rect.left - containerRect.left + rect.width / 2),
+      });
+      setSelectedWords([word.id]);
+    },
+    [seekToWord, clearMarks, cutOutIds, setSelectedWords]
+  );
+
   useEffect(() => {
-    const clearMarks = () => {
-      for (const el of markedRef.current) el.removeAttribute("data-sel");
-      markedRef.current.clear();
-    };
     const handler = () => {
       // Keep the highlight frozen on the words being corrected.
       if (correctingRef.current) return;
       const container = containerRef.current;
       const sel = window.getSelection();
       if (!container || !sel || sel.isCollapsed || sel.rangeCount === 0) {
+        // A click collapses the native selection; that must not clear the
+        // single-word selection the click itself is about to create.
+        if (clickSelectionRef.current) return;
         clearMarks();
         setSelection(null);
+        setSelectedWords([]);
         return;
       }
       const range = sel.getRangeAt(0);
       if (!container.contains(range.commonAncestorContainer)) {
+        if (clickSelectionRef.current) return;
         clearMarks();
         setSelection(null);
+        setSelectedWords([]);
         return;
       }
+      clickSelectionRef.current = false;
       const wordMap = new Map(words.map((w) => [w.id, w]));
       const ids: number[] = [];
       let anyDeleted = false;
@@ -192,7 +329,7 @@ export default function TranscriptPanel() {
           el.setAttribute("data-sel", "");
           marked.add(el);
           const w = wordMap.get(id);
-          if (w?.deleted) anyDeleted = true;
+          if (w && cutOutIds.has(w.id)) anyDeleted = true;
           else anyKept = true;
         }
       });
@@ -202,6 +339,7 @@ export default function TranscriptPanel() {
       markedRef.current = marked;
       if (ids.length === 0) {
         setSelection(null);
+        setSelectedWords([]);
         return;
       }
       const rect = range.getBoundingClientRect();
@@ -213,27 +351,84 @@ export default function TranscriptPanel() {
         top: rect.top - containerRect.top - 44,
         left: Math.max(8, rect.left - containerRect.left + rect.width / 2),
       });
+      setSelectedWords(ids);
     };
     document.addEventListener("selectionchange", handler);
     return () => {
-      clearMarks();
+      // A click selection has no native range to track, so keep its highlight
+      // across the re-subscriptions this effect goes through.
+      if (!clickSelectionRef.current) clearMarks();
       document.removeEventListener("selectionchange", handler);
     };
-  }, [words]);
+  }, [words, cutOutIds, clearMarks, setSelectedWords]);
+
+  // A click-based selection has no native range, so nothing else would drop it:
+  // clear it when the next mousedown lands outside the words and the toolbar.
+  // Only presses inside this panel count — the timeline owns its own clearing,
+  // and clicking a word chip there must not wipe the selection it just made.
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (!clickSelectionRef.current || correctingRef.current) return;
+      const target = e.target as HTMLElement | null;
+      if (!target || !scrollRef.current?.contains(target)) return;
+      if (target.closest("[data-wid], [data-transcript-toolbar]")) return;
+      clearSelection();
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [clearSelection]);
+
+  // Mirror a selection made elsewhere (the timeline wordbar) into this panel:
+  // highlight the words, scroll them into view and place the toolbar. Selections
+  // that originated here already match, so this is a no-op for them.
+  useEffect(() => {
+    if (correctingRef.current) return;
+    const container = containerRef.current;
+    if (!container) return;
+    const shown = selection?.ids ?? [];
+    if (
+      shown.length === selectedWordIds.length &&
+      shown.every((id, i) => id === selectedWordIds[i])
+    ) {
+      return;
+    }
+    const els = selectedWordIds
+      .map((id) => container.querySelector<HTMLElement>(`[data-wid="${id}"]`))
+      .filter((el): el is HTMLElement => el !== null);
+    clearMarks();
+    if (els.length === 0) {
+      clickSelectionRef.current = false;
+      setSelection(null);
+      return;
+    }
+    for (const el of els) {
+      el.setAttribute("data-sel", "");
+      markedRef.current.add(el);
+    }
+    clickSelectionRef.current = true;
+    els[0].scrollIntoView({ block: "nearest" });
+    const rect = els[0].getBoundingClientRect();
+    const containerRect = container.getBoundingClientRect();
+    setSelection({
+      ids: selectedWordIds,
+      anyDeleted: selectedWordIds.some((id) => cutOutIds.has(id)),
+      anyKept: selectedWordIds.some((id) => !cutOutIds.has(id)),
+      top: rect.top - containerRect.top - 44,
+      left: Math.max(8, rect.left - containerRect.left + rect.width / 2),
+    });
+  }, [selectedWordIds, selection, cutOutIds, clearMarks]);
 
   const cutSelection = useCallback(() => {
     if (!selection) return;
     deleteWords(selection.ids);
-    window.getSelection()?.removeAllRanges();
-    setSelection(null);
-  }, [selection, deleteWords]);
+    clearSelection();
+  }, [selection, deleteWords, clearSelection]);
 
   const restoreSelection = useCallback(() => {
     if (!selection) return;
     restoreWords(selection.ids);
-    window.getSelection()?.removeAllRanges();
-    setSelection(null);
-  }, [selection, restoreWords]);
+    clearSelection();
+  }, [selection, restoreWords, clearSelection]);
 
   const openCorrect = useCallback(() => {
     if (!selection) return;
@@ -243,6 +438,7 @@ export default function TranscriptPanel() {
       .map((w) => w.text)
       .join(" ");
     correctingRef.current = true;
+    clickSelectionRef.current = false;
     setCorrectText(text);
     setCorrecting({
       ids: selection.ids,
@@ -278,20 +474,22 @@ export default function TranscriptPanel() {
     return () => document.removeEventListener("mousedown", handler);
   }, [correcting, closeCorrect]);
 
-  // Delete / Backspace cuts the selected words.
+  // Delete / Backspace cuts the selected words. Driven by the shared selection so
+  // it works for words picked in the timeline wordbar too.
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.key !== "Delete" && e.key !== "Backspace") return;
+      if (e.key !== "Delete" && e.key !== "Backspace" && e.key !== "Escape") return;
       const target = e.target as HTMLElement;
       if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)
         return;
-      if (!selection || selection.ids.length === 0) return;
+      if (selectedWordIds.length === 0) return;
       e.preventDefault();
-      cutSelection();
+      if (e.key !== "Escape") deleteWords(selectedWordIds);
+      clearSelection();
     };
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
-  }, [selection, cutSelection]);
+  }, [selectedWordIds, deleteWords, clearSelection]);
 
   // Keep the active word in view during playback.
   useEffect(() => {
@@ -304,29 +502,24 @@ export default function TranscriptPanel() {
 
   return (
     <section className="flex min-w-0 flex-1 flex-col bg-white">
-      <div className="flex h-10 shrink-0 items-center gap-2 border-b border-zinc-100 px-4">
+      <div className="flex h-10 shrink-0 items-center gap-2 border-b border-zinc-100 px-3 sm:px-4">
         <span className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
           Transcript
         </span>
         <div className="ml-auto flex items-center gap-2">
-          {status === "ready" && (
-            <span className="hidden text-xs text-zinc-400 md:inline">
-              select words and press ⌫ to cut
-            </span>
-          )}
           {deletedCount > 0 && (
-            <span className="rounded-md bg-red-50 px-2 py-0.5 text-[9px] font-medium text-red-500">
-              {deletedCount} word{deletedCount === 1 ? "" : "s"} cut
+            <span className="rounded-md bg-red-50 px-2 py-0.5 text-[9px] font-medium text-red-400 line-clamp-1 line-through">
+              {deletedCount} word{deletedCount === 1 ? "" : "s"}
             </span>
           )}
           {status === "ready" && fillerIds.length > 0 && (
             <button
               onClick={removeFillers}
               title='Cut filler words ("um", "uh", …) from the video'
-              className="flex h-7 items-center gap-1.5 rounded-lg px-2 text-xs text-zinc-500 transition hover:bg-zinc-100"
+              className="flex cursor-pointer h-7 items-center gap-1.5 rounded-lg px-2 text-xs text-zinc-500 transition hover:bg-zinc-100 line-clamp-1"
             >
               <WandSparkles size={14} />
-              Remove fillers ({fillerIds.length})
+              <span className="hidden sm:inline">Remove filler words ({fillerIds.length})</span>
             </button>
           )}
           {(status === "ready" || status === "error" || status === "transcribing") && (
@@ -334,10 +527,10 @@ export default function TranscriptPanel() {
               <button
                 onClick={() => importInputRef.current?.click()}
                 title="Replace transcript from SRT, VTT, or JSON"
-                className="flex h-7 items-center gap-1.5 rounded-lg px-2 text-xs text-zinc-500 transition hover:bg-zinc-100"
+                className="flex cursor-pointer h-7 items-center gap-1.5 rounded-lg px-2 text-xs text-zinc-500 transition hover:bg-zinc-100"
               >
                 <FileText size={14} />
-                Import
+                <span className="hidden sm:inline">Import</span>
               </button>
               <input
                 ref={importInputRef}
@@ -355,16 +548,15 @@ export default function TranscriptPanel() {
           <button
             onClick={toggleShowDeleted}
             title={showDeleted ? "Hide deleted words" : "Show deleted words"}
-            className="flex h-7 items-center gap-1.5 rounded-lg px-2 text-xs text-zinc-500 transition hover:bg-zinc-100"
+            className="flex cursor-pointer h-7 items-center gap-1.5 rounded-lg px-2 text-xs text-zinc-500 transition hover:bg-zinc-100"
           >
             {showDeleted ? <Eye size={14} /> : <EyeOff size={14} />}
-            {showDeleted ? "Showing cuts" : "Hiding cuts"}
           </button>
         </div>
       </div>
 
       <div ref={scrollRef} className="relative min-h-0 flex-1 overflow-y-auto">
-        <div ref={containerRef} className="relative mx-auto max-w-2xl px-8 py-8">
+        <div ref={containerRef} className="relative mx-auto max-w-2xl px-4 py-6 sm:px-8 sm:py-8">
           {busy && (
             <div className="flex flex-col items-start gap-4">
               <div className="w-full bg-zinc-50 p-2">
@@ -404,7 +596,9 @@ export default function TranscriptPanel() {
           {status === "ready" && (
             <div className="transcript-words selection:bg-transparent">
               {turns.map((turn, i) => {
-                const visible = showDeleted ? turn.words : turn.words.filter((w) => !w.deleted);
+                const visible = showDeleted
+                  ? turn.words
+                  : turn.words.filter((w) => !cutOutIds.has(w.id));
                 if (visible.length === 0) return null;
                 return (
                   <div key={i} className="mb-7">
@@ -415,14 +609,22 @@ export default function TranscriptPanel() {
                       Speaker {turn.speaker + 1}
                     </div>
                     <p className="select-text text-[15px] leading-8">
-                      {visible.map((w) => (
-                        <WordSpan
-                          key={w.id}
-                          word={w}
-                          active={w.id === activeWordId}
-                          onClick={seekToWord}
-                        />
-                      ))}
+                      {visible.map((w) => {
+                        const split = splitBeforeWordId.get(w.id);
+                        return (
+                          <React.Fragment key={w.id}>
+                            {split && (
+                              <SplitMarker boundaryId={split.id} onJoin={joinSplit} />
+                            )}
+                            <WordSpan
+                              word={w}
+                              cutOut={cutOutIds.has(w.id)}
+                              active={w.id === activeWordId}
+                              onClick={handleWordClick}
+                            />
+                          </React.Fragment>
+                        );
+                      })}
                     </p>
                   </div>
                 );
@@ -432,6 +634,7 @@ export default function TranscriptPanel() {
 
           {selection && !correcting && (
             <div
+              data-transcript-toolbar
               className="absolute z-20 flex -translate-x-1/2 items-center gap-0.5 rounded-xl border border-zinc-200 bg-white p-1 shadow-lg shadow-zinc-900/10"
               style={{ top: selection.top, left: selection.left }}
               onMouseDown={(e) => e.preventDefault()}
