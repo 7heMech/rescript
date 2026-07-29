@@ -57,6 +57,7 @@ export default function Timeline() {
   const currentTime = useEditorStore((s) => s.currentTime);
   const playing = useEditorStore((s) => s.playing);
   const selectedClipIndex = useEditorStore((s) => s.selectedClipIndex);
+  const selectedWordIds = useEditorStore((s) => s.selectedWordIds);
   const status = useEditorStore((s) => s.status);
 
   const cuts = useMemo(
@@ -398,7 +399,9 @@ export default function Timeline() {
 
       const t = timeFromClientX(e.clientX);
       const clip = clips.find((c) => t >= c.start && t < c.end);
-      useEditorStore.getState().setSelectedClipIndex(clip?.index ?? null);
+      const store = useEditorStore.getState();
+      store.setSelectedClipIndex(clip?.index ?? null);
+      store.setSelectedWords([]);
       dragRef.current = { type: "seek" };
       setDragging(true);
       e.currentTarget.setPointerCapture(e.pointerId);
@@ -647,6 +650,7 @@ export default function Timeline() {
               const wWidth = Math.max(6, (w.end - w.start) * pps - 1);
               const hovered = hoveredWordId === w.id;
               const cutOut = isWordCutOut(w, cuts);
+              const wordSelected = selectedWordIds.includes(w.id);
               const showWordHandles = showHandles && (hovered || wWidth > 28);
               return (
                 <div
@@ -655,10 +659,12 @@ export default function Timeline() {
                   className={`tl-word absolute z-[3] flex items-center overflow-hidden rounded-md border text-[10px] leading-none transition-[box-shadow,background-color,border-color] duration-150 ${
                     cutOut
                       ? "border-red-200/90 bg-red-50/95 text-red-400 line-through"
-                      : hovered
-                        ? "border-neutral-300 bg-white text-zinc-700 shadow-sm shadow-neutral-500/10"
-                        : "border-zinc-200/90 bg-white/95 text-zinc-600"
-                  }`}
+                      : wordSelected
+                        ? "border-indigo-300 bg-indigo-100/70 text-zinc-800"
+                        : hovered
+                          ? "border-neutral-300 bg-white text-zinc-700 shadow-sm shadow-neutral-500/10"
+                          : "border-zinc-200/90 bg-white/95 text-zinc-600"
+                  } ${wordSelected ? "ring-1 ring-indigo-400/80" : ""}`}
                   style={{
                     left: w.start * pps,
                     top: RULER_H + 5,
@@ -679,13 +685,14 @@ export default function Timeline() {
                     if ((e.target as HTMLElement).dataset.edge) return;
                     e.stopPropagation();
                     seekTo(w.start);
-                    // Select clip under this word
+                    const store = useEditorStore.getState();
+                    // Select the word (the transcript mirrors this) and the clip
+                    // it sits in.
+                    store.setSelectedWords([w.id]);
                     const clip = clips.find(
                       (c) => w.start >= c.start && w.start < c.end
                     );
-                    useEditorStore
-                      .getState()
-                      .setSelectedClipIndex(clip?.index ?? null);
+                    store.setSelectedClipIndex(clip?.index ?? null);
                   }}
                 >
                   <span className="pointer-events-none min-w-0 flex-1 truncate px-1.5">

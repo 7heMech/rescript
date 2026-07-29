@@ -79,6 +79,11 @@ interface EditorState {
   future: EditSnapshot[];
   /** Selected timeline clip index, or null. */
   selectedClipIndex: number | null;
+  /**
+   * Words selected in the transcript or the timeline wordbar. Shared so both
+   * views highlight the same selection and the same shortcuts apply.
+   */
+  selectedWordIds: number[];
   nextManualCutId: number;
   nextBoundaryId: number;
   /**
@@ -136,6 +141,7 @@ interface EditorState {
    */
   trimEdge: (edge: "in" | "out", from: number, to: number) => void;
   setSelectedClipIndex: (index: number | null) => void;
+  setSelectedWords: (ids: number[]) => void;
   /** Start a drag gesture so subsequent edits share one undo entry. */
   beginGesture: () => void;
   /** End the current drag gesture. */
@@ -194,6 +200,7 @@ function pushEdit(
       | "manualCuts"
       | "sceneBoundaries"
       | "selectedClipIndex"
+      | "selectedWordIds"
       | "nextManualCutId"
       | "nextBoundaryId"
     >
@@ -236,6 +243,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   past: [],
   future: [],
   selectedClipIndex: null,
+  selectedWordIds: [],
   nextManualCutId: 1,
   nextBoundaryId: 1,
   gestureActive: false,
@@ -274,6 +282,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
           past: [],
       future: [],
       selectedClipIndex: null,
+      selectedWordIds: [],
       nextManualCutId: 1,
       nextBoundaryId: 1,
       gestureActive: false,
@@ -312,6 +321,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       past: [],
       future: [],
       selectedClipIndex: null,
+      selectedWordIds: [],
       nextManualCutId: maxId(manualCuts, 1),
       nextBoundaryId: maxId(sceneBoundaries, 1),
       partialText: "",
@@ -360,6 +370,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
           past: [],
       future: [],
       selectedClipIndex: null,
+      selectedWordIds: [],
     });
     if (get().status === "ready") bumpAutosave();
   },
@@ -382,6 +393,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
           past: [],
       future: [],
       selectedClipIndex: null,
+      selectedWordIds: [],
       partialText: "",
       error: null,
       status: "ready",
@@ -477,6 +489,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
     pushEdit(get, set, {
       words: [...words.slice(0, from), ...replacement, ...words.slice(to + 1)],
+      // The corrected span is new words with new ids; nothing to stay selected.
+      selectedWordIds: [],
     });
   },
 
@@ -551,6 +565,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
   setSelectedClipIndex: (selectedClipIndex) => set({ selectedClipIndex }),
 
+  setSelectedWords: (selectedWordIds) => set({ selectedWordIds }),
+
   beginGesture: () => {
     const s = get();
     if (s.gestureActive) return;
@@ -588,6 +604,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         ...future,
       ],
       selectedClipIndex: null,
+      selectedWordIds: [],
       gestureActive: false,
     });
     bumpAutosave();
@@ -604,6 +621,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       future: future.slice(1),
       past: [...past, { words, manualCuts, sceneBoundaries }],
       selectedClipIndex: null,
+      selectedWordIds: [],
       gestureActive: false,
     });
     bumpAutosave();
@@ -643,6 +661,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
           past: [],
       future: [],
       selectedClipIndex: null,
+      selectedWordIds: [],
       nextManualCutId: 1,
       nextBoundaryId: 1,
       gestureActive: false,

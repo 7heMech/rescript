@@ -142,6 +142,8 @@ export default function TranscriptPanel() {
   const correctWords = useEditorStore((s) => s.correctWords);
   const importWords = useEditorStore((s) => s.importWords);
   const removeSceneBoundary = useEditorStore((s) => s.removeSceneBoundary);
+  const selectedWordIds = useEditorStore((s) => s.selectedWordIds);
+  const setSelectedWords = useEditorStore((s) => s.setSelectedWords);
   const playing = useEditorStore((s) => s.playing);
   const activeWordId = useEditorStore((s) => findActiveWordId(s.words, s.currentTime));
 
@@ -257,8 +259,9 @@ export default function TranscriptPanel() {
     clearMarks();
     clickSelectionRef.current = false;
     setSelection(null);
+    setSelectedWords([]);
     window.getSelection()?.removeAllRanges();
-  }, [clearMarks]);
+  }, [clearMarks, setSelectedWords]);
 
   // Clicking a word seeks to it and selects it, so the toolbar and the
   // Delete/Backspace shortcut work on single words too — not just drags.
@@ -285,8 +288,9 @@ export default function TranscriptPanel() {
         top: rect.top - containerRect.top - 44,
         left: Math.max(8, rect.left - containerRect.left + rect.width / 2),
       });
+      setSelectedWords([word.id]);
     },
-    [seekToWord, clearMarks, cutOutIds]
+    [seekToWord, clearMarks, cutOutIds, setSelectedWords]
   );
 
   useEffect(() => {
@@ -301,6 +305,7 @@ export default function TranscriptPanel() {
         if (clickSelectionRef.current) return;
         clearMarks();
         setSelection(null);
+        setSelectedWords([]);
         return;
       }
       const range = sel.getRangeAt(0);
@@ -308,6 +313,7 @@ export default function TranscriptPanel() {
         if (clickSelectionRef.current) return;
         clearMarks();
         setSelection(null);
+        setSelectedWords([]);
         return;
       }
       clickSelectionRef.current = false;
@@ -333,6 +339,7 @@ export default function TranscriptPanel() {
       markedRef.current = marked;
       if (ids.length === 0) {
         setSelection(null);
+        setSelectedWords([]);
         return;
       }
       const rect = range.getBoundingClientRect();
@@ -344,6 +351,7 @@ export default function TranscriptPanel() {
         top: rect.top - containerRect.top - 44,
         left: Math.max(8, rect.left - containerRect.left + rect.width / 2),
       });
+      setSelectedWords(ids);
     };
     document.addEventListener("selectionchange", handler);
     return () => {
@@ -352,20 +360,63 @@ export default function TranscriptPanel() {
       if (!clickSelectionRef.current) clearMarks();
       document.removeEventListener("selectionchange", handler);
     };
-  }, [words, cutOutIds, clearMarks]);
+  }, [words, cutOutIds, clearMarks, setSelectedWords]);
 
   // A click-based selection has no native range, so nothing else would drop it:
   // clear it when the next mousedown lands outside the words and the toolbar.
+  // Only presses inside this panel count — the timeline owns its own clearing,
+  // and clicking a word chip there must not wipe the selection it just made.
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (!clickSelectionRef.current || correctingRef.current) return;
       const target = e.target as HTMLElement | null;
-      if (target?.closest("[data-wid], [data-transcript-toolbar]")) return;
+      if (!target || !scrollRef.current?.contains(target)) return;
+      if (target.closest("[data-wid], [data-transcript-toolbar]")) return;
       clearSelection();
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [clearSelection]);
+
+  // Mirror a selection made elsewhere (the timeline wordbar) into this panel:
+  // highlight the words, scroll them into view and place the toolbar. Selections
+  // that originated here already match, so this is a no-op for them.
+  useEffect(() => {
+    if (correctingRef.current) return;
+    const container = containerRef.current;
+    if (!container) return;
+    const shown = selection?.ids ?? [];
+    if (
+      shown.length === selectedWordIds.length &&
+      shown.every((id, i) => id === selectedWordIds[i])
+    ) {
+      return;
+    }
+    const els = selectedWordIds
+      .map((id) => container.querySelector<HTMLElement>(`[data-wid="${id}"]`))
+      .filter((el): el is HTMLElement => el !== null);
+    clearMarks();
+    if (els.length === 0) {
+      clickSelectionRef.current = false;
+      setSelection(null);
+      return;
+    }
+    for (const el of els) {
+      el.setAttribute("data-sel", "");
+      markedRef.current.add(el);
+    }
+    clickSelectionRef.current = true;
+    els[0].scrollIntoView({ block: "nearest" });
+    const rect = els[0].getBoundingClientRect();
+    const containerRect = container.getBoundingClientRect();
+    setSelection({
+      ids: selectedWordIds,
+      anyDeleted: selectedWordIds.some((id) => cutOutIds.has(id)),
+      anyKept: selectedWordIds.some((id) => !cutOutIds.has(id)),
+      top: rect.top - containerRect.top - 44,
+      left: Math.max(8, rect.left - containerRect.left + rect.width / 2),
+    });
+  }, [selectedWordIds, selection, cutOutIds, clearMarks]);
 
   const cutSelection = useCallback(() => {
     if (!selection) return;
@@ -423,21 +474,22 @@ export default function TranscriptPanel() {
     return () => document.removeEventListener("mousedown", handler);
   }, [correcting, closeCorrect]);
 
-  // Delete / Backspace cuts the selected words.
+  // Delete / Backspace cuts the selected words. Driven by the shared selection so
+  // it works for words picked in the timeline wordbar too.
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key !== "Delete" && e.key !== "Backspace" && e.key !== "Escape") return;
       const target = e.target as HTMLElement;
       if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)
         return;
-      if (!selection || selection.ids.length === 0) return;
+      if (selectedWordIds.length === 0) return;
       e.preventDefault();
-      if (e.key === "Escape") clearSelection();
-      else cutSelection();
+      if (e.key !== "Escape") deleteWords(selectedWordIds);
+      clearSelection();
     };
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
-  }, [selection, cutSelection, clearSelection]);
+  }, [selectedWordIds, deleteWords, clearSelection]);
 
   // Keep the active word in view during playback.
   useEffect(() => {
