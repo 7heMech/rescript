@@ -1,5 +1,8 @@
 import {
+  ALIGN_LEAD_S,
   alignWordsToSpeech,
+  buildSpeechAnchors,
+  correctionAt,
   estimateSpeechLag,
   snapWordsToSpeech,
   speechEdgesFromFrames,
@@ -77,7 +80,7 @@ function word(id: number, start: number, end: number): Word {
     `expected lag ~${LATE}, got ${lag}`
   );
 
-  const fixed = alignWordsToSpeech(late, frames, { duration: 22 });
+  const fixed = alignWordsToSpeech(late, frames, { duration: 22, leadS: 0 });
   const errBefore =
     late.reduce((s, w, i) => s + Math.abs(w.start - truth[i]!.start), 0) / late.length;
   const errAfter =
@@ -106,7 +109,7 @@ function word(id: number, start: number, end: number): Word {
     ["all silence", framesFor([], 4)],
   ] as const) {
     assert(estimateSpeechLag(words, frames) === 0, `${label} frames should give lag 0`);
-    const out = alignWordsToSpeech(words, frames, { duration: 4 });
+    const out = alignWordsToSpeech(words, frames, { duration: 4, leadS: 0 });
     assert(
       out.every((w, i) => w.start === words[i]!.start && w.end === words[i]!.end),
       `${label} frames should leave timings untouched`
@@ -114,6 +117,102 @@ function word(id: number, start: number, end: number): Word {
   }
   assert(alignWordsToSpeech([], framesFor([[1, 2]], 3)).length === 0, "empty words ok");
   console.log("degenerate inputs are no-ops: ok");
+}
+
+{
+  // The case a single global shift cannot handle: lag that decays across the
+  // clip (0.30 s at the start, 0.05 s at the end), as measured on real audio.
+  const speech: Array<[number, number]> = [
+    [2, 5],
+    [5.6, 9],
+    [9.7, 13],
+    [13.6, 17],
+    [17.6, 21],
+  ];
+  const frames = framesFor(speech, 23);
+  const truth: Word[] = [];
+  for (const [a, b] of speech) {
+    for (let t = a; t + 0.4 <= b; t += 0.4) truth.push(word(truth.length, t, t + 0.4));
+  }
+  const lagAt = (t: number) => 0.3 - (0.25 * (t - 2)) / 19; // 0.30 at t=2 -> 0.05 at t=21
+  const drifted = truth.map((w) => ({
+    ...w,
+    start: w.start + lagAt(w.start),
+    end: w.end + lagAt(w.end),
+  }));
+
+  const anchors = buildSpeechAnchors(
+    drifted,
+    frames,
+    estimateSpeechLag(drifted, frames)
+  );
+  assert(anchors.length >= 2, `expected multiple anchors, got ${anchors.length}`);
+  // The interpolated correction must track the decay, not average it.
+  const early = correctionAt(anchors, 0, 2.3);
+  const late = correctionAt(anchors, 0, 20.5);
+  assert(early > late + 0.1, `correction should decay: ${early} -> ${late}`);
+
+  const fixed = alignWordsToSpeech(drifted, frames, { duration: 23, leadS: 0 });
+  const mae = (ws: Word[]) =>
+    ws.reduce((s, w, i) => s + Math.abs(w.start - truth[i]!.start), 0) / ws.length;
+  const flat = snapWordsToSpeech(
+    drifted.map((w) => {
+      const l = estimateSpeechLag(drifted, frames);
+      return { ...w, start: w.start - l, end: w.end - l };
+    }),
+    frames,
+    { duration: 23 }
+  );
+  assert(mae(fixed) < mae(flat), `warp ${mae(fixed)} should beat flat shift ${mae(flat)}`);
+  assert(mae(fixed) < 0.05, `warp error should be small, got ${mae(fixed)}`);
+  for (let i = 1; i < fixed.length; i++) {
+    assert(fixed[i]!.start >= fixed[i - 1]!.start, `order broken at ${i}`);
+    assert(fixed[i]!.end > fixed[i]!.start, `zero-length word at ${i}`);
+  }
+  console.log(
+    `drifting lag tracked: ok (correction ${early.toFixed(3)}s -> ${late.toFixed(3)}s; ` +
+      `mean start error flat ${mae(flat).toFixed(3)}s vs warp ${mae(fixed).toFixed(3)}s)`
+  );
+}
+
+{
+  // The perceptual lead: a flat extra shift on top of alignment. It must survive
+  // snapping (which would otherwise pull starts back onto the VAD onset) and must
+  // not break the ordering / length / range invariants.
+  const frames = framesFor(
+    [
+      [1, 2],
+      [2.5, 4],
+    ],
+    5
+  );
+  const words = [word(0, 1.2, 1.7), word(1, 1.7, 2.1), word(2, 2.7, 3.9)];
+  const plain = alignWordsToSpeech(words, frames, { duration: 5, leadS: 0 });
+  const led = alignWordsToSpeech(words, frames, { duration: 5, leadS: ALIGN_LEAD_S });
+  for (let i = 0; i < plain.length; i++) {
+    assert(
+      Math.abs(plain[i]!.start - ALIGN_LEAD_S - led[i]!.start) < 1e-9,
+      `word ${i} should lead by exactly ${ALIGN_LEAD_S}: ${plain[i]!.start} vs ${led[i]!.start}`
+    );
+    assert(
+      Math.abs((led[i]!.end - led[i]!.start) - (plain[i]!.end - plain[i]!.start)) < 1e-9,
+      `word ${i} duration should be unchanged by the lead`
+    );
+  }
+  for (let i = 0; i < led.length; i++) {
+    assert(led[i]!.end > led[i]!.start, `word ${i} positive length`);
+    assert(led[i]!.start >= 0, `word ${i} start within range`);
+    if (i > 0) assert(led[i]!.start >= led[i - 1]!.start, `order preserved at ${i}`);
+  }
+  assert(ALIGN_LEAD_S > 0 && ALIGN_LEAD_S < 0.2, "lead should stay small");
+
+  // A word already at t=0 cannot lead further, and must not go negative.
+  const atZero = alignWordsToSpeech([word(0, 0.02, 0.5)], framesFor([[0, 1]], 2), {
+    duration: 2,
+  });
+  assert(atZero[0]!.start === 0, `start clamped to 0, got ${atZero[0]!.start}`);
+  assert(atZero[0]!.end > 0, "end still positive at the clip start");
+  console.log(`lead of ${ALIGN_LEAD_S}s applied after snapping: ok`);
 }
 
 {
