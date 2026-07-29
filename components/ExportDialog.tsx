@@ -13,7 +13,6 @@ export default function ExportDialog() {
   const mediaKind = useEditorStore((s) => s.mediaKind);
   const words = useEditorStore((s) => s.words);
   const manualCuts = useEditorStore((s) => s.manualCuts);
-  const cutAdjustments = useEditorStore((s) => s.cutAdjustments);
   const duration = useEditorStore((s) => s.duration);
   const status = useEditorStore((s) => s.status);
   const setStatus = useEditorStore((s) => s.setStatus);
@@ -24,8 +23,8 @@ export default function ExportDialog() {
   const [error, setError] = useState<string | null>(null);
 
   const cuts = useMemo(
-    () => getCutRanges(words, duration, manualCuts, cutAdjustments),
-    [words, duration, manualCuts, cutAdjustments]
+    () => getCutRanges(words, duration, manualCuts),
+    [words, duration, manualCuts]
   );
   const editedDuration = useMemo(() => getEditedDuration(cuts, duration), [cuts, duration]);
   const exporting = status === "exporting";

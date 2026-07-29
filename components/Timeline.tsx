@@ -14,13 +14,11 @@ import { useEditorStore } from "@/lib/store";
 import {
   canSplitAt,
   formatTime,
-  getAdjustedWordCuts,
   getActiveSceneBoundaries,
   getClipSegments,
   getCutRanges,
   getKeepRanges,
   isWordCutOut,
-  MIN_CUT_DURATION,
   trimEdgeBounds,
 } from "@/lib/edits";
 import type { ClipSegment, Word } from "@/lib/types";
@@ -37,8 +35,6 @@ const MIN_ZOOM = 1;
 const MAX_ZOOM = 256;
 /** Wheel-zoom sensitivity (higher = faster zoom per scroll tick). */
 const ZOOM_SPEED = 0.0028;
-/** Grab width (px) of a cut-edge handle's hit area. */
-const CUT_HANDLE_HIT = 14;
 /** How close (px) the pointer must be to a split marker to reveal its join button. */
 const SPLIT_HOVER_PX = 10;
 
@@ -50,14 +46,12 @@ type DragKind =
    * moves); `lo`/`hi` bound it to this clip and the gap next to it, so an edge
    * can close a gap completely but never cross the neighbouring clip's handle.
    */
-  | { type: "trim"; edge: "in" | "out"; time: number; lo: number; hi: number }
-  | { type: "cut"; key: number; edge: "start" | "end" };
+  | { type: "trim"; edge: "in" | "out"; time: number; lo: number; hi: number };
 
 export default function Timeline() {
   const audio = useEditorStore((s) => s.audio);
   const words = useEditorStore((s) => s.words);
   const manualCuts = useEditorStore((s) => s.manualCuts);
-  const cutAdjustments = useEditorStore((s) => s.cutAdjustments);
   const sceneBoundaries = useEditorStore((s) => s.sceneBoundaries);
   const duration = useEditorStore((s) => s.duration);
   const currentTime = useEditorStore((s) => s.currentTime);
@@ -66,13 +60,8 @@ export default function Timeline() {
   const status = useEditorStore((s) => s.status);
 
   const cuts = useMemo(
-    () => getCutRanges(words, duration, manualCuts, cutAdjustments),
-    [words, duration, manualCuts, cutAdjustments]
-  );
-  /** Word-derived cuts (with edge overrides) — source of cut-edge handles. */
-  const wordCuts = useMemo(
-    () => getAdjustedWordCuts(words, duration, cutAdjustments),
-    [words, duration, cutAdjustments]
+    () => getCutRanges(words, duration, manualCuts),
+    [words, duration, manualCuts]
   );
   const keeps = useMemo(() => getKeepRanges(cuts, duration), [cuts, duration]);
   const clips = useMemo(
@@ -93,9 +82,7 @@ export default function Timeline() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const dragRef = useRef<DragKind | null>(null);
-  const [dragType, setDragType] = useState<DragKind["type"] | null>(null);
-  const dragging = dragType !== null;
-  const [splitFlash, setSplitFlash] = useState(false);
+  const [dragging, setDragging] = useState(false);
 
   const [width, setWidth] = useState(0);
   const [height, setHeight] = useState(0);
@@ -103,8 +90,6 @@ export default function Timeline() {
   const [zoom, setZoom] = useState(1);
   const [hoveredWordId, setHoveredWordId] = useState<number | null>(null);
   const [hoveredClipIndex, setHoveredClipIndex] = useState<number | null>(null);
-  /** Index into `cuts` of the skipped region under the pointer, if any. */
-  const [hoveredCutIndex, setHoveredCutIndex] = useState<number | null>(null);
   /** Id of the split marker under the pointer, if any. */
   const [hoveredSplitId, setHoveredSplitId] = useState<number | null>(null);
 
@@ -118,13 +103,11 @@ export default function Timeline() {
   const zoomRef = useRef(zoom);
   const widthRef = useRef(width);
   const durationRef = useRef(duration);
-  const wordCutsRef = useRef(wordCuts);
   useEffect(() => {
     ppsRef.current = pps;
     zoomRef.current = zoom;
     widthRef.current = width;
     durationRef.current = duration;
-    wordCutsRef.current = wordCuts;
   });
 
   // Scroll position to apply after a wheel-zoom re-renders the track width.
@@ -340,7 +323,7 @@ export default function Timeline() {
     if (dragRef.current) {
       useEditorStore.getState().endGesture();
       dragRef.current = null;
-      setDragType(null);
+      setDragging(false);
     }
   }, []);
 
@@ -357,14 +340,6 @@ export default function Timeline() {
   const onPointerMove = useCallback(
     (e: ReactPointerEvent) => {
       const t = timeFromClientX(e.clientX);
-      // Cut-edge handles only show for the skipped region under the pointer, so
-      // track it during drags too (an edge drag keeps the pointer on the region).
-      const grab = CUT_HANDLE_HIT / 2 / pps;
-      const cutIdx = cuts.findIndex(
-        (c) => t >= c.start - grab && t <= c.end + grab
-      );
-      setHoveredCutIndex(cutIdx === -1 ? null : cutIdx);
-
       const drag = dragRef.current;
       if (!drag) {
         // Hover clip under cursor (waveform area)
@@ -398,35 +373,13 @@ export default function Timeline() {
         drag.time = next;
         return;
       }
-      if (drag.type === "cut") {
-        const list = wordCutsRef.current;
-        const idx = list.findIndex((c) => c.key === drag.key);
-        if (idx === -1) return;
-        const cut = list[idx];
-        const prev = list[idx - 1];
-        const next = list[idx + 1];
-        let edgeT = t;
-        if (drag.edge === "start") {
-          const lo = prev ? prev.end : 0;
-          const hi = Math.max(lo, cut.end - MIN_CUT_DURATION);
-          edgeT = Math.min(Math.max(edgeT, lo), hi);
-        } else {
-          const hi = next ? next.start : durationRef.current;
-          const lo = Math.min(hi, cut.start + MIN_CUT_DURATION);
-          edgeT = Math.min(Math.max(edgeT, lo), hi);
-        }
-        store.adjustCut(drag.key, drag.edge, edgeT);
-        // Scrub preview to the edge for precise, audible/visible trimming.
-        seekTo(edgeT);
-      }
     },
-    [clips, cuts, pps, seekTo, splits, timeFromClientX]
+    [clips, pps, seekTo, splits, timeFromClientX]
   );
 
   const onPointerLeave = useCallback(() => {
     if (dragRef.current) return;
     setHoveredClipIndex(null);
-    setHoveredCutIndex(null);
     setHoveredSplitId(null);
   }, []);
 
@@ -447,7 +400,7 @@ export default function Timeline() {
       const clip = clips.find((c) => t >= c.start && t < c.end);
       useEditorStore.getState().setSelectedClipIndex(clip?.index ?? null);
       dragRef.current = { type: "seek" };
-      setDragType("seek");
+      setDragging(true);
       e.currentTarget.setPointerCapture(e.pointerId);
       seekTo(t);
     },
@@ -467,7 +420,7 @@ export default function Timeline() {
         origStart: word.start,
         origEnd: word.end,
       };
-      setDragType("word");
+      setDragging(true);
     },
     []
   );
@@ -492,27 +445,10 @@ export default function Timeline() {
         lo,
         hi,
       };
-      setDragType("trim");
+      setDragging(true);
     },
     [cuts]
   );
-
-  const startCutDrag = useCallback(
-    (e: ReactPointerEvent, key: number, edge: "start" | "end") => {
-      e.stopPropagation();
-      e.preventDefault();
-      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-      useEditorStore.getState().beginGesture();
-      dragRef.current = { type: "cut", key, edge };
-      setDragType("cut");
-    },
-    []
-  );
-
-  const resetCutEdge = useCallback((e: React.MouseEvent, key: number) => {
-    e.stopPropagation();
-    useEditorStore.getState().resetCutAdjust(key);
-  }, []);
 
   const doSplit = useCallback(() => {
     const ok = useEditorStore.getState().splitAtPlayhead();
@@ -526,42 +462,6 @@ export default function Timeline() {
     const t1 = (scrollLeft + width) / pps + 1;
     return words.filter((w) => w.end >= t0 && w.start <= t1);
   }, [words, pps, scrollLeft, width]);
-
-  // Cut-edge handles, but only for word-cut edges that are still an edge of the
-  // red region they belong to. A blade/trim cut (or a neighbouring cut merging
-  // across the gap) can swallow a word-cut whole; its edges then sit *inside* a
-  // continuous red block, where they read as stray red bars and dragging them
-  // changes nothing visible.
-  const cutHandles = useMemo(() => {
-    const eps = 1e-4;
-    const out: Array<{ key: number; edge: "start" | "end"; time: number }> = [];
-    for (const wc of wordCuts) {
-      const region = cuts.find(
-        (c) => wc.start >= c.start - eps && wc.end <= c.end + eps
-      );
-      if (!region) continue;
-      if (Math.abs(wc.start - region.start) <= eps) {
-        out.push({ key: wc.key, edge: "start", time: wc.start });
-      }
-      if (Math.abs(wc.end - region.end) <= eps) {
-        out.push({ key: wc.key, edge: "end", time: wc.end });
-      }
-    }
-    return out;
-  }, [wordCuts, cuts]);
-
-  // Show a region's two edge handles only while the pointer is on that region.
-  // Rendering every cut's handles all the time left unexplained red bars across
-  // the track — a short cut's two edges read as one bold bar at most zooms.
-  const visibleCutHandles = useMemo(() => {
-    if (dragType !== null && dragType !== "cut") return [];
-    const region = hoveredCutIndex === null ? null : cuts[hoveredCutIndex];
-    if (!region) return [];
-    return cutHandles.filter(
-      (h) =>
-        Math.abs(h.time - region.start) < 1e-3 || Math.abs(h.time - region.end) < 1e-3
-    );
-  }, [cutHandles, cuts, dragType, hoveredCutIndex]);
 
   const playheadX = currentTime * pps - scrollLeft;
   const showHandles = pps >= HANDLE_VIS_PPS;
@@ -680,40 +580,6 @@ export default function Timeline() {
                       <Unlink size={9} />
                     </button>
                   )}
-                </div>
-              );
-            })}
-
-            {/* Cut-edge handles on word-derived cuts (refine ASR bleed) */}
-            {visibleCutHandles.map(({ key, edge, time }) => {
-              const adjusted = Boolean(cutAdjustments[key]);
-              return (
-                <div
-                  key={`cut-${key}-${edge}`}
-                  data-tl-interactive
-                  aria-label={`Drag to trim cut ${edge}`}
-                  onPointerDown={(e) => startCutDrag(e, key, edge)}
-                  onDoubleClick={(e) => resetCutEdge(e, key)}
-                  title={
-                    adjusted
-                      ? `Drag to trim · double-click to reset (cut ${edge})`
-                      : `Drag to trim the cut ${edge}`
-                  }
-                  className="group absolute z-[7] flex touch-none cursor-ew-resize justify-center"
-                  style={{
-                    left: time * pps - CUT_HANDLE_HIT / 2,
-                    top: RULER_H + WORDBAR_H,
-                    bottom: 0,
-                    width: CUT_HANDLE_HIT,
-                  }}
-                >
-                  <span
-                    className={`pointer-events-none h-full w-0.5 rounded-full transition-colors group-hover:w-1 ${
-                      adjusted
-                        ? "bg-red-500"
-                        : "bg-red-400/70 group-hover:bg-red-500"
-                    }`}
-                  />
                 </div>
               );
             })}

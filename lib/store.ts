@@ -2,7 +2,6 @@
 
 import { create } from "zustand";
 import type {
-  CutAdjustments,
   EditSnapshot,
   EditorStatus,
   ManualCut,
@@ -14,11 +13,9 @@ import {
   applyWordBounds,
   canSplitAt,
   carrySceneBoundaries,
-  getAdjustedWordCuts,
   getClipSegments,
   getCutRanges,
   getKeepRanges,
-  getWordCutRanges,
   shrinkManualCuts,
   trimEdgeResult,
 } from "./edits";
@@ -77,8 +74,6 @@ interface EditorState {
   words: Word[];
   manualCuts: ManualCut[];
   sceneBoundaries: SceneBoundary[];
-  /** Manual overrides of word-derived cut edges, keyed by first deleted word id. */
-  cutAdjustments: CutAdjustments;
   showDeleted: boolean;
   past: EditSnapshot[];
   future: EditSnapshot[];
@@ -140,13 +135,6 @@ interface EditorState {
    * trim can merge or split clips mid-drag and renumber them.
    */
   trimEdge: (edge: "in" | "out", from: number, to: number) => void;
-  /**
-   * Set one edge of a word-derived cut's override (absolute original-media time).
-   * Use beginGesture/endGesture around a drag so the whole drag is one undo step.
-   */
-  adjustCut: (key: number, edge: "start" | "end", time: number) => void;
-  /** Clear a cut's edge override, reverting it to the word-derived edges. */
-  resetCutAdjust: (key: number) => void;
   setSelectedClipIndex: (index: number | null) => void;
   /** Start a drag gesture so subsequent edits share one undo entry. */
   beginGesture: () => void;
@@ -172,13 +160,11 @@ function snapshotOf(s: {
   words: Word[];
   manualCuts: ManualCut[];
   sceneBoundaries: SceneBoundary[];
-  cutAdjustments: CutAdjustments;
 }): EditSnapshot {
   return {
     words: s.words,
     manualCuts: s.manualCuts,
     sceneBoundaries: s.sceneBoundaries,
-    cutAdjustments: s.cutAdjustments,
   };
 }
 
@@ -186,8 +172,7 @@ function snapshotsEqual(a: EditSnapshot, b: EditSnapshot): boolean {
   return (
     a.words === b.words &&
     a.manualCuts === b.manualCuts &&
-    a.sceneBoundaries === b.sceneBoundaries &&
-    a.cutAdjustments === b.cutAdjustments
+    a.sceneBoundaries === b.sceneBoundaries
   );
 }
 
@@ -208,7 +193,6 @@ function pushEdit(
       | "words"
       | "manualCuts"
       | "sceneBoundaries"
-      | "cutAdjustments"
       | "selectedClipIndex"
       | "nextManualCutId"
       | "nextBoundaryId"
@@ -248,7 +232,6 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   words: [],
   manualCuts: [],
   sceneBoundaries: [],
-  cutAdjustments: {},
   showDeleted: true,
   past: [],
   future: [],
@@ -288,8 +271,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       words: imported ? imported : [],
       manualCuts: [],
       sceneBoundaries: [],
-      cutAdjustments: {},
-      past: [],
+          past: [],
       future: [],
       selectedClipIndex: null,
       nextManualCutId: 1,
@@ -312,7 +294,6 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     if (prev) URL.revokeObjectURL(prev);
     const manualCuts = record.manualCuts ?? [];
     const sceneBoundaries = record.sceneBoundaries ?? [];
-    const cutAdjustments = record.cutAdjustments ?? {};
     set({
       videoFile: file,
       mediaUrl: URL.createObjectURL(file),
@@ -327,7 +308,6 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       words: record.words,
       manualCuts,
       sceneBoundaries,
-      cutAdjustments,
       showDeleted: record.showDeleted,
       past: [],
       future: [],
@@ -377,8 +357,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       words,
       manualCuts: [],
       sceneBoundaries: [],
-      cutAdjustments: {},
-      past: [],
+          past: [],
       future: [],
       selectedClipIndex: null,
     });
@@ -400,8 +379,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       words,
       manualCuts: [],
       sceneBoundaries: [],
-      cutAdjustments: {},
-      past: [],
+          past: [],
       future: [],
       selectedClipIndex: null,
       partialText: "",
@@ -450,40 +428,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       idSet.has(w.id) ? { ...w, deleted: false } : w
     );
 
-    // Drop cut-edge overrides that would still fully cover a restored word.
-    let cutAdjustments = s.cutAdjustments;
-    const adjKeys = Object.keys(cutAdjustments);
-    if (adjKeys.length > 0) {
-      const nextAdj = { ...cutAdjustments };
-      const baseCuts = getWordCutRanges(words, s.duration);
-      for (const keyStr of adjKeys) {
-        const key = Number(keyStr);
-        const base = baseCuts.find((c) => c.key === key);
-        if (!base) {
-          delete nextAdj[key];
-          continue;
-        }
-        const effective = getAdjustedWordCuts(
-          words,
-          s.duration,
-          { [key]: nextAdj[key] }
-        ).find((c) => c.key === key);
-        if (!effective) continue;
-        const coversRestored = restored.some(
-          (w) =>
-            w.start >= effective.start - 1e-4 &&
-            w.end <= effective.end + 1e-4
-        );
-        if (coversRestored) delete nextAdj[key];
-      }
-      cutAdjustments = nextAdj;
-    }
-
     pushEdit(get, set, {
       words,
       manualCuts,
       nextManualCutId,
-      cutAdjustments,
     });
   },
   correctWords: (ids, text) => {
@@ -542,12 +490,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   splitAtPlayhead: () => {
     const s = get();
     const t = s.currentTime;
-    const cuts = getCutRanges(
-      s.words,
-      s.duration,
-      s.manualCuts,
-      s.cutAdjustments
-    );
+    const cuts = getCutRanges(s.words, s.duration, s.manualCuts);
     if (!canSplitAt(t, s.duration, cuts, s.sceneBoundaries)) return false;
     const id = s.nextBoundaryId;
     pushEdit(get, set, {
@@ -588,7 +531,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     // re-find the clip that owns the moved edge instead of keeping an index.
     const clips = getClipSegments(
       getKeepRanges(
-        getCutRanges(result.words, s.duration, result.manualCuts, s.cutAdjustments),
+        getCutRanges(result.words, s.duration, result.manualCuts),
         s.duration
       ),
       sceneBoundaries
@@ -604,24 +547,6 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       nextManualCutId: result.nextCutId,
       selectedClipIndex: owner?.index ?? s.selectedClipIndex,
     });
-  },
-
-  adjustCut: (key, edge, time) => {
-    const { cutAdjustments } = get();
-    pushEdit(get, set, {
-      cutAdjustments: {
-        ...cutAdjustments,
-        [key]: { ...(cutAdjustments[key] ?? {}), [edge]: time },
-      },
-    });
-  },
-
-  resetCutAdjust: (key) => {
-    const { cutAdjustments } = get();
-    if (!cutAdjustments[key]) return;
-    const next = { ...cutAdjustments };
-    delete next[key];
-    pushEdit(get, set, { cutAdjustments: next });
   },
 
   setSelectedClipIndex: (selectedClipIndex) => set({ selectedClipIndex }),
@@ -649,7 +574,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   },
 
   undo: () => {
-    const { past, future, words, manualCuts, sceneBoundaries, cutAdjustments } =
+    const { past, future, words, manualCuts, sceneBoundaries } =
       get();
     if (past.length === 0) return;
     const prev = past[past.length - 1];
@@ -657,10 +582,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       words: prev.words,
       manualCuts: prev.manualCuts,
       sceneBoundaries: prev.sceneBoundaries,
-      cutAdjustments: prev.cutAdjustments,
       past: past.slice(0, -1),
       future: [
-        { words, manualCuts, sceneBoundaries, cutAdjustments },
+        { words, manualCuts, sceneBoundaries },
         ...future,
       ],
       selectedClipIndex: null,
@@ -669,7 +593,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     bumpAutosave();
   },
   redo: () => {
-    const { past, future, words, manualCuts, sceneBoundaries, cutAdjustments } =
+    const { past, future, words, manualCuts, sceneBoundaries } =
       get();
     if (future.length === 0) return;
     const next = future[0];
@@ -677,9 +601,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       words: next.words,
       manualCuts: next.manualCuts,
       sceneBoundaries: next.sceneBoundaries,
-      cutAdjustments: next.cutAdjustments,
       future: future.slice(1),
-      past: [...past, { words, manualCuts, sceneBoundaries, cutAdjustments }],
+      past: [...past, { words, manualCuts, sceneBoundaries }],
       selectedClipIndex: null,
       gestureActive: false,
     });
@@ -717,8 +640,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       words: [],
       manualCuts: [],
       sceneBoundaries: [],
-      cutAdjustments: {},
-      past: [],
+          past: [],
       future: [],
       selectedClipIndex: null,
       nextManualCutId: 1,

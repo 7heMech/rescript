@@ -84,7 +84,6 @@ interface SelectionInfo {
 export default function TranscriptPanel() {
   const words = useEditorStore((s) => s.words);
   const manualCuts = useEditorStore((s) => s.manualCuts);
-  const cutAdjustments = useEditorStore((s) => s.cutAdjustments);
   const duration = useEditorStore((s) => s.duration);
   const status = useEditorStore((s) => s.status);
   const progress = useEditorStore((s) => s.progress);
@@ -100,8 +99,8 @@ export default function TranscriptPanel() {
   const activeWordId = useEditorStore((s) => findActiveWordId(s.words, s.currentTime));
 
   const cuts = useMemo(
-    () => getCutRanges(words, duration, manualCuts, cutAdjustments),
-    [words, duration, manualCuts, cutAdjustments]
+    () => getCutRanges(words, duration, manualCuts),
+    [words, duration, manualCuts]
   );
   const cutOutIds = useMemo(() => {
     const ids = new Set<number>();
