@@ -1,10 +1,8 @@
 "use client";
 
-import { Download, Redo2, Undo2 } from "lucide-react";
 import { useEditorStore } from "@/lib/store";
 import Image from "next/image";
 import logo from "@/assets/logo.png";
-import GitHubLink from "./GitHubLink";
 import { useWindowChrome } from "@/hooks/useWindowChrome";
 
 export default function TopBar({children}: {children?: React.ReactNode}) {

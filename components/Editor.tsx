@@ -11,10 +11,11 @@ import MediaPreview from "./MediaPreview";
 import Timeline from "./Timeline";
 import ExportDialog from "./ExportDialog";
 import GitHubLink from "./GitHubLink";
-import { Download, Loader2, Redo2, Undo2 } from "lucide-react";
+import { Download, Redo2, Undo2 } from "lucide-react";
 import { ModelOption, ModelOptionSeparator } from "./ModelSelector";
 import ModelSelector from "./ModelSelector";
 import ImportTranscriptOption from "./ImportTranscriptOption";
+import LogoLoader from "./LogoLoader";
 
 /** How long the desktop mode-change overlay stays up. Matches the macOS
  *  `setBounds(..., animate)` duration plus a small buffer so the layout
@@ -189,7 +190,7 @@ export default function Editor() {
           aria-busy="true"
           aria-live="polite"
         >
-          <Loader2 size={22} className="animate-spin text-zinc-400" />
+          <LogoLoader size={44} />
         </div>
       )}
       <ExportDialog />

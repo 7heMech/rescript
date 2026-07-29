@@ -69,6 +69,39 @@ body {
   animation: tl-split-flash 0.42s ease-out;
 }
 
+/* Logo loader: bars slide behind the R silhouette that clips them */
+@keyframes logo-bar-slide {
+  0%,
+  100% {
+    transform: translateX(-40px);
+  }
+  50% {
+    transform: translateX(40px);
+  }
+}
+/* The slide is symmetric, so `animation-direction: reverse` would look
+   identical — alternating rows need genuinely mirrored keyframes. */
+@keyframes logo-bar-slide-alt {
+  0%,
+  100% {
+    transform: translateX(40px);
+  }
+  50% {
+    transform: translateX(-40px);
+  }
+}
+.logo-bar {
+  animation: logo-bar-slide 1.5s ease-in-out infinite;
+}
+.logo-bar-alt {
+  animation-name: logo-bar-slide-alt;
+}
+@media (prefers-reduced-motion: reduce) {
+  .logo-bar {
+    animation: none;
+  }
+}
+
 .tl-trim-handle:hover > div {
   transform: scaleX(1.4);
 }
