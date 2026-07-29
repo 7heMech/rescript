@@ -500,7 +500,7 @@ export default function Timeline() {
                 ? "Split clip at playhead (S)"
                 : "Move the playhead onto a kept region to split"
             }
-            className={`group relative flex h-6 items-center gap-1 rounded-sm px-1 text-xs font-medium transition-all duration-200 ${
+            className={`group cursor-pointer relative flex h-6 items-center gap-1 rounded-sm px-1 text-xs font-medium transition-all duration-200 ${
               ready && splitOk
                 ? "text-black hover:bg-neutral-100 active:scale-[0.97]"
                 : "cursor-not-allowed text-zinc-400"
