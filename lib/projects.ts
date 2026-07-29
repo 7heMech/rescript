@@ -46,8 +46,22 @@ export type ProjectWrite = Omit<ProjectRecord, "id" | "createdAt" | "updatedAt">
   createdAt?: number;
 };
 
+// One shared connection for the page. Opening (and closing) a fresh one per
+// call churned connections — every autosave paid an open handshake, and DevTools
+// lists the database once per open, which looks like duplicate stores.
+let dbPromise: Promise<IDBDatabase> | null = null;
+let liveDb: IDBDatabase | null = null;
+
+/** Drop the cached handle so the next call reopens. */
+function forgetDb(db: IDBDatabase) {
+  if (liveDb !== db) return;
+  liveDb = null;
+  dbPromise = null;
+}
+
 function openDb(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
+  if (dbPromise) return dbPromise;
+  dbPromise = new Promise((resolve, reject) => {
     if (typeof indexedDB === "undefined") {
       reject(new Error("IndexedDB is not available."));
       return;
@@ -60,9 +74,24 @@ function openDb(): Promise<IDBDatabase> {
         store.createIndex("updatedAt", "updatedAt", { unique: false });
       }
     };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error ?? new Error("Failed to open projects DB."));
+    req.onsuccess = () => {
+      const db = req.result;
+      liveDb = db;
+      // A held-open connection blocks another tab's upgrade, and the browser can
+      // force-close it when reclaiming storage — invalidate the cache for both.
+      db.onversionchange = () => {
+        db.close();
+        forgetDb(db);
+      };
+      db.onclose = () => forgetDb(db);
+      resolve(db);
+    };
+    req.onerror = () => {
+      dbPromise = null;
+      reject(req.error ?? new Error("Failed to open projects DB."));
+    };
   });
+  return dbPromise;
 }
 
 function idbReq<T>(req: IDBRequest<T>): Promise<T> {
@@ -83,46 +112,51 @@ function txDone(tx: IDBTransaction): Promise<void> {
 /** List projects newest-first (metadata only — no media/words payloads). */
 export async function listProjects(): Promise<ProjectMeta[]> {
   const db = await openDb();
-  try {
-    const tx = db.transaction(STORE, "readonly");
-    const store = tx.objectStore(STORE);
-    const rows = await idbReq(store.getAll() as IDBRequest<ProjectRecord[]>);
-    await txDone(tx);
-    return rows
-      .map((r) => ({
-        id: r.id,
-        name: r.name,
-        mediaKind: r.mediaKind,
-        duration: r.duration,
-        model: r.model,
-        updatedAt: r.updatedAt,
-        createdAt: r.createdAt,
-      }))
-      .sort((a, b) => b.updatedAt - a.updatedAt);
-  } finally {
-    db.close();
-  }
+  const tx = db.transaction(STORE, "readonly");
+  const store = tx.objectStore(STORE);
+  const rows = await idbReq(store.getAll() as IDBRequest<ProjectRecord[]>);
+  await txDone(tx);
+  return rows
+    .map((r) => ({
+      id: r.id,
+      name: r.name,
+      mediaKind: r.mediaKind,
+      duration: r.duration,
+      model: r.model,
+      updatedAt: r.updatedAt,
+      createdAt: r.createdAt,
+    }))
+    .sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
 export async function getProject(id: string): Promise<ProjectRecord | null> {
   const db = await openDb();
-  try {
-    const tx = db.transaction(STORE, "readonly");
-    const row = await idbReq(
-      tx.objectStore(STORE).get(id) as IDBRequest<ProjectRecord | undefined>
-    );
-    await txDone(tx);
-    return row ?? null;
-  } finally {
-    db.close();
-  }
+  const tx = db.transaction(STORE, "readonly");
+  const row = await idbReq(
+    tx.objectStore(STORE).get(id) as IDBRequest<ProjectRecord | undefined>
+  );
+  await txDone(tx);
+  return row ?? null;
 }
 
 /** Insert or replace a project, then prune to MAX_PROJECTS. Returns the id. */
 export async function putProject(input: ProjectWrite): Promise<string> {
   const now = Date.now();
+  const id = input.id ?? crypto.randomUUID();
+  const db = await openDb();
+  const tx = db.transaction(STORE, "readwrite");
+  const store = tx.objectStore(STORE);
+
+  // Read createdAt back in the same transaction as the write, so overlapping
+  // saves can't interleave and lose it (and so a save is a single transaction).
+  let createdAt = input.createdAt;
+  if (createdAt === undefined && input.id !== undefined) {
+    const existing = await idbReq(store.get(id) as IDBRequest<ProjectRecord | undefined>);
+    createdAt = existing?.createdAt;
+  }
+
   const record: ProjectRecord = {
-    id: input.id ?? crypto.randomUUID(),
+    id,
     name: input.name,
     mediaKind: input.mediaKind,
     duration: input.duration,
@@ -134,45 +168,35 @@ export async function putProject(input: ProjectWrite): Promise<string> {
     cutAdjustments: input.cutAdjustments ?? {},
     media: input.media,
     mediaType: input.mediaType,
-    createdAt: input.createdAt ?? now,
+    createdAt: createdAt ?? now,
     updatedAt: now,
   };
 
-  const db = await openDb();
-  try {
-    const tx = db.transaction(STORE, "readwrite");
-    const store = tx.objectStore(STORE);
-    store.put(record);
+  store.put(record);
 
-    // Prune oldest beyond the cap (never delete the record we just wrote).
-    const all = await idbReq(store.getAll() as IDBRequest<ProjectRecord[]>);
-    if (all.length > MAX_PROJECTS) {
-      const sorted = [...all].sort((a, b) => a.updatedAt - b.updatedAt);
-      let excess = all.length - MAX_PROJECTS;
-      for (const row of sorted) {
-        if (excess <= 0) break;
-        if (row.id === record.id) continue;
-        store.delete(row.id);
-        excess--;
-      }
-    }
-
-    await txDone(tx);
-    return record.id;
-  } finally {
-    db.close();
+  // Prune oldest beyond the cap (never delete the record we just wrote). The
+  // updatedAt index yields primary keys oldest-first, so pruning doesn't have to
+  // deserialize every stored media blob the way getAll() would.
+  const keys = await idbReq(
+    store.index("updatedAt").getAllKeys() as IDBRequest<IDBValidKey[]>
+  );
+  let excess = keys.length - MAX_PROJECTS;
+  for (const key of keys) {
+    if (excess <= 0) break;
+    if (key === id) continue;
+    store.delete(key);
+    excess--;
   }
+
+  await txDone(tx);
+  return id;
 }
 
 export async function deleteProject(id: string): Promise<void> {
   const db = await openDb();
-  try {
-    const tx = db.transaction(STORE, "readwrite");
-    tx.objectStore(STORE).delete(id);
-    await txDone(tx);
-  } finally {
-    db.close();
-  }
+  const tx = db.transaction(STORE, "readwrite");
+  tx.objectStore(STORE).delete(id);
+  await txDone(tx);
 }
 
 /** Reconstruct a File from a stored project for preview/export. */

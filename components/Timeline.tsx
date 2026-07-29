@@ -726,9 +726,11 @@ export default function Timeline() {
                       >
                         <span
                           className={`absolute inset-y-1 left-0 w-0.5 rounded-full transition-all duration-150 ${
-                            hovered
-                              ? "bg-neutral-500 opacity-100"
-                              : "bg-zinc-300 opacity-0 group-hover:opacity-100"
+                            cutOut
+                              ? "bg-red-400/70"
+                              : hovered
+                                ? "bg-neutral-500 opacity-100"
+                                : "bg-zinc-300 opacity-0 group-hover:opacity-100"
                           }`}
                           style={{ opacity: hovered ? 1 : 0.55 }}
                         />
@@ -740,7 +742,13 @@ export default function Timeline() {
                         className="tl-word-handle absolute inset-y-0 right-0 z-10 w-1.5 cursor-ew-resize"
                       >
                         <span
-                          className="absolute inset-y-1 right-0 w-0.5 rounded-full bg-neutral-500 transition-opacity duration-150"
+                          className={`absolute inset-y-1 right-0 w-0.5 rounded-full transition-all duration-150 ${
+                            cutOut
+                              ? "bg-red-400/70"
+                              : hovered
+                                ? "bg-neutral-500 opacity-100"
+                                : "bg-zinc-300 opacity-0 group-hover:opacity-100"
+                          }`}
                           style={{ opacity: hovered ? 1 : 0.55 }}
                         />
                       </span>
