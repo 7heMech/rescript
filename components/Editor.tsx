@@ -10,7 +10,7 @@ import TranscriptPanel from "./TranscriptPanel";
 import MediaPreview from "./MediaPreview";
 import Timeline from "./Timeline";
 import ExportDialog from "./ExportDialog";
-import GitHubLink from "./GitHubLink";
+import SocialLinks from "./SocialLinks";
 import { Download, Redo2, Undo2 } from "lucide-react";
 import { ModelOption, ModelOptionSeparator } from "./ModelSelector";
 import ModelSelector from "./ModelSelector";
@@ -145,7 +145,7 @@ export default function Editor() {
       ) : (
         <>
           <TopBar>
-            <GitHubLink />
+            <SocialLinks />
             <button
               onClick={undo}
               disabled={!canUndo}
