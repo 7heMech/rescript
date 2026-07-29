@@ -1,13 +1,33 @@
 {
   "name": "rescript",
   "version": "0.1.0",
+  "description": "Rescript — edit video and audio like you edit text, fully offline.",
   "private": true,
+  "author": {
+    "name": "wassgha",
+    "email": "wassgha@gmail.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wassgha/rescript.git"
+  },
+  "main": "./electron-dist/main.js",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "postinstall": "node scripts/copy-assets.mjs"
+    "postinstall": "node scripts/copy-assets.mjs",
+    "build:electron": "node scripts/build-electron.mjs",
+    "typecheck:electron": "tsc -p electron/tsconfig.json --noEmit",
+    "electron:dev": "npm run build:electron && concurrently -k -n next,electron -c cyan,magenta \"next dev\" \"node scripts/electron-dev.mjs\"",
+    "export:desktop": "STATIC_EXPORT=1 NEXT_PUBLIC_ELECTRON=1 next build",
+    "dist": "npm run export:desktop && npm run build:electron && electron-builder --config.npmRebuild=false",
+    "release": "npm run export:desktop && npm run build:electron && electron-builder --publish always --config.npmRebuild=false",
+    "cut:patch": "npm version patch -m \"Release v%s\" && git push --follow-tags",
+    "cut:minor": "npm version minor -m \"Release v%s\" && git push --follow-tags",
+    "cut:major": "npm version major -m \"Release v%s\" && git push --follow-tags",
+    "notes:preview": "tsx scripts/generate-release-notes.ts HEAD \"$(git tag --sort=-v:refname | head -1)\""
   },
   "dependencies": {
     "@ffmpeg/core-mt": "^0.12.10",
@@ -23,13 +43,83 @@
     "zustand": "^5.0.14"
   },
   "devDependencies": {
+    "@ai-sdk/gateway": "^3.0.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "ai": "^6.0.193",
+    "concurrently": "^9.2.1",
+    "dotenv": "^17.4.2",
+    "electron": "^42.3.0",
+    "electron-builder": "^26.8.1",
+    "electron-log": "^5.4.3",
+    "electron-updater": "^6.6.2",
+    "esbuild": "^0.28.1",
     "eslint": "^9",
     "eslint-config-next": "16.2.12",
     "tailwindcss": "^4",
+    "tsx": "^4.22.4",
     "typescript": "^5"
+  },
+  "build": {
+    "appId": "io.rescript.app",
+    "productName": "Rescript",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "wassgha",
+        "repo": "rescript"
+      }
+    ],
+    "files": [
+      "electron-dist/**/*",
+      "out/**/*",
+      "package.json",
+      "!electron-dist/**/*.map",
+      "!**/node_modules/**"
+    ],
+    "asar": true,
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": ["x64", "arm64"]
+        },
+        {
+          "target": "zip",
+          "arch": ["x64", "arm64"]
+        }
+      ],
+      "category": "public.app-category.video",
+      "artifactName": "${productName}-mac-${arch}.${ext}",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "notarize": true,
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Rescript can use the microphone for on-device speech transcription features.",
+        "NSDocumentsFolderUsageDescription": "Rescript opens and exports video and audio files you select."
+      }
+    },
+    "win": {
+      "target": ["nsis"]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "${productName}-Setup.${ext}"
+    },
+    "linux": {
+      "target": ["AppImage", "deb"],
+      "category": "AudioVideo",
+      "artifactName": "${productName}-linux.${ext}"
+    }
   }
 }

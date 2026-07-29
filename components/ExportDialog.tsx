@@ -58,9 +58,11 @@ export default function ExportDialog() {
 
   if (!open) return null;
 
+  // app-no-drag: the backdrop covers the draggable top bar, so it needs to take
+  // clicks (dismiss) rather than letting them move the window.
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/40 p-4 backdrop-blur-sm"
+      className="app-no-drag fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/40 p-4 backdrop-blur-sm"
       onClick={() => !exporting && setOpen(false)}
     >
       <div

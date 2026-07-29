@@ -15,10 +15,13 @@ const geistMono = Geist_Mono({
 });
 
 const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+/** Set at desktop static-export time so we skip the COI service worker
+ *  (the Electron `app://` protocol sets COOP/COEP headers directly). */
+const isElectron = /electron/i.test(navigator.userAgent);
 
 const title = "Rescript — edit videos like you edit text";
 const description =
-  "A fully offline, open-source transcript-based video editor. Transcribe with Whisper, cut by deleting words, export with ffmpeg — all in your browser.";
+  "A fully offline, open-source transcript-based video editor. Transcribe with Whisper, cut by deleting words, export with ffmpeg — on your device.";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://wassgha.github.io"),
@@ -60,11 +63,15 @@ export default function RootLayout({
       <head>
         {/* Provides COOP/COEP via a service worker on static hosts (GitHub
             Pages) that can't send headers; no-op when the server already
-            sends them. Required for SharedArrayBuffer / multi-threading. */}
-        <Script
-          src={`${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/coi-serviceworker.js`}
-          strategy="beforeInteractive"
-        />
+            sends them. Required for SharedArrayBuffer / multi-threading.
+            Skipped in the Electron shell — the app:// protocol sets the
+            headers directly. */}
+        {!isElectron && (
+          <Script
+            src={`${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/coi-serviceworker.js`}
+            strategy="beforeInteractive"
+          />
+        )}
       </head>
       <body className="min-h-full">{children}</body>
       <GoogleAnalytics gaId="G-WZ055S858C" />

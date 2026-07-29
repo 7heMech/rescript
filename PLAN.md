@@ -9,21 +9,24 @@ browser, with no server, no auth, and no API calls.
 
 ```
 ┌────────────────────────────────────────────────────────────────────┐
-│ Next.js (App Router, client-only editor)                           │
-│                                                                    │
-│  ┌───────────────┐  ┌────────────────┐  ┌───────────────────────┐  │
-│  │ TranscriptPanel│  │ MediaPreview  │  │ Timeline (canvas)     │  │
-│  │ words / cuts   │  │ skip playback │  │ waveform + playhead   │  │
-│  └───────┬───────┘  └───────┬────────┘  └──────────┬────────────┘  │
-│          └───────────── zustand store ─────────────┘               │
-│                     (words, cuts, playback, status)                │
-│                                                                    │
-│  ┌──────────────────────────┐   ┌───────────────────────────────┐  │
-│  │ Web Worker                │   │ ffmpeg.wasm (multi-threaded)  │  │
-│  │ transformers.js           │   │ - audio extraction (16k PCM)  │  │
-│  │ - Whisper (word timing)   │   │ - export: trim+concat+encode  │  │
-│  │ - pyannote (diarization)  │   └───────────────────────────────┘  │
-│  └──────────────────────────┘                                       │
+│ Electron shell (optional desktop)  OR  browser / GitHub Pages      │
+│  ┌──────────────────────────────────────────────────────────────┐  │
+│  │ Next.js (App Router, client-only editor)                     │  │
+│  │                                                              │  │
+│  │  ┌───────────────┐  ┌────────────────┐  ┌──────────────────┐ │  │
+│  │  │ TranscriptPanel│  │ MediaPreview  │  │ Timeline (canvas)│ │  │
+│  │  │ words / cuts   │  │ skip playback │  │ waveform+playhead│ │  │
+│  │  └───────┬───────┘  └───────┬────────┘  └──────────┬───────┘ │  │
+│  │          └───────────── zustand store ─────────────┘         │  │
+│  │                                                              │  │
+│  │  ┌──────────────────────────┐   ┌──────────────────────────┐ │  │
+│  │  │ Web Worker                │   │ ffmpeg.wasm (multi-thr.) │ │  │
+│  │  │ transformers.js           │   │ - audio extraction       │ │  │
+│  │  │ - Whisper (word timing)   │   │ - export trim+concat     │ │  │
+│  │  │ - pyannote (diarization)  │   └──────────────────────────┘ │  │
+│  │  └──────────────────────────┘                                 │  │
+│  └──────────────────────────────────────────────────────────────┘  │
+│  electron/main.ts — app:// static export + auto-updater            │
 └────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -98,9 +101,11 @@ Everything else is derived:
 6. ✅ Export: keep-range concat render to MP4 with progress, download.
 7. ✅ Flexible timeline editing: word-boundary drag, Split at playhead
    (scene boundaries), clip trim handles, manual cuts merged into export.
+8. ✅ Electron desktop shell with signed macOS / Windows / Linux releases.
 
 ## Future work
 
+- Native macOS SpeechAnalyzer as an optional transcription backend.
 - Larger Whisper variants + language selection UI; local model import for
   air-gapped first runs.
 - Smarter export: stream-copy for keyframe-aligned segments, WebCodecs-based

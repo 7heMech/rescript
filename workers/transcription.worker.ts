@@ -23,6 +23,7 @@ import {
 import type { Word, WorkerRequest, WorkerResponse } from "@/lib/types";
 import { MODELS, type WhisperModel } from "@/lib/models";
 import { cleanTranscript } from "@/lib/hallucinations";
+import { alignWordsToSpeech } from "@/lib/align";
 import {
   VAD_FRAME_SIZE,
   VAD_SAMPLE_RATE,
@@ -297,22 +298,31 @@ function segmentsOrFull(
   return [{ startSample: 0, endSample: audio.length }];
 }
 
+/**
+ * Speech segments to transcribe, plus the raw per-frame flags they came from.
+ * The flags are kept because word timestamps are realigned against them once
+ * decoding finishes (see lib/align.ts); `frames` is empty when detection failed
+ * and the whole file is decoded as one segment, which makes that step a no-op.
+ */
 async function detectSpeechSegments(
   audio: Float32Array,
   vad: VadModel | null
-): Promise<SpeechSegment[]> {
+): Promise<{ segments: SpeechSegment[]; frames: boolean[] }> {
   try {
     const frames = vad
       ? await speechFramesWithSilero(vad, audio)
       : energySpeechFrames(audio);
-    return segmentsOrFull(frames, audio);
+    return { segments: segmentsOrFull(frames, audio), frames };
   } catch (err) {
     console.warn("Speech segmentation failed; falling back to full audio.", err);
-    return [{ startSample: 0, endSample: audio.length }];
+    return { segments: [{ startSample: 0, endSample: audio.length }], frames: [] };
   }
 }
 
 type AsrChunk = { text: string; timestamp: [number, number | null] };
+
+/** Nominal length given to a word whose end timestamp is missing or unusable. */
+const FALLBACK_WORD_S = 0.5;
 
 /** Map Whisper word chunks from a segment onto the original media timeline. */
 function wordsFromChunks(
@@ -321,28 +331,46 @@ function wordsFromChunks(
   segmentDuration: number,
   mediaDuration: number
 ): Word[] {
-  const words: Word[] = [];
-  for (const c of chunks) {
-    const text = c.text.trim();
-    if (!text) continue;
-    const localStart = c.timestamp[0] ?? 0;
-    const localEnd = c.timestamp[1] ?? Math.min(localStart + 0.5, segmentDuration);
+  const clampLocal = (t: number) => Math.min(Math.max(t, 0), segmentDuration);
+  const usable = chunks
+    .map((c) => ({ text: c.text.trim(), timestamp: c.timestamp }))
+    .filter((c) => c.text.length > 0);
+
+  return usable.map((c, i) => {
+    const localStart = clampLocal(c.timestamp[0] ?? 0);
+    // Word timestamps come from DTW over the encoder's cross-attention, and
+    // that window is always the full 30 s zero-padded input — so the last word
+    // of a short slice regularly comes back ending at ~29.98 s no matter how
+    // little audio there was. An end past the slice is not a long word, it is a
+    // missing timestamp: fall back to a nominal length, bounded by the next
+    // word. (Clamping to the media duration instead once produced a single
+    // 13.7 s "word" covering the whole tail of the timeline.)
+    const next = usable[i + 1];
+    const nextStart = next
+      ? clampLocal(next.timestamp[0] ?? segmentDuration)
+      : segmentDuration;
+    const rawEnd = c.timestamp[1];
+    const localEnd =
+      rawEnd != null && rawEnd <= segmentDuration
+        ? clampLocal(rawEnd)
+        : Math.min(localStart + FALLBACK_WORD_S, Math.max(localStart, nextStart));
+
     let start = offsetS + localStart;
-    let end = offsetS + localEnd;
+    let end = offsetS + Math.max(localEnd, localStart);
     if (mediaDuration > 0) {
       start = Math.min(start, mediaDuration);
       end = Math.min(end, mediaDuration);
     }
-    words.push({
-      id: words.length,
-      text,
+    start = Math.max(0, start);
+    return {
+      id: i,
+      text: c.text,
       start,
       end: Math.max(end, start + 0.02),
       speaker: 0,
       deleted: false,
-    });
-  }
-  return words;
+    };
+  });
 }
 
 /**
@@ -425,7 +453,8 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
     const [transcriber, vad] = await Promise.all([getAsr(choice), getVad()]);
 
     post({ type: "progress", message: "Detecting speech…", value: 0 });
-    const speechSegments = await detectSpeechSegments(audio, vad);
+    const { segments: speechSegments, frames: speechFrames } =
+      await detectSpeechSegments(audio, vad);
 
     const { verbatimPrompt } = MODELS[choice];
     const promptedIds = verbatimPrompt
@@ -558,7 +587,12 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
 
     // Post-process: collapse leftover n-gram loops and drop known hallucination
     // phrases ("I'm sorry", "thanks for watching", …) that slip past decoding.
-    const words = cleanTranscript(rawWords);
+    const cleaned = cleanTranscript(rawWords);
+
+    // Whisper's DTW word timestamps run consistently late (~0.2 s on the test
+    // clips). Realign them against the VAD flags before diarization, so speakers
+    // are assigned from corrected times too.
+    const words = alignWordsToSpeech(cleaned, speechFrames, { duration });
 
     // Best-effort speaker diarization; a failure should not lose the transcript.
     try {
