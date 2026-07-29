@@ -40,9 +40,8 @@ npm run notes:preview   # needs AI_GATEWAY_API_KEY in .env
 
 ## Required GitHub secrets
 
-Set these under **Settings → Secrets and variables → Actions**. The Apple
-credentials are the same ones used for other CoreViz / OpenDex desktop apps —
-a single Developer ID cert + App Store Connect API key works across app IDs.
+Set these under **Settings → Secrets and variables → Actions**.
+A single Developer ID cert + App Store Connect API key works across app IDs.
 
 | Secret | What it is |
 | --- | --- |

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useEditorStore } from "@/lib/store";
 import { extractAudio, getFFmpeg } from "@/lib/ffmpeg";
 import { useTranscriber } from "@/hooks/useTranscriber";
@@ -11,10 +11,15 @@ import MediaPreview from "./MediaPreview";
 import Timeline from "./Timeline";
 import ExportDialog from "./ExportDialog";
 import GitHubLink from "./GitHubLink";
-import { Download, Redo2, Undo2 } from "lucide-react";
+import { Download, Loader2, Redo2, Undo2 } from "lucide-react";
 import { ModelOption, ModelOptionSeparator } from "./ModelSelector";
 import ModelSelector from "./ModelSelector";
 import ImportTranscriptOption from "./ImportTranscriptOption";
+
+/** How long the desktop mode-change overlay stays up. Matches the macOS
+ *  `setBounds(..., animate)` duration plus a small buffer so the layout
+ *  underneath isn't revealed mid-resize. */
+const WINDOW_MODE_OVERLAY_MS = 380;
 
 export default function Editor() {
   const status = useEditorStore((s) => s.status);
@@ -30,6 +35,8 @@ export default function Editor() {
   const setExportOpen = useEditorStore((s) => s.setExportOpen);
 
   const isElectron = /electron/i.test(navigator.userAgent);
+  const [modeTransitioning, setModeTransitioning] = useState(false);
+  const wasIdle = useRef(status === "idle");
 
   // Processing pipeline: load ffmpeg -> extract audio -> (maybe) transcribe.
   // Restored projects already have words; they only need PCM for the waveform.
@@ -61,9 +68,17 @@ export default function Editor() {
 
   // The desktop shell opens as a small upload window and grows once the
   // three-pane editor takes over (and shrinks back on "start over").
+  // Cover the swap with a brief overlay so the layout reflow isn't visible
+  // while the window animates between sizes.
   useEffect(() => {
-    window.rescriptDesktop?.setWindowMode(status === "idle" ? "compact" : "expanded");
-  }, [status]);
+    const idle = status === "idle";
+    window.rescriptDesktop?.setWindowMode(idle ? "compact" : "expanded");
+    if (!isElectron || wasIdle.current === idle) return;
+    wasIdle.current = idle;
+    setModeTransitioning(true);
+    const timer = window.setTimeout(() => setModeTransitioning(false), WINDOW_MODE_OVERLAY_MS);
+    return () => window.clearTimeout(timer);
+  }, [status, isElectron]);
 
   // Global shortcuts: space = play/pause, ⌘Z / ⇧⌘Z = undo / redo, S = split.
   useEffect(() => {
@@ -113,17 +128,17 @@ export default function Editor() {
   }, []);
 
   return (
-    <div className="flex h-dvh flex-col overflow-hidden bg-zinc-50 text-zinc-900">
+    <div className="relative flex h-dvh flex-col overflow-hidden bg-zinc-50 text-zinc-900">
       {status === "idle" ? (
         <>
           {isElectron && <TopBar>
             <ModelSelector groupLabel="Transcript source">
-            <ModelOption id="base" />
-            <ModelOption id="small" />
-            <ModelOptionSeparator />
-            <ImportTranscriptOption />
-          </ModelSelector>
-            </TopBar>}
+              <ModelOption id="base" />
+              <ModelOption id="small" />
+              <ModelOptionSeparator />
+              <ImportTranscriptOption />
+            </ModelSelector>
+          </TopBar>}
           <UploadScreen onFile={loadVideo} />
         </>
       ) : (
@@ -167,6 +182,15 @@ export default function Editor() {
           </div>
           <Timeline />
         </>
+      )}
+      {modeTransitioning && (
+        <div
+          className="absolute inset-0 z-50 flex items-center justify-center bg-zinc-50"
+          aria-busy="true"
+          aria-live="polite"
+        >
+          <Loader2 size={22} className="animate-spin text-zinc-400" />
+        </div>
       )}
       <ExportDialog />
     </div>
