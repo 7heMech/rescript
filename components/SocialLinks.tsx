@@ -100,7 +100,7 @@ export default function SocialLinks({
           rel="noopener noreferrer"
           title={label}
           aria-label={ariaLabel}
-          className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-800"
+          className={`flex h-8 w-8 items-center justify-center rounded-lg ${variant === 'text' ? 'text-zinc-500' : 'text-zinc-700'} transition hover:bg-zinc-100 hover:text-zinc-800`}
         >
           <Icon size={16} />
         </a>
