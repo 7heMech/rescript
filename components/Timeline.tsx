@@ -18,6 +18,7 @@ import {
   getClipSegments,
   getCutRanges,
   getKeepRanges,
+  isWordCutOut,
   MIN_CUT_DURATION,
 } from "@/lib/edits";
 import type { Word } from "@/lib/types";
@@ -572,28 +573,6 @@ export default function Timeline() {
           style={{ cursor: dragging ? "col-resize" : "default" }}
         >
           <div className="relative h-full" style={{ width: totalWidth }}>
-            {/* Scene boundary markers */}
-            {sceneBoundaries.map((b) => {
-              const x = b.time * pps;
-              return (
-                <div
-                  key={b.id}
-                  data-tl-interactive
-                  className="tl-boundary group/boundary absolute top-0 bottom-0 z-[5] w-3 -translate-x-1/2 cursor-pointer"
-                  style={{ left: x }}
-                  title="Scene split — double-click to join"
-                  onDoubleClick={(e) => {
-                    e.stopPropagation();
-                    useEditorStore.getState().removeSceneBoundary(b.id);
-                  }}
-                  onPointerDown={(e) => e.stopPropagation()}
-                >
-                  <div className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-amber-400/80 transition group-hover/boundary:bg-amber-500" />
-                  <div className="absolute top-[3px] left-1/2 h-2 w-2 -translate-x-1/2 rotate-45 rounded-[1px] bg-amber-400 shadow-sm shadow-amber-500/30 transition group-hover/boundary:scale-125 group-hover/boundary:bg-amber-500" />
-                </div>
-              );
-            })}
-
             {/* Cut-edge handles on word-derived cuts (refine ASR bleed) */}
             {visibleWordCuts.map((cut) => {
               const adjusted = Boolean(cutAdjustments[cut.key]);
@@ -699,13 +678,14 @@ export default function Timeline() {
             {visibleWords.map((w) => {
               const wWidth = Math.max(6, (w.end - w.start) * pps - 1);
               const hovered = hoveredWordId === w.id;
+              const cutOut = isWordCutOut(w, cuts);
               const showWordHandles = showHandles && (hovered || wWidth > 28);
               return (
                 <div
                   key={w.id}
                   data-tl-interactive
                   className={`tl-word absolute z-[3] flex items-center overflow-hidden rounded-md border text-[10px] leading-none transition-[box-shadow,background-color,border-color] duration-150 ${
-                    w.deleted
+                    cutOut
                       ? "border-red-200/90 bg-red-50/95 text-red-400 line-through"
                       : hovered
                         ? "border-indigo-300 bg-white text-zinc-700 shadow-sm shadow-indigo-500/10"
@@ -785,9 +765,6 @@ export default function Timeline() {
             style={{ transform: `translateX(${playheadX}px)` }}
           >
             <div className="absolute -top-px left-1/2 h-2.5 w-2.5 -translate-x-1/2 rounded-sm bg-zinc-900 shadow-sm shadow-zinc-900/30 [clip-path:polygon(0_0,100%_0,100%_55%,50%_100%,0_55%)]" />
-            {splitOk && (
-              <div className="tl-playhead-split absolute top-[22px] left-1/2 h-1.5 w-1.5 -translate-x-1/2 rounded-full bg-amber-400 shadow-[0_0_0_3px_rgba(251,191,36,0.25)]" />
-            )}
           </div>
         )}
 

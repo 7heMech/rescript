@@ -220,6 +220,57 @@ export function cutRangeAt(t: number, cuts: TimeRange[]): TimeRange | null {
   return null;
 }
 
+/**
+ * Whether a word is fully removed from the edited media: either explicitly
+ * deleted, or entirely covered by an effective cut (manual trim / adjustment).
+ */
+export function isWordCutOut(word: Word, cuts: TimeRange[]): boolean {
+  if (word.deleted) return true;
+  if (word.end - word.start <= 1e-4) return false;
+  for (const c of cuts) {
+    if (word.start >= c.start - 1e-4 && word.end <= c.end + 1e-4) return true;
+  }
+  return false;
+}
+
+/** Mark words whose full span lies inside [from, to) as deleted. */
+export function deleteWordsCoveredBy(
+  words: Word[],
+  from: number,
+  to: number
+): Word[] {
+  if (to <= from) return words;
+  let changed = false;
+  const next = words.map((w) => {
+    if (w.deleted) return w;
+    if (w.start >= from - 1e-4 && w.end <= to + 1e-4) {
+      changed = true;
+      return { ...w, deleted: true };
+    }
+    return w;
+  });
+  return changed ? next : words;
+}
+
+/** Restore deleted words whose full span lies inside [from, to). */
+export function restoreWordsCoveredBy(
+  words: Word[],
+  from: number,
+  to: number
+): Word[] {
+  if (to <= from) return words;
+  let changed = false;
+  const next = words.map((w) => {
+    if (!w.deleted) return w;
+    if (w.start >= from - 1e-4 && w.end <= to + 1e-4) {
+      changed = true;
+      return { ...w, deleted: false };
+    }
+    return w;
+  });
+  return changed ? next : words;
+}
+
 /** Find the clip containing time t, if any. */
 export function clipAt(t: number, clips: ClipSegment[]): ClipSegment | null {
   for (const c of clips) {
@@ -403,8 +454,9 @@ export function addManualCut(
 }
 
 /**
- * Trim one edge of a clip. Shrinking adds a manual cut; expanding shrinks
- * manual cuts and restores deleted words fully contained in the reclaimed span.
+ * Trim one edge of a clip. Shrinking adds a manual cut and marks fully covered
+ * words deleted; expanding shrinks manual cuts and restores words fully
+ * contained in the reclaimed span.
  */
 export function trimClipEdgeResult(
   words: Word[],
@@ -428,17 +480,20 @@ export function trimClipEdgeResult(
     if (t > clip.start) {
       // Shrink: cut [clip.start, t)
       const { cuts, nextId } = addManualCut(manualCuts, clip.start, t, nextCutId);
-      return { words, manualCuts: cuts, nextCutId: nextId };
+      return {
+        words: deleteWordsCoveredBy(words, clip.start, t),
+        manualCuts: cuts,
+        nextCutId: nextId,
+      };
     }
 
     // Expand left: reclaim [t, clip.start)
     const shrunk = shrinkManualCuts(manualCuts, t, clip.start, nextCutId);
-    const restored = words.map((w) =>
-      w.deleted && w.start >= t - 1e-4 && w.end <= clip.start + 1e-4
-        ? { ...w, deleted: false }
-        : w
-    );
-    return { words: restored, manualCuts: shrunk.cuts, nextCutId: shrunk.nextId };
+    return {
+      words: restoreWordsCoveredBy(words, t, clip.start),
+      manualCuts: shrunk.cuts,
+      nextCutId: shrunk.nextId,
+    };
   }
 
   // out edge
@@ -448,16 +503,19 @@ export function trimClipEdgeResult(
 
   if (t < clip.end) {
     const { cuts, nextId } = addManualCut(manualCuts, t, clip.end, nextCutId);
-    return { words, manualCuts: cuts, nextCutId: nextId };
+    return {
+      words: deleteWordsCoveredBy(words, t, clip.end),
+      manualCuts: cuts,
+      nextCutId: nextId,
+    };
   }
 
   const shrunk = shrinkManualCuts(manualCuts, clip.end, t, nextCutId);
-  const restored = words.map((w) =>
-    w.deleted && w.start >= clip.end - 1e-4 && w.end <= t + 1e-4
-      ? { ...w, deleted: false }
-      : w
-  );
-  return { words: restored, manualCuts: shrunk.cuts, nextCutId: shrunk.nextId };
+  return {
+    words: restoreWordsCoveredBy(words, clip.end, t),
+    manualCuts: shrunk.cuts,
+    nextCutId: shrunk.nextId,
+  };
 }
 
 /** Format seconds as m:ss.d (or h:mm:ss for long media). */

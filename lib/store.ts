@@ -13,9 +13,12 @@ import type {
 import {
   applyWordBounds,
   canSplitAt,
+  getAdjustedWordCuts,
   getClipSegments,
   getCutRanges,
   getKeepRanges,
+  getWordCutRanges,
+  shrinkManualCuts,
   trimClipEdgeResult,
 } from "./edits";
 import {
@@ -420,12 +423,64 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   },
   restoreWords: (ids) => {
     if (ids.length === 0) return;
-    const { words } = get();
+    const s = get();
     const idSet = new Set(ids);
+    const restored = s.words.filter((w) => idSet.has(w.id));
+    if (restored.length === 0) return;
+
+    // Pull manual cuts off the restored words so transcript restore also
+    // brings the audio back (trim-created cuts would otherwise remain).
+    let manualCuts = s.manualCuts;
+    let nextManualCutId = s.nextManualCutId;
+    for (const w of restored) {
+      const shrunk = shrinkManualCuts(
+        manualCuts,
+        w.start,
+        w.end,
+        nextManualCutId
+      );
+      manualCuts = shrunk.cuts;
+      nextManualCutId = shrunk.nextId;
+    }
+
+    const words = s.words.map((w) =>
+      idSet.has(w.id) ? { ...w, deleted: false } : w
+    );
+
+    // Drop cut-edge overrides that would still fully cover a restored word.
+    let cutAdjustments = s.cutAdjustments;
+    const adjKeys = Object.keys(cutAdjustments);
+    if (adjKeys.length > 0) {
+      const nextAdj = { ...cutAdjustments };
+      const baseCuts = getWordCutRanges(words, s.duration);
+      for (const keyStr of adjKeys) {
+        const key = Number(keyStr);
+        const base = baseCuts.find((c) => c.key === key);
+        if (!base) {
+          delete nextAdj[key];
+          continue;
+        }
+        const effective = getAdjustedWordCuts(
+          words,
+          s.duration,
+          { [key]: nextAdj[key] }
+        ).find((c) => c.key === key);
+        if (!effective) continue;
+        const coversRestored = restored.some(
+          (w) =>
+            w.start >= effective.start - 1e-4 &&
+            w.end <= effective.end + 1e-4
+        );
+        if (coversRestored) delete nextAdj[key];
+      }
+      cutAdjustments = nextAdj;
+    }
+
     pushEdit(get, set, {
-      words: words.map((w) =>
-        idSet.has(w.id) && w.deleted ? { ...w, deleted: false } : w
-      ),
+      words,
+      manualCuts,
+      nextManualCutId,
+      cutAdjustments,
     });
   },
   correctWords: (ids, text) => {

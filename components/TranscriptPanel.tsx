@@ -10,6 +10,7 @@ import {
   TRANSCRIPT_ACCEPT,
 } from "@/lib/parseTranscript";
 import type { SpeakerTurn, Word } from "@/lib/types";
+import { getCutRanges, isWordCutOut } from "@/lib/edits";
 
 export const SPEAKER_COLORS = [
   "#16a34a", // green
@@ -43,10 +44,13 @@ function findActiveWordId(words: Word[], t: number): number {
 
 const WordSpan = memo(function WordSpan({
   word,
+  cutOut,
   active,
   onClick,
 }: {
   word: Word;
+  /** True when the word is removed from the edited media (deleted or covered by a cut). */
+  cutOut: boolean;
   active: boolean;
   onClick: (word: Word) => void;
 }) {
@@ -55,8 +59,9 @@ const WordSpan = memo(function WordSpan({
   return (
     <span
       data-wid={word.id}
+      data-cut={cutOut ? "" : undefined}
       onClick={() => onClick(word)}
-      className={`py-0.5 cursor-pointer transition-colors duration-75 ${word.deleted
+      className={`py-0.5 cursor-pointer transition-colors duration-75 ${cutOut
         ? "word-deleted bg-red-50 text-red-400 line-through decoration-red-300"
         : active
           ? "bg-neutral-200/80 text-zinc-900"
@@ -78,6 +83,9 @@ interface SelectionInfo {
 
 export default function TranscriptPanel() {
   const words = useEditorStore((s) => s.words);
+  const manualCuts = useEditorStore((s) => s.manualCuts);
+  const cutAdjustments = useEditorStore((s) => s.cutAdjustments);
+  const duration = useEditorStore((s) => s.duration);
   const status = useEditorStore((s) => s.status);
   const progress = useEditorStore((s) => s.progress);
   const partialText = useEditorStore((s) => s.partialText);
@@ -90,6 +98,18 @@ export default function TranscriptPanel() {
   const importWords = useEditorStore((s) => s.importWords);
   const playing = useEditorStore((s) => s.playing);
   const activeWordId = useEditorStore((s) => findActiveWordId(s.words, s.currentTime));
+
+  const cuts = useMemo(
+    () => getCutRanges(words, duration, manualCuts, cutAdjustments),
+    [words, duration, manualCuts, cutAdjustments]
+  );
+  const cutOutIds = useMemo(() => {
+    const ids = new Set<number>();
+    for (const w of words) {
+      if (isWordCutOut(w, cuts)) ids.add(w.id);
+    }
+    return ids;
+  }, [words, cuts]);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -116,7 +136,7 @@ export default function TranscriptPanel() {
     return out;
   }, [words]);
 
-  const deletedCount = useMemo(() => words.filter((w) => w.deleted).length, [words]);
+  const deletedCount = useMemo(() => cutOutIds.size, [cutOutIds]);
   const fillerIds = useMemo(() => findFillerWordIds(words), [words]);
 
   const removeFillers = useCallback(() => {
@@ -192,7 +212,7 @@ export default function TranscriptPanel() {
           el.setAttribute("data-sel", "");
           marked.add(el);
           const w = wordMap.get(id);
-          if (w?.deleted) anyDeleted = true;
+          if (w && cutOutIds.has(w.id)) anyDeleted = true;
           else anyKept = true;
         }
       });
@@ -219,7 +239,7 @@ export default function TranscriptPanel() {
       clearMarks();
       document.removeEventListener("selectionchange", handler);
     };
-  }, [words]);
+  }, [words, cutOutIds]);
 
   const cutSelection = useCallback(() => {
     if (!selection) return;
@@ -406,7 +426,9 @@ export default function TranscriptPanel() {
           {status === "ready" && (
             <div className="transcript-words selection:bg-transparent">
               {turns.map((turn, i) => {
-                const visible = showDeleted ? turn.words : turn.words.filter((w) => !w.deleted);
+                const visible = showDeleted
+                  ? turn.words
+                  : turn.words.filter((w) => !cutOutIds.has(w.id));
                 if (visible.length === 0) return null;
                 return (
                   <div key={i} className="mb-7">
@@ -421,6 +443,7 @@ export default function TranscriptPanel() {
                         <WordSpan
                           key={w.id}
                           word={w}
+                          cutOut={cutOutIds.has(w.id)}
                           active={w.id === activeWordId}
                           onClick={seekToWord}
                         />

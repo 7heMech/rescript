@@ -100,6 +100,36 @@ function nearly(a: number, b: number, eps = 1e-3) {
   );
 }
 
+// --- Trim marks fully covered words as deleted ---
+{
+  const words = [
+    word(1, "keep", 0, 1),
+    word(2, "gone", 1.1, 1.9),
+    word(3, "also", 2.0, 2.8),
+  ];
+  const clip = { id: "c", start: 0, end: 3, index: 0 };
+  const result = trimClipEdgeResult(words, [], clip, "out", 1.0, 3, 1);
+  assert(result !== null, "trim ok");
+  assert(result!.words[0].deleted === false, "keep stays");
+  assert(result!.words[1].deleted === true, "gone deleted");
+  assert(result!.words[2].deleted === true, "also deleted");
+}
+
+// --- Expanding trim restores covered deleted words ---
+{
+  const words = [
+    word(1, "a", 0, 1),
+    word(2, "b", 1, 2, true),
+    word(3, "c", 2, 3),
+  ];
+  const manual: ManualCut[] = [{ id: 1, start: 1, end: 2 }];
+  const clip = { id: "c", start: 2, end: 3, index: 0 };
+  const result = trimClipEdgeResult(words, manual, clip, "in", 1, 3, 10);
+  assert(result !== null, "expand ok");
+  assert(result!.words[1].deleted === false, "b restored");
+  assert(result!.manualCuts.length === 0, "manual cut reclaimed");
+}
+
 // --- Cut edge adjustments override word bounds without changing words ---
 {
   const words = [

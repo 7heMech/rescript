@@ -56,21 +56,6 @@ body {
   animation: tl-split-flash 0.42s ease-out;
 }
 
-@keyframes tl-playhead-pulse {
-  0%,
-  100% {
-    transform: translateX(-50%) scale(1);
-    opacity: 1;
-  }
-  50% {
-    transform: translateX(-50%) scale(1.35);
-    opacity: 0.75;
-  }
-}
-.tl-playhead-split {
-  animation: tl-playhead-pulse 1.6s ease-in-out infinite;
-}
-
 .tl-trim-handle:hover > div {
   transform: scaleX(1.4);
 }
