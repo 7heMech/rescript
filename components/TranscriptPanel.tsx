@@ -79,7 +79,7 @@ const WordSpan = memo(function WordSpan({
       data-cut={cutOut ? "" : undefined}
       onClick={(e) => onClick(word, e.currentTarget)}
       className={`py-0.5 cursor-pointer transition-colors duration-75 ${cutOut
-        ? "word-deleted bg-red-50 text-red-400 line-through decoration-red-300"
+        ? "word-deleted bg-red-50 text-red-600 line-through decoration-red-300"
         : active
           ? "bg-neutral-200/80 text-zinc-900"
           : "text-zinc-800 hover:bg-neutral-50"
@@ -513,7 +513,7 @@ export default function TranscriptPanel() {
         </span>
         <div className="ml-auto flex items-center gap-2">
           {deletedCount > 0 && (
-            <span className="rounded-md bg-red-50 px-2 py-0.5 text-[9px] font-medium text-red-400 line-clamp-1 line-through">
+            <span className="rounded-md bg-red-50 px-2 py-0.5 text-[9px] font-medium text-red-600 line-clamp-1 line-through">
               {deletedCount} word{deletedCount === 1 ? "" : "s"}
             </span>
           )}
