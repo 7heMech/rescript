@@ -29,6 +29,9 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Unit tests
+        run: npm test
+
       - name: Typecheck (web)
         run: |
           # next-env.d.ts is gitignored; generate it (and route types) before tsc.

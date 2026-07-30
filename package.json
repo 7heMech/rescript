@@ -17,6 +17,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test": "tsx tests/align-test.ts && tsx tests/edits-test.ts && tsx tests/hallucination-test.ts && tsx tests/parse-transcript-test.ts && tsx tests/projects-test.ts && tsx tests/vad-test.ts && tsx tests/vad-regression-test.ts && tsx tests/webgpu-test.ts",
     "postinstall": "node scripts/copy-assets.mjs",
     "build:electron": "node scripts/build-electron.mjs",
     "typecheck:electron": "tsc -p electron/tsconfig.json --noEmit",

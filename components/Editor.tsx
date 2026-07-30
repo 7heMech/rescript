@@ -6,6 +6,7 @@ import { useEditorStore } from "@/lib/store";
 import { extractAudio, getFFmpeg } from "@/lib/ffmpeg";
 import { VAD_SAMPLE_RATE } from "@/lib/vad";
 import { isElectron } from "@/lib/platform";
+import { useIsDesktopLayout } from "@/hooks/useIsDesktopLayout";
 import { useTranscriber } from "@/hooks/useTranscriber";
 import TopBar from "./TopBar";
 import UploadScreen from "./UploadScreen";
@@ -24,23 +25,6 @@ import LogoLoader from "./LogoLoader";
  *  `setBounds(..., animate)` duration plus a small buffer so the layout
  *  underneath isn't revealed mid-resize. */
 const WINDOW_MODE_OVERLAY_MS = 380;
-
-/** Matches Tailwind `lg` — below this the panes stack vertically. */
-const DESKTOP_MQ = "(min-width: 1024px)";
-
-function useIsDesktopLayout() {
-  const [isDesktop, setIsDesktop] = useState(() =>
-    typeof window !== "undefined" ? window.matchMedia(DESKTOP_MQ).matches : true
-  );
-  useEffect(() => {
-    const mq = window.matchMedia(DESKTOP_MQ);
-    const onChange = () => setIsDesktop(mq.matches);
-    onChange();
-    mq.addEventListener("change", onChange);
-    return () => mq.removeEventListener("change", onChange);
-  }, []);
-  return isDesktop;
-}
 
 /** Transcript and preview split, resizable in both orientations. Wide screens
  *  put the transcript first (left of the preview); stacked screens lead with
@@ -283,7 +267,6 @@ export default function Editor() {
             </button>
           </TopBar>
           <EditorWorkspace />
-          {/* <SideRail /> — hidden until the tools it exposes are functional */}
           <Timeline />
         </>
       )}

@@ -1,6 +1,6 @@
 /**
  * Unit tests for SRT / VTT / JSON transcript import.
- * Run: npx tsx scripts/parse-transcript-test.ts
+ * Run: npx tsx tests/parse-transcript-test.ts
  */
 import { parseTranscript } from "../lib/parseTranscript";
 

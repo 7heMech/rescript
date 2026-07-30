@@ -16,7 +16,7 @@ import { MODELS } from "../lib/models";
 
 const wav = path.join(
   process.cwd(),
-  "assets/testaudio_44100_test01_20s.wav"
+  "tests/fixtures/testaudio_44100_test01_20s.wav"
 );
 
 function assert(cond: boolean, msg: string) {
