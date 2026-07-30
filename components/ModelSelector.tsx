@@ -121,6 +121,7 @@ export default function ModelSelector({
 }) {
   const model = useEditorStore((s) => s.model);
   const setModel = useEditorStore((s) => s.setModel);
+  const transcriptLanguage = useEditorStore((s) => s.transcriptLanguage);
   const [open, setOpen] = useState(false);
   const [triggers, setTriggers] = useState<Record<string, OptionTrigger>>({});
   const rootRef = useRef<HTMLDivElement>(null);
@@ -198,13 +199,15 @@ export default function ModelSelector({
   // custom option (e.g. import) never shows the raw id + default wave icon.
   const TriggerIcon =
     activeTrigger?.icon ?? (model === "import" ? FileText : AudioLines);
-  const triggerLabel =
+  const baseTriggerLabel =
     activeTrigger?.label ??
     (isWhisperModel(model)
       ? MODELS[model].label
       : model === "import"
         ? "Import transcript"
         : String(model));
+  const languageInfo = TRANSCRIPT_LANGUAGES[transcriptLanguage];
+  const showLanguageInTrigger = isWhisperModel(model) && !activeTrigger?.busy;
 
   // Always mount options (hidden when closed) so custom triggers stay registered.
   const options = children ?? (
@@ -235,8 +238,13 @@ export default function ModelSelector({
           aria-haspopup="listbox"
           aria-expanded={open}
           aria-controls={listId}
+          aria-label={
+            showLanguageInTrigger
+              ? `${typeof baseTriggerLabel === "string" ? baseTriggerLabel : "Transcript source"}, ${languageInfo.label}`
+              : undefined
+          }
           onClick={() => setOpen((v) => !v)}
-          className="inline-flex max-w-[14rem] items-center gap-2 rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-[13px] font-medium text-zinc-800 cursor-pointer transition hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:border-zinc-600 dark:hover:bg-zinc-800"
+          className="inline-flex max-w-[22rem] items-center gap-2 rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-[13px] font-medium text-zinc-800 cursor-pointer transition hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:border-zinc-600 dark:hover:bg-zinc-800"
         >
           {activeTrigger?.busy ? (
             <Loader2 size={14} className="shrink-0 animate-spin text-zinc-500" />
@@ -246,7 +254,25 @@ export default function ModelSelector({
               className={`shrink-0 ${activeTrigger?.iconClassName ?? "text-zinc-500"}`}
             />
           )}
-          <span className="truncate">{triggerLabel}</span>
+          <span className="flex min-w-0 items-center gap-1.5 truncate">
+            <span className="truncate">{baseTriggerLabel}</span>
+            {showLanguageInTrigger && (
+              <>
+                <span
+                  className="shrink-0 font-normal text-zinc-300 dark:text-zinc-600"
+                  aria-hidden
+                >
+                  |
+                </span>
+                <span className="shrink-0 text-[13px] leading-none" aria-hidden>
+                  {languageInfo.flag}
+                </span>
+                <span className="shrink-0 font-normal text-zinc-500 dark:text-zinc-400">
+                  {languageInfo.locale}
+                </span>
+              </>
+            )}
+          </span>
           <ChevronDown
             size={14}
             className={`shrink-0 text-zinc-400 transition dark:text-zinc-500 ${open ? "rotate-180" : ""}`}

@@ -5,6 +5,8 @@ export interface TranscriptLanguageInfo {
   nativeLabel: string;
   /** Flag emoji shown beside the language name. */
   flag: string;
+  /** Compact locale tag shown in the model selector trigger. */
+  locale: string;
 }
 
 const LANGUAGE_STORAGE_KEY = "rescript.transcript-language";
@@ -19,26 +21,31 @@ export const TRANSCRIPT_LANGUAGES: Record<
     label: "English",
     nativeLabel: "English",
     flag: "🇺🇸",
+    locale: "en-US",
   },
   es: {
     label: "Spanish",
     nativeLabel: "Español",
     flag: "🇪🇸",
+    locale: "es-ES",
   },
   fr: {
     label: "French",
     nativeLabel: "Français",
     flag: "🇫🇷",
+    locale: "fr-FR",
   },
   de: {
     label: "German",
     nativeLabel: "Deutsch",
     flag: "🇩🇪",
+    locale: "de-DE",
   },
   zh: {
     label: "Chinese",
     nativeLabel: "中文",
     flag: "🇨🇳",
+    locale: "zh-CN",
   },
 };
 

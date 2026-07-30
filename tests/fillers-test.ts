@@ -13,16 +13,37 @@ function w(text: string, id: number, deleted = false): Word {
 }
 
 {
-  const meaningfulGermanWords = ["also", "genau", "ja"];
-  for (const word of meaningfulGermanWords) {
+  const frenchFillers = ["euh", "Euhm,", "heu", "euuuh"];
+  for (const word of frenchFillers) {
+    if (!isFillerWord(word)) throw new Error(`expected ${word} to be a filler`);
+  }
+}
+
+{
+  const spanishFillers = ["em", "Emm,", "eee"];
+  for (const word of spanishFillers) {
+    if (!isFillerWord(word)) throw new Error(`expected ${word} to be a filler`);
+  }
+}
+
+{
+  const chineseFillers = ["嗯", "呃", "额", "唔", "嗯嗯"];
+  for (const word of chineseFillers) {
+    if (!isFillerWord(word)) throw new Error(`expected ${word} to be a filler`);
+  }
+}
+
+{
+  const meaningfulWords = ["also", "genau", "ja", "bonjour", "hola", "这个"];
+  for (const word of meaningfulWords) {
     if (isFillerWord(word)) throw new Error(`did not expect ${word} to be a filler`);
   }
 }
 
 {
-  const words = [w("Hello", 1), w("ähm", 2), w("uh", 3, true), w("öhm.", 4)];
+  const words = [w("Hello", 1), w("ähm", 2), w("uh", 3, true), w("öhm.", 4), w("euh", 5), w("嗯", 6)];
   const ids = findFillerWordIds(words);
-  if (ids.join(",") !== "2,4") throw new Error(`unexpected filler ids: ${ids.join(",")}`);
+  if (ids.join(",") !== "2,4,5,6") throw new Error(`unexpected filler ids: ${ids.join(",")}`);
 }
 
 console.log("ALL FILLER TESTS PASSED");
