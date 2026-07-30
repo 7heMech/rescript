@@ -64,10 +64,10 @@ const WordSpan = memo(function WordSpan({
       data-cut={cutOut ? "" : undefined}
       onClick={(e) => onClick(word, e.currentTarget)}
       className={`py-0.5 cursor-pointer transition-colors duration-75 ${cutOut
-        ? "word-deleted bg-red-50 text-red-600 line-through decoration-red-300"
+        ? "word-deleted bg-red-50 text-red-600 line-through decoration-red-300 dark:bg-red-950/40 dark:text-red-400 dark:decoration-red-800"
         : active
-          ? "bg-neutral-200/80 text-zinc-900"
-          : "text-zinc-800 hover:bg-neutral-50"
+          ? "bg-neutral-200/80 text-zinc-900 dark:bg-neutral-700/80 dark:text-zinc-50"
+          : "text-zinc-800 hover:bg-neutral-50 dark:text-zinc-200 dark:hover:bg-neutral-800/60"
         }`}
     >
       {word.text}{" "}
@@ -95,8 +95,8 @@ const SplitMarker = memo(function SplitMarker({
       onClick={() => onJoin(boundaryId)}
       className="group relative mx-0.5 inline-flex h-4 w-2 cursor-pointer select-none items-center justify-center align-middle"
     >
-      <span className="h-4 w-0.5 rounded-full bg-zinc-300 transition-colors group-hover:bg-zinc-600" />
-      <span className="pointer-events-none absolute -top-5 left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-md bg-zinc-900 px-1.5 py-0.5 text-[10px] font-medium whitespace-nowrap text-white opacity-0 transition-opacity group-hover:opacity-100">
+      <span className="h-4 w-0.5 rounded-full bg-zinc-300 transition-colors group-hover:bg-zinc-600 dark:bg-zinc-600 dark:group-hover:bg-zinc-300" />
+      <span className="pointer-events-none absolute -top-5 left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-md bg-zinc-900 px-1.5 py-0.5 text-[10px] font-medium whitespace-nowrap text-white opacity-0 transition-opacity group-hover:opacity-100 dark:bg-zinc-100 dark:text-zinc-900">
         <Merge size={9} />
         Join
       </span>
@@ -285,16 +285,16 @@ export default function TranscriptPanel() {
   return (
     // min-h-0 keeps this pane from growing to the transcript's full height —
     // without it the panel wrapper scrolls instead of the list below.
-    <section className="relative flex min-h-0 min-w-0 overflow-y-hidden flex-1 flex-col bg-white">
+    <section className="relative flex min-h-0 min-w-0 overflow-y-hidden flex-1 flex-col bg-white dark:bg-zinc-900">
       {/* Floats above the scroller rather than sticking inside it, so the
           rubber-band overscroll only carries the transcript, not the bar. */}
-      <div className="absolute inset-x-0 top-0 z-10 flex h-10 items-center gap-2 border-b border-zinc-100/80 bg-white/75 px-3 backdrop-blur-md sm:px-4">
-        <span className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
+      <div className="absolute inset-x-0 top-0 z-10 flex h-10 items-center gap-2 border-b border-zinc-100/80 bg-white/75 px-3 backdrop-blur-md sm:px-4 dark:border-zinc-800/80 dark:bg-zinc-900/75">
+        <span className="text-xs font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
           Transcript
         </span>
         <div className="ml-auto flex items-center gap-2">
           {deletedCount > 0 && (
-            <span className="rounded-md bg-red-50 px-2 py-0.5 text-[9px] font-medium text-red-600 line-clamp-1 line-through">
+            <span className="rounded-md bg-red-50 px-2 py-0.5 text-[9px] font-medium text-red-600 line-clamp-1 line-through dark:bg-red-950/40 dark:text-red-400">
               {deletedCount} word{deletedCount === 1 ? "" : "s"}
             </span>
           )}
@@ -302,7 +302,7 @@ export default function TranscriptPanel() {
             <button
               onClick={removeFillers}
               title='Cut filler words ("um", "uh", …) from the video'
-              className="flex cursor-pointer h-7 items-center gap-1.5 rounded-lg px-2 text-xs text-zinc-500 transition hover:bg-zinc-100 line-clamp-1"
+              className="flex cursor-pointer h-7 items-center gap-1.5 rounded-lg px-2 text-xs text-zinc-500 transition hover:bg-zinc-100 line-clamp-1 dark:text-zinc-400 dark:hover:bg-zinc-800"
             >
               <WandSparkles size={14} />
               <span className="hidden sm:inline">Remove filler words ({fillerIds.length})</span>
@@ -313,7 +313,7 @@ export default function TranscriptPanel() {
               <button
                 onClick={() => importInputRef.current?.click()}
                 title="Replace transcript from SRT, VTT, or JSON"
-                className="flex cursor-pointer h-7 items-center gap-1.5 rounded-lg px-2 text-xs text-zinc-500 transition hover:bg-zinc-100"
+                className="flex cursor-pointer h-7 items-center gap-1.5 rounded-lg px-2 text-xs text-zinc-500 transition hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
               >
                 <FileText size={14} />
                 <span className="hidden sm:inline">Import</span>
@@ -334,7 +334,7 @@ export default function TranscriptPanel() {
           <button
             onClick={toggleShowDeleted}
             title={showDeleted ? "Hide deleted words" : "Show deleted words"}
-            className="flex cursor-pointer h-7 items-center gap-1.5 rounded-lg px-2 text-xs text-zinc-500 transition hover:bg-zinc-100"
+            className="flex cursor-pointer h-7 items-center gap-1.5 rounded-lg px-2 text-xs text-zinc-500 transition hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
           >
             {showDeleted ? <Eye size={14} /> : <EyeOff size={14} />}
           </button>
@@ -348,19 +348,19 @@ export default function TranscriptPanel() {
         <div ref={containerRef} className="relative mx-auto max-w-2xl px-4 py-6 sm:px-8 sm:py-8">
           {busy && (
             <div className="flex flex-col items-start gap-4">
-              <div className="w-full bg-zinc-50 p-2">
+              <div className="w-full bg-zinc-50 p-2 dark:bg-zinc-800/60">
                 <div className="flex items-center gap-2">
-                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-neutral-500 border-t-transparent" />
-                  <p className="text-sm font-medium text-zinc-700">{progress.message}</p>
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-neutral-500 border-t-transparent dark:border-neutral-400" />
+                  <p className="text-sm font-medium text-zinc-700 dark:text-zinc-200">{progress.message}</p>
                   {progress.value !== null && (
                     <>
-                      <div className="ml-auto w-[100px] h-1 overflow-hidden rounded-full bg-zinc-200">
+                      <div className="ml-auto w-[100px] h-1 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-700">
                         <div
-                          className="h-full rounded-full bg-neutral-500 transition-[width] duration-300"
+                          className="h-full rounded-full bg-neutral-500 transition-[width] duration-300 dark:bg-neutral-400"
                           style={{ width: `${progress.value * 100}%` }}
                         />
                       </div>
-                      <span className="text-xs tabular-nums text-zinc-400">
+                      <span className="text-xs tabular-nums text-zinc-400 dark:text-zinc-500">
                         {Math.round(progress.value * 100)}%
                       </span>
                     </>
@@ -368,7 +368,7 @@ export default function TranscriptPanel() {
                 </div>
               </div>
               {partialText && (
-                <p className="text-[15px] leading-8 text-zinc-400">
+                <p className="text-[15px] leading-8 text-zinc-400 dark:text-zinc-500">
                   {partialText}
                   <span className="ml-0.5 inline-block h-4 w-0.5 animate-pulse bg-neutral-500 align-middle" />
                 </p>
@@ -377,7 +377,7 @@ export default function TranscriptPanel() {
           )}
 
           {status === "error" && (
-            <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-600">
+            <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-600 dark:border-red-900 dark:bg-red-950/40 dark:text-red-400">
               {error}
             </div>
           )}
@@ -424,14 +424,14 @@ export default function TranscriptPanel() {
           {selection && !correcting && (
             <div
               data-transcript-toolbar
-              className="absolute z-20 flex -translate-x-1/2 items-center gap-0.5 rounded-xl border border-zinc-200 bg-white p-1 shadow-lg shadow-zinc-900/10"
+              className="absolute z-20 flex -translate-x-1/2 items-center gap-0.5 rounded-xl border border-zinc-200 bg-white p-1 shadow-lg shadow-zinc-900/10 dark:border-zinc-700 dark:bg-zinc-800 dark:shadow-black/30"
               style={{ top: selection.top, left: selection.left }}
               onMouseDown={(e) => e.preventDefault()}
             >
               {selection.anyKept && (
                 <button
                   onClick={cutSelection}
-                  className="flex cursor-pointer items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[13px] font-medium text-zinc-700 transition hover:bg-red-50 hover:text-red-600"
+                  className="flex cursor-pointer items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[13px] font-medium text-zinc-700 transition hover:bg-red-50 hover:text-red-600 dark:text-zinc-200 dark:hover:bg-red-950/50 dark:hover:text-red-400"
                 >
                   <Scissors size={13} />
                   Cut
@@ -440,7 +440,7 @@ export default function TranscriptPanel() {
               {selection.anyDeleted && (
                 <button
                   onClick={restoreSelection}
-                  className="flex cursor-pointer items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[13px] font-medium text-zinc-700 transition hover:bg-emerald-50 hover:text-emerald-600"
+                  className="flex cursor-pointer items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[13px] font-medium text-zinc-700 transition hover:bg-emerald-50 hover:text-emerald-600 dark:text-zinc-200 dark:hover:bg-emerald-950/40 dark:hover:text-emerald-400"
                 >
                   <RotateCcw size={13} />
                   Restore
@@ -448,7 +448,7 @@ export default function TranscriptPanel() {
               )}
               <button
                 onClick={openCorrect}
-                className="flex cursor-pointer items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[13px] font-medium text-zinc-700 transition hover:bg-zinc-100"
+                className="flex cursor-pointer items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[13px] font-medium text-zinc-700 transition hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-700"
               >
                 <Pencil size={13} />
                 Correct
@@ -459,7 +459,7 @@ export default function TranscriptPanel() {
           {correcting && (
             <div
               ref={popoverRef}
-              className="absolute z-20 w-80 max-w-[calc(100%-16px)] -translate-x-1/2 rounded-2xl border border-zinc-200 bg-white p-3 shadow-xl shadow-zinc-900/10"
+              className="absolute z-20 w-80 max-w-[calc(100%-16px)] -translate-x-1/2 rounded-2xl border border-zinc-200 bg-white p-3 shadow-xl shadow-zinc-900/10 dark:border-zinc-700 dark:bg-zinc-800 dark:shadow-black/40"
               style={{
                 top: Math.max(4, correcting.top - 56),
                 left: Math.min(
@@ -469,10 +469,10 @@ export default function TranscriptPanel() {
               }}
             >
               <div className="mb-2 flex items-center justify-between">
-                <span className="text-[13px] font-semibold text-zinc-800">Correct</span>
+                <span className="text-[13px] font-semibold text-zinc-800 dark:text-zinc-100">Correct</span>
                 <button
                   onClick={closeCorrect}
-                  className="flex h-6 w-6 items-center justify-center rounded-md text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700"
+                  className="flex h-6 w-6 items-center justify-center rounded-md text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
                 >
                   <X size={13} />
                 </button>
@@ -486,13 +486,13 @@ export default function TranscriptPanel() {
                   if (e.key === "Enter") applyCorrection();
                   else if (e.key === "Escape") closeCorrect();
                 }}
-                className="w-full rounded-lg border border-zinc-300 bg-zinc-50 px-2.5 py-1.5 text-sm text-zinc-800 outline-none focus:border-zinc-500 focus:bg-white"
+                className="w-full rounded-lg border border-zinc-300 bg-zinc-50 px-2.5 py-1.5 text-sm text-zinc-800 outline-none focus:border-zinc-500 focus:bg-white dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100 dark:focus:border-zinc-400 dark:focus:bg-zinc-950"
               />
               <div className="mt-2.5 flex justify-end">
                 <button
                   onClick={applyCorrection}
                   disabled={correctText.trim().length === 0}
-                  className="cursor-pointer flex h-8 items-center rounded-full bg-zinc-900 px-4 text-[13px] font-medium text-white transition hover:bg-zinc-700 disabled:opacity-40"
+                  className="cursor-pointer flex h-8 items-center rounded-full bg-zinc-900 px-4 text-[13px] font-medium text-white transition hover:bg-zinc-700 disabled:opacity-40 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
                 >
                   Correct
                 </button>
@@ -501,8 +501,8 @@ export default function TranscriptPanel() {
           )}
         </div>
       </div>
-      {/* Gradient overlay */}
-      <div className="absolute z-10 pointer-events-none inset-x-0 bottom-0 w-full h-20 bg-gradient-to-t from-white to-transparent" />
+      {/* Gradient overlay — must match the transcript panel surface */}
+      <div className="absolute z-10 pointer-events-none inset-x-0 bottom-0 w-full h-20 bg-gradient-to-t from-white to-transparent dark:from-zinc-900" />
       <TranscriptScrollIndicator scrollRef={scrollRef} contentRef={containerRef} />
     </section>
   );

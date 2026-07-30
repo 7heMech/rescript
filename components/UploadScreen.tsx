@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import logo from "@/assets/logo.png";
 import SocialLinks from "./SocialLinks";
+import SettingsMenu from "./SettingsMenu";
 import ModelSelector, {
   ModelOption,
   ModelOptionSeparator,
@@ -69,13 +70,13 @@ function MediaCards({ dragging }: { dragging: boolean }) {
       {CARDS.map(({ icon: Icon, size, iconSize, bars, rest, fan }, i) => (
         <div
           key={i}
-          className={`absolute flex flex-col items-center justify-center gap-1.5 rounded-xl border border-zinc-200 bg-white transition-transform duration-300 ease-out ${size} ${dragging ? fan : rest
+          className={`absolute flex flex-col items-center justify-center gap-1.5 rounded-xl border border-zinc-200 bg-white transition-transform duration-300 ease-out dark:border-zinc-800 ${dragging ? "dark:bg-zinc-900" : "dark:bg-zinc-900 group-hover:dark:bg-zinc-900"} ${size} ${dragging ? fan : rest
             }`}
         >
-          <Icon size={iconSize} className="text-neutral-400" />
+          <Icon size={iconSize} className="text-neutral-400 dark:text-neutral-500" />
           <div className="flex flex-col items-center gap-1">
             {bars.map((w) => (
-              <span key={w} className={`block h-[3px] rounded-full bg-zinc-200 ${w}`} />
+              <span key={w} className={`block h-[3px] rounded-full bg-zinc-200 dark:bg-zinc-700 ${w}`} />
             ))}
           </div>
         </div>
@@ -98,10 +99,10 @@ function RecentProjects({
   if (projects.length === 0) return null;
   return (
     <div className="mt-6">
-      <p className="mb-2 text-[11px] font-medium tracking-wide text-zinc-400">
+      <p className="mb-2 text-[11px] font-medium tracking-wide text-zinc-400 dark:text-zinc-500">
         Recent
       </p>
-      <ul className="divide-y divide-zinc-100 overflow-hidden rounded-xl border border-zinc-200 bg-white/80">
+      <ul className="divide-y divide-zinc-100 overflow-hidden rounded-xl border border-zinc-200 bg-white/80 dark:divide-zinc-800 dark:border-zinc-700 dark:bg-zinc-900/80">
         {projects.map((p) => {
           const KindIcon = p.mediaKind === "audio" ? AudioLines : Film;
           const opening = busyId === p.id;
@@ -112,14 +113,14 @@ function RecentProjects({
                   type="button"
                   disabled={busyId !== null}
                   onClick={() => onOpen(p.id)}
-                  className="flex cursor-pointer min-w-0 flex-1 items-center gap-3 px-3 py-2.5 text-left transition hover:bg-zinc-50 disabled:opacity-60"
+                  className="flex cursor-pointer min-w-0 flex-1 items-center gap-3 px-3 py-2.5 text-left transition hover:bg-zinc-50 disabled:opacity-60 dark:hover:bg-zinc-800/60"
                 >
-                  <KindIcon size={16} className="shrink-0 text-zinc-400 mx-2" />
+                  <KindIcon size={16} className="shrink-0 text-zinc-400 mx-2 dark:text-zinc-500" />
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[13px] font-medium text-zinc-800">
+                    <span className="block truncate text-[13px] font-medium text-zinc-800 dark:text-zinc-100">
                       {p.name}
                     </span>
-                    <span className="mt-0.5 block text-[11px] text-zinc-400">
+                    <span className="mt-0.5 block text-[11px] text-zinc-400 dark:text-zinc-500">
                       {formatRelativeTime(p.updatedAt)}
                       {p.duration > 0 ? ` · ${formatTime(p.duration)}` : ""}
                       {` · ${p.mediaKind}`}
@@ -137,7 +138,7 @@ function RecentProjects({
                     e.stopPropagation();
                     onRemove(p.id);
                   }}
-                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 disabled:opacity-40"
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 disabled:opacity-40 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
                 >
                   <Trash2 size={14} />
                 </button>
@@ -249,30 +250,38 @@ export default function UploadScreen({
   );
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-gradient-to-b from-zinc-50 to-neutral-50/50">
+    <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-gradient-to-b from-zinc-50 to-neutral-50/50 dark:from-zinc-950 dark:to-zinc-900/50">
       {/* min-h-full + items-center centers when content fits; the outer
           overflow-y-auto still lets short viewports (mobile) scroll the top. */}
       <div className="flex min-h-full items-center justify-center p-6">
         <div className="w-full max-w-xl">
-          {!isElectron && <div className="mb-6 flex items-center justify-between gap-3">
-            <div className="flex min-w-0 items-center">
-              <Image
-                src={logo}
-                alt="Rescript"
-                width={24}
-                height={24}
-                priority
-                className="rounded-sm border border-zinc-200"
-              />
-              <p className="ml-2 text-[15px] font-medium text-zinc-800">Rescript</p>
+          {!isElectron && (
+            <div className="mb-6 flex items-center justify-between gap-3">
+              <div className="flex min-w-0 items-center">
+                <Image
+                  src={logo}
+                  alt="Rescript"
+                  width={24}
+                  height={24}
+                  priority
+                  className="rounded-sm border border-zinc-200 dark:border-zinc-700"
+                />
+                <p className="ml-2 text-[15px] font-medium text-zinc-800 dark:text-zinc-100">
+                  Rescript
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <SettingsMenu />
+                <div className="h-5 w-px bg-zinc-200 dark:bg-zinc-700" />
+                <ModelSelector groupLabel="Transcript source">
+                  <ModelOption id="base" />
+                  <ModelOption id="small" />
+                  <ModelOptionSeparator />
+                  <ImportTranscriptOption />
+                </ModelSelector>
+              </div>
             </div>
-            <ModelSelector groupLabel="Transcript source">
-              <ModelOption id="base" />
-              <ModelOption id="small" />
-              <ModelOptionSeparator />
-              <ImportTranscriptOption />
-            </ModelSelector>
-          </div>}
+          )}
           <div
             role="button"
             aria-disabled={!ready}
@@ -289,11 +298,11 @@ export default function UploadScreen({
               setDragging(false);
               handleFiles(e.dataTransfer.files);
             }}
-            className={`group flex flex-col items-center justify-center rounded-2xl border-2 border-dashed bg-white/80 px-8 py-14 text-center transition ${!ready
-                ? "cursor-default border-zinc-200"
+            className={`group flex flex-col items-center justify-center rounded-2xl border-2 border-dashed bg-white/80 px-8 py-14 text-center transition dark:bg-zinc-900/40 ${!ready
+                ? "cursor-default border-zinc-200 dark:border-zinc-700"
                 : dragging
-                  ? "cursor-pointer border-neutral-500 bg-neutral-50/80"
-                  : "cursor-pointer border-zinc-300 hover:border-neutral-400 hover:bg-white"
+                  ? "cursor-pointer border-neutral-500 bg-neutral-50/80 dark:border-neutral-600 dark:bg-zinc-900/60"
+                  : "cursor-pointer border-zinc-300 hover:border-neutral-400 hover:bg-white dark:border-zinc-700 dark:hover:border-neutral-600 dark:hover:bg-zinc-900/60"
               }`}
           >
             {ready ? (
@@ -301,8 +310,8 @@ export default function UploadScreen({
             ) : (
               <div
                 className={`mb-3 flex h-12 w-12 items-center justify-center rounded-full ${isolation === "unavailable"
-                    ? "bg-amber-50 text-amber-600"
-                    : "bg-neutral-100 text-neutral-600"
+                    ? "bg-amber-50 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400"
+                    : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
                   }`}
               >
                 {isolation === "unavailable" ? (
@@ -314,21 +323,21 @@ export default function UploadScreen({
             )}
             {isolation === "unavailable" ? (
               <>
-                <p className="text-[15px] font-medium text-zinc-800">
+                <p className="text-[15px] font-medium text-zinc-800 dark:text-zinc-100">
                   This browser can&apos;t run the editor
                 </p>
-                <p className="mt-1 max-w-sm text-[13px] leading-relaxed text-zinc-400">
+                <p className="mt-1 max-w-sm text-[13px] leading-relaxed text-zinc-400 dark:text-zinc-500">
                   Editing needs SharedArrayBuffer, which requires a cross-origin-isolated page.
                   Try a recent Chrome, Edge or Firefox over HTTPS.
                 </p>
               </>
             ) : ready ? (
               <>
-                <p className="text-[15px] font-medium text-zinc-800">
+                <p className="text-[15px] font-medium text-zinc-800 dark:text-zinc-100">
                   Drop a video or audio file here, or{" "}
-                  <span className="text-neutral-600">browse</span>
+                  <span className="text-neutral-600 dark:text-neutral-300">browse</span>
                 </p>
-                <p className="mt-1 text-[13px] text-zinc-400">
+                <p className="mt-1 text-[13px] text-zinc-400 dark:text-zinc-500">
                   {model === "import"
                     ? pendingTranscript
                       ? `Will use ${pendingTranscript.name} · MP4, WebM, MOV, MP3, WAV, …`
@@ -338,8 +347,8 @@ export default function UploadScreen({
               </>
             ) : (
               <>
-                <p className="text-[15px] font-medium text-zinc-800">Getting things ready</p>
-                <p className="mt-1 text-[13px] text-zinc-400">
+                <p className="text-[15px] font-medium text-zinc-800 dark:text-zinc-100">Getting things ready</p>
+                <p className="mt-1 text-[13px] text-zinc-400 dark:text-zinc-500">
                   Setting up the media engine, this only happens once.
                 </p>
               </>
@@ -368,19 +377,15 @@ export default function UploadScreen({
               { icon: Scissors, title: "Edit", text: "Select words and hit delete to edit." },
               { icon: Clapperboard, title: "Export", text: "Render the final cut to MP4 or M4A." },
             ].map(({ icon: Icon, title, text }) => (
-              <div key={title} className="rounded-xl border border-zinc-200 bg-white/70 p-4">
-                <Icon size={16} className="mb-2 text-neutral-500" />
-                <p className="text-[13px] font-semibold text-zinc-800">{title}</p>
-                <p className="mt-0.5 text-xs leading-relaxed text-zinc-500">{text}</p>
+              <div key={title} className="rounded-xl border border-zinc-200 bg-white/70 p-4 dark:border-zinc-700 dark:bg-zinc-900/70">
+                <Icon size={16} className="mb-2 text-neutral-500 dark:text-neutral-400" />
+                <p className="text-[13px] font-semibold text-zinc-800 dark:text-zinc-100">{title}</p>
+                <p className="mt-0.5 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">{text}</p>
               </div>
             ))}
           </div>}
 
           {!isElectron && <div className="mt-6 flex flex-col items-center gap-2">
-            <p className="flex items-center justify-center gap-1.5 text-center text-xs text-zinc-400">
-              <Lock size={12} />
-              No uploads, no accounts — your media never leaves this device.
-            </p>
             <SocialLinks variant="text" />
           </div>}
         </div>

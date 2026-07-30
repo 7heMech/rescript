@@ -151,6 +151,7 @@ function createWindow(): BrowserWindow {
     ...WINDOW_SIZES.compact,
     minWidth: MIN_SIZE.width,
     minHeight: MIN_SIZE.height,
+    // Light by default — appearance is a user preference in the renderer.
     backgroundColor: "#fafafa",
     title: "Rescript",
     show: false,

@@ -1,8 +1,18 @@
 @import "tailwindcss";
 
+/* Class-based dark mode (user preference). Default is light. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme inline {
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+}
+
+html {
+  color-scheme: light;
+}
+html.dark {
+  color-scheme: dark;
 }
 
 body {
@@ -115,4 +125,22 @@ body {
 .tl-word-handle:hover > span {
   opacity: 1 !important;
   width: 2px;
+}
+
+.dark ::selection {
+  background: rgba(99, 102, 241, 0.28);
+}
+
+.dark .transcript-words [data-wid][data-sel] {
+  background-color: rgb(67 56 202 / 0.45);
+}
+.dark .transcript-words [data-wid][data-sel].word-deleted {
+  background-color: rgb(153 27 27 / 0.55);
+}
+
+.dark .scrollbar-thin {
+  scrollbar-color: #52525b transparent;
+}
+.dark .scrollbar-thin::-webkit-scrollbar-thumb {
+  background: #52525b;
 }

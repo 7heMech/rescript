@@ -2,7 +2,7 @@ export const GITHUB_REPO_URL = "https://github.com/wassgha/rescript";
 export const DISCORD_INVITE_URL = "https://discord.gg/qJAhYFydat";
 export const X_PROFILE_URL = "https://x.com/wassgha";
 
-function GitHubIcon({ size }: { size: number }) {
+export function GitHubIcon({ size }: { size: number }) {
   return (
     <svg
       width={size}
@@ -16,7 +16,7 @@ function GitHubIcon({ size }: { size: number }) {
   );
 }
 
-function DiscordIcon({ size }: { size: number }) {
+export function DiscordIcon({ size }: { size: number }) {
   return (
     <svg
       width={size}
@@ -30,7 +30,7 @@ function DiscordIcon({ size }: { size: number }) {
   );
 }
 
-function XIcon({ size }: { size: number }) {
+export function XIcon({ size }: { size: number }) {
   return (
     <svg
       width={size}
@@ -80,7 +80,7 @@ export default function SocialLinks({
             href={href}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-xs text-zinc-400 transition hover:text-zinc-600"
+            className="inline-flex items-center gap-1 text-xs text-zinc-400 transition hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300"
           >
             <Icon size={12} />
             {label}
@@ -100,7 +100,7 @@ export default function SocialLinks({
           rel="noopener noreferrer"
           title={label}
           aria-label={ariaLabel}
-          className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-300 transition hover:bg-zinc-100 hover:text-zinc-800"
+          className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-300 transition hover:bg-zinc-100 hover:text-zinc-800 dark:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
         >
           <Icon size={16} />
         </a>

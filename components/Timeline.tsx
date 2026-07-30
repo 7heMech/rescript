@@ -35,6 +35,7 @@ import {
 import type { ClipSegment, Word } from "@/lib/types";
 import { VAD_SAMPLE_RATE } from "@/lib/vad";
 import { useCutRanges } from "@/hooks/useCutRanges";
+import { useIsDark } from "@/hooks/useIsDark";
 
 const RULER_H = 18;
 const WORDBAR_H = 28;
@@ -103,6 +104,7 @@ export default function Timeline() {
   const [hoveredClipIndex, setHoveredClipIndex] = useState<number | null>(null);
   /** Id of the split marker under the pointer, if any. */
   const [hoveredSplitId, setHoveredSplitId] = useState<number | null>(null);
+  const dark = useIsDark();
 
   const fitPps = duration > 0 && width > 0 ? width / duration : 50;
   const pps = fitPps * zoom;
@@ -152,32 +154,32 @@ export default function Timeline() {
     const midY = trackTop + trackH / 2;
 
     // Soft track wash
-    ctx.fillStyle = "#fafafa";
+    ctx.fillStyle = dark ? "#09090b" : "#fafafa";
     ctx.fillRect(0, trackTop, width, trackH);
 
     // Ruler
-    ctx.fillStyle = "#a1a1aa";
+    ctx.fillStyle = dark ? "#71717a" : "#a1a1aa";
     ctx.font = "9px ui-sans-serif, system-ui";
     ctx.textBaseline = "top";
     const step = TICK_STEPS.find((s) => s * pps >= 70) ?? TICK_STEPS[TICK_STEPS.length - 1];
     const firstTick = Math.floor(scrollLeft / pps / step) * step;
     for (let t = firstTick; t <= (scrollLeft + width) / pps + step; t += step) {
       const x = t * pps - scrollLeft;
-      ctx.fillStyle = "#e4e4e7";
+      ctx.fillStyle = dark ? "#3f3f46" : "#e4e4e7";
       ctx.fillRect(x, RULER_H - 6, 1, 6);
-      ctx.fillStyle = "#a1a1aa";
+      ctx.fillStyle = dark ? "#71717a" : "#a1a1aa";
       ctx.fillText(formatTime(t), x + 4, 3);
     }
-    ctx.strokeStyle = "#f0f0f2";
+    ctx.strokeStyle = dark ? "#27272a" : "#f0f0f2";
     ctx.beginPath();
     ctx.moveTo(0, RULER_H - 0.5);
     ctx.lineTo(width, RULER_H - 0.5);
     ctx.stroke();
 
     // Wordbar lane background
-    ctx.fillStyle = "#f4f4f5";
+    ctx.fillStyle = dark ? "#27272a" : "#f4f4f5";
     ctx.fillRect(0, RULER_H, width, WORDBAR_H);
-    ctx.strokeStyle = "#ececef";
+    ctx.strokeStyle = dark ? "#3f3f46" : "#ececef";
     ctx.beginPath();
     ctx.moveTo(0, RULER_H + WORDBAR_H - 0.5);
     ctx.lineTo(width, RULER_H + WORDBAR_H - 0.5);
@@ -193,10 +195,10 @@ export default function Timeline() {
       const selected = clip.index === selectedClipIndex;
       const hovered = clip.index === hoveredClipIndex && !selected;
       if (selected) {
-        ctx.fillStyle = "rgba(99, 102, 241, 0.10)";
+        ctx.fillStyle = dark ? "rgba(99, 102, 241, 0.20)" : "rgba(99, 102, 241, 0.10)";
         ctx.fillRect(x0, trackTop, x1 - x0, trackH);
       } else if (hovered) {
-        ctx.fillStyle = "rgba(99, 102, 241, 0.05)";
+        ctx.fillStyle = dark ? "rgba(99, 102, 241, 0.10)" : "rgba(99, 102, 241, 0.05)";
         ctx.fillRect(x0, trackTop, x1 - x0, trackH);
       }
     }
@@ -206,14 +208,14 @@ export default function Timeline() {
       const x0 = cut.start * pps - scrollLeft;
       const x1 = cut.end * pps - scrollLeft;
       if (x1 < 0 || x0 > width) continue;
-      ctx.fillStyle = "rgba(254, 226, 226, 0.78)";
+      ctx.fillStyle = dark ? "rgba(127, 29, 29, 0.45)" : "rgba(254, 226, 226, 0.78)";
       ctx.fillRect(x0, trackTop, x1 - x0, trackH);
       // subtle hatch
       ctx.save();
       ctx.beginPath();
       ctx.rect(x0, trackTop, x1 - x0, trackH);
       ctx.clip();
-      ctx.strokeStyle = "rgba(252, 165, 165, 0.45)";
+      ctx.strokeStyle = dark ? "rgba(248, 113, 113, 0.35)" : "rgba(252, 165, 165, 0.45)";
       ctx.lineWidth = 1;
       for (let x = x0 - trackH; x < x1 + trackH; x += 6) {
         ctx.beginPath();
@@ -258,6 +260,7 @@ export default function Timeline() {
     height,
     selectedClipIndex,
     hoveredClipIndex,
+    dark,
   ]);
 
   // Keep the playhead visible while playing.
@@ -493,32 +496,32 @@ export default function Timeline() {
   const showHandles = pps >= HANDLE_VIS_PPS;
 
   return (
-    <footer className="flex h-48 shrink-0 flex-col border-t border-zinc-200 bg-white sm:h-52">
+    <footer className="flex h-48 shrink-0 flex-col border-t border-zinc-200 bg-white sm:h-52 dark:border-zinc-800 dark:bg-zinc-900">
       {/* Mobile wraps the transport onto its own row; from `sm` up it is
           absolutely centred so it stays put as the side groups change width. */}
-      <div className="relative flex shrink-0 flex-wrap items-center gap-x-2 border-b border-zinc-100 px-2.5 sm:h-10 sm:flex-nowrap">
+      <div className="relative flex shrink-0 flex-wrap items-center gap-x-2 border-b border-zinc-100 px-2.5 sm:h-10 sm:flex-nowrap dark:border-zinc-800">
         <div className="order-1 flex h-9 min-w-0 flex-1 items-center gap-2 sm:h-auto">
-          <span className="shrink-0 text-[11px] font-mono tabular-nums leading-none text-zinc-900">
+          <span className="shrink-0 text-[11px] font-mono tabular-nums leading-none text-zinc-900 dark:text-zinc-100">
             {formatTime(originalToEdited(currentTime, cuts))}
-            <span className="text-zinc-400"> / {formatTime(editedDuration)}</span>
+            <span className="text-zinc-400 dark:text-zinc-500"> / {formatTime(editedDuration)}</span>
           </span>
           {trimmed > 0.01 && (
             <span
               title={`${formatTime(trimmed)} removed — original length ${formatTime(duration)}`}
-              className="hidden sm:inline-block shrink-0 font-mono rounded-sm bg-red-50 px-1.5 py-0.5 text-[10px] font-medium tabular-nums leading-none text-red-600"
+              className="hidden sm:inline-block shrink-0 font-mono rounded-sm bg-red-50 px-1.5 py-0.5 text-[10px] font-medium tabular-nums leading-none text-red-600 dark:bg-red-950/40 dark:text-red-400"
             >
               −{formatTime(trimmed)}
             </span>
           )}
         </div>
 
-        <div className="order-3 -mx-2.5 flex h-9 w-[calc(100%+1.25rem)] items-center justify-center gap-1.5 border-t border-zinc-100 sm:absolute sm:left-1/2 sm:top-1/2 sm:order-2 sm:mx-0 sm:h-auto sm:w-auto sm:-translate-x-1/2 sm:-translate-y-1/2 sm:border-t-0">
+        <div className="order-3 -mx-2.5 flex h-9 w-[calc(100%+1.25rem)] items-center justify-center gap-1.5 border-t border-zinc-100 sm:absolute sm:left-1/2 sm:top-1/2 sm:order-2 sm:mx-0 sm:h-auto sm:w-auto sm:-translate-x-1/2 sm:-translate-y-1/2 sm:border-t-0 dark:border-zinc-800">
           <button
             type="button"
             disabled={!ready}
             onClick={() => skip(-5)}
             title="Back 5 s"
-            className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-900 disabled:cursor-not-allowed disabled:text-zinc-300 disabled:hover:bg-transparent"
+            className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-900 disabled:cursor-not-allowed disabled:text-zinc-300 disabled:hover:bg-transparent dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100 dark:disabled:text-zinc-600"
           >
             <ChevronLeft size={14} />
           </button>
@@ -527,7 +530,7 @@ export default function Timeline() {
             disabled={!ready}
             onClick={togglePlay}
             title="Play / pause (space)"
-            className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-lg text-zinc-900 transition hover:bg-zinc-100 active:scale-95 disabled:cursor-not-allowed disabled:text-zinc-300 disabled:hover:bg-transparent"
+            className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-lg text-zinc-900 transition hover:bg-zinc-100 active:scale-95 disabled:cursor-not-allowed disabled:text-zinc-300 disabled:hover:bg-transparent dark:text-zinc-100 dark:hover:bg-zinc-800 dark:disabled:text-zinc-600"
           >
             {playing ? (
               <Pause size={15} />
@@ -540,7 +543,7 @@ export default function Timeline() {
             disabled={!ready}
             onClick={() => skip(5)}
             title="Forward 5 s"
-            className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-900 disabled:cursor-not-allowed disabled:text-zinc-300 disabled:hover:bg-transparent"
+            className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-900 disabled:cursor-not-allowed disabled:text-zinc-300 disabled:hover:bg-transparent dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100 dark:disabled:text-zinc-600"
           >
             <ChevronRight size={14} />
           </button>
@@ -560,22 +563,24 @@ export default function Timeline() {
             }
             className={`flex h-7 items-center gap-1.5 rounded-lg px-2 text-xs font-medium transition ${
               ready && splitOk
-                ? "cursor-pointer text-zinc-700 hover:bg-zinc-100 hover:text-zinc-900 active:scale-[0.97]"
-                : "cursor-not-allowed text-zinc-300"
+                ? "cursor-pointer text-zinc-700 hover:bg-zinc-100 hover:text-zinc-900 active:scale-[0.97] dark:text-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+                : "cursor-not-allowed text-zinc-300 dark:text-zinc-600"
             }`}
           >
             <SquareSplitHorizontal size={13} />
             <span className="hidden sm:inline">Split</span>
             <kbd
               className={`hidden rounded px-1 py-px text-[10px] font-normal sm:inline ${
-                ready && splitOk ? "bg-zinc-100 text-zinc-500" : "bg-zinc-100 text-zinc-300"
+                ready && splitOk
+                  ? "bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400"
+                  : "bg-zinc-100 text-zinc-300 dark:bg-zinc-800 dark:text-zinc-600"
               }`}
             >
               S
             </kbd>
           </button>
 
-          <div className="mx-0.5 h-4 w-px bg-zinc-200" />
+          <div className="mx-0.5 h-4 w-px bg-zinc-200 dark:bg-zinc-700" />
 
           <div className="flex items-center gap-0.5">
             <button
@@ -583,7 +588,7 @@ export default function Timeline() {
               onClick={() => setZoom((z) => Math.max(MIN_ZOOM, z / 1.5))}
               disabled={zoom <= MIN_ZOOM}
               title="Zoom out"
-              className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-900 disabled:cursor-not-allowed disabled:text-zinc-300 disabled:hover:bg-transparent"
+              className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-900 disabled:cursor-not-allowed disabled:text-zinc-300 disabled:hover:bg-transparent dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100 dark:disabled:text-zinc-600"
             >
               <ZoomOut size={14} />
             </button>
@@ -592,7 +597,7 @@ export default function Timeline() {
               onClick={() => setZoom(1)}
               disabled={zoom === 1}
               title="Fit to window"
-              className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-900 disabled:cursor-not-allowed disabled:text-zinc-300 disabled:hover:bg-transparent"
+              className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-900 disabled:cursor-not-allowed disabled:text-zinc-300 disabled:hover:bg-transparent dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100 dark:disabled:text-zinc-600"
             >
               <Maximize2 size={13} />
             </button>
@@ -601,7 +606,7 @@ export default function Timeline() {
               onClick={() => setZoom((z) => Math.min(MAX_ZOOM, z * 1.5))}
               disabled={zoom >= MAX_ZOOM}
               title="Zoom in — drag word edges to refine timing"
-              className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-900 disabled:cursor-not-allowed disabled:text-zinc-300 disabled:hover:bg-transparent"
+              className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-900 disabled:cursor-not-allowed disabled:text-zinc-300 disabled:hover:bg-transparent dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100 dark:disabled:text-zinc-600"
             >
               <ZoomIn size={14} />
             </button>
@@ -642,7 +647,7 @@ export default function Timeline() {
                       aria-label="Join clips"
                       onPointerDown={(e) => e.stopPropagation()}
                       onClick={(e) => joinAtSplit(e, b.id)}
-                      className="pointer-events-auto flex h-4 w-4 cursor-pointer items-center justify-center rounded-full border border-zinc-300 bg-white text-zinc-500 shadow-sm transition hover:border-zinc-400 hover:bg-zinc-100 hover:text-zinc-800"
+                      className="pointer-events-auto flex h-4 w-4 cursor-pointer items-center justify-center rounded-full border border-zinc-300 bg-white text-zinc-500 shadow-sm transition hover:border-zinc-400 hover:bg-zinc-100 hover:text-zinc-800 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:border-zinc-500 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
                     >
                       <Merge size={9} />
                     </button>
@@ -727,12 +732,12 @@ export default function Timeline() {
                   data-tl-interactive
                   className={`tl-word absolute z-[3] flex items-center overflow-hidden rounded-md border text-[10px] leading-none transition-[box-shadow,background-color,border-color] duration-150 ${
                     cutOut
-                      ? "border-red-200/90 bg-red-50/95 text-red-400 line-through"
+                      ? "border-red-200/90 bg-red-50/95 text-red-400 line-through dark:border-red-900/90 dark:bg-red-950/60 dark:text-red-400"
                       : wordSelected
-                        ? "border-indigo-300 bg-indigo-100/70 text-zinc-800"
+                        ? "border-indigo-300 bg-indigo-100/70 text-zinc-800 dark:border-indigo-500/60 dark:bg-indigo-950/50 dark:text-zinc-100"
                         : hovered
-                          ? "border-neutral-300 bg-white text-zinc-700 shadow-sm shadow-neutral-500/10"
-                          : "border-zinc-200/90 bg-white/95 text-zinc-600"
+                          ? "border-neutral-300 bg-white text-zinc-700 shadow-sm shadow-neutral-500/10 dark:border-neutral-600 dark:bg-zinc-800 dark:text-zinc-200 dark:shadow-black/20"
+                          : "border-zinc-200/90 bg-white/95 text-zinc-600 dark:border-zinc-700/90 dark:bg-zinc-800/95 dark:text-zinc-300"
                   } ${wordSelected ? "ring-1 ring-indigo-400/80" : ""}`}
                   style={{
                     left: w.start * pps,
@@ -780,8 +785,8 @@ export default function Timeline() {
                             cutOut
                               ? "bg-red-400/70"
                               : hovered
-                                ? "bg-neutral-500 opacity-100"
-                                : "bg-zinc-300 opacity-0 group-hover:opacity-100"
+                                ? "bg-neutral-500 opacity-100 dark:bg-neutral-300"
+                                : "bg-zinc-300 opacity-0 group-hover:opacity-100 dark:bg-zinc-600"
                           }`}
                           style={{ opacity: hovered ? 1 : 0.55 }}
                         />
@@ -797,8 +802,8 @@ export default function Timeline() {
                             cutOut
                               ? "bg-red-400/70"
                               : hovered
-                                ? "bg-neutral-500 opacity-100"
-                                : "bg-zinc-300 opacity-0 group-hover:opacity-100"
+                                ? "bg-neutral-500 opacity-100 dark:bg-neutral-300"
+                                : "bg-zinc-300 opacity-0 group-hover:opacity-100 dark:bg-zinc-600"
                           }`}
                           style={{ opacity: hovered ? 1 : 0.55 }}
                         />
@@ -813,15 +818,15 @@ export default function Timeline() {
 
         {playheadX >= -2 && playheadX <= width + 2 && (
           <div
-            className="pointer-events-none absolute top-0 bottom-0 z-20 w-px bg-zinc-900/90"
+            className="pointer-events-none absolute top-0 bottom-0 z-20 w-px bg-zinc-900/90 dark:bg-zinc-100/90"
             style={{ transform: `translateX(${playheadX}px)` }}
           >
-            <div className="absolute -top-px left-1/2 h-2.5 w-2.5 -translate-x-1/2 rounded-sm bg-zinc-900 shadow-sm shadow-zinc-900/30 [clip-path:polygon(0_0,100%_0,100%_55%,50%_100%,0_55%)]" />
+            <div className="absolute -top-px left-1/2 h-2.5 w-2.5 -translate-x-1/2 rounded-sm bg-zinc-900 shadow-sm shadow-zinc-900/30 [clip-path:polygon(0_0,100%_0,100%_55%,50%_100%,0_55%)] dark:bg-zinc-100 dark:shadow-black/40" />
           </div>
         )}
 
         {pps < SMALL_PPS && ready && (
-          <div className="pointer-events-none absolute bottom-2 left-1/2 z-10 -translate-x-1/2 rounded-full bg-zinc-900/70 px-2.5 py-1 text-[10px] text-white/90 backdrop-blur-sm transition-opacity">
+          <div className="pointer-events-none absolute bottom-2 left-1/2 z-10 -translate-x-1/2 rounded-full bg-zinc-900/70 px-2.5 py-1 text-[10px] text-white/90 backdrop-blur-sm transition-opacity dark:bg-zinc-100/80 dark:text-zinc-900">
             Scroll to zoom in/out
           </div>
         )}

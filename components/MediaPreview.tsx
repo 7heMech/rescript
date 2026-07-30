@@ -85,7 +85,7 @@ export default function MediaPreview() {
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col bg-zinc-50/70 p-3 sm:p-4">
+    <div className="flex min-h-0 flex-1 flex-col bg-zinc-50/70 p-3 sm:p-4 dark:bg-zinc-950/70">
       <div className="flex min-h-0 flex-1 items-center justify-center">
         <video
           ref={refCb}
@@ -95,7 +95,7 @@ export default function MediaPreview() {
           onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
           onPlay={() => setPlaying(true)}
           onPause={() => setPlaying(false)}
-          className="max-h-full max-w-full cursor-pointer rounded-sm bg-black shadow-lg shadow-zinc-900/10"
+          className="max-h-full max-w-full cursor-pointer rounded-sm bg-black shadow-lg shadow-zinc-900/10 dark:shadow-black/40"
         />
       </div>
     </div>
