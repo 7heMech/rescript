@@ -1,16 +1,14 @@
 <p align="center">
-  <img src="./screenshots/logo.png" alt="Rescript logo" width="96" />
+  <img src="./screenshots/logo.png" alt="Rescript logo" width="96" /><br/>
+  Edit video and audio like you edit text — fully offline, on your device.
 </p>
 
 # rescript.
-
-Edit video and audio like you edit text — fully offline, on your device.
-
-**✨ Try it in the browser [wassgha.github.io/rescript](https://wassgha.github.io/rescript/)** or download the [Desktop App](#download)
-
 [![GitHub](https://img.shields.io/badge/GitHub-wassgha%2Frescript-181717?logo=github&logoColor=white)](https://github.com/wassgha/rescript)
 [![Join the Discord](https://img.shields.io/badge/Discord-Join%20the%20server-5865F2?logo=discord&logoColor=white)](https://discord.gg/qJAhYFydat)
 [![Follow @wassgha on X](https://img.shields.io/badge/Follow%20@wassgha-000000?logo=x&logoColor=white)](https://x.com/wassgha)
+
+**✨ Try it in the browser [wassgha.github.io/rescript](https://wassgha.github.io/rescript/)** or download the [Desktop App](#download)
 
 [![Rescript Demo](./screenshots/rescript.png)](https://wassgha.github.io/rescript/)
 
