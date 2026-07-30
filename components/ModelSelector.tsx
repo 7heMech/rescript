@@ -32,6 +32,7 @@ import {
   hydrateTranscriptLanguagePreference,
   useEditorStore,
 } from "@/lib/store";
+import PopupDismissBackdrop from "./PopupDismissBackdrop";
 
 export type ModelOptionContextValue = {
   /** Currently selected source id. */
@@ -236,7 +237,8 @@ export default function ModelSelector({
 
   return (
     <ModelSelectorCtx.Provider value={ctx}>
-      <div ref={rootRef} className="relative shrink-0">
+      {open && <PopupDismissBackdrop onDismiss={() => setOpen(false)} />}
+      <div ref={rootRef} className="relative z-30 shrink-0">
         <button
           type="button"
           aria-haspopup="listbox"
