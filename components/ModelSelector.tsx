@@ -15,6 +15,7 @@ import {
   AudioLines,
   Check,
   ChevronDown,
+  ChevronRight,
   FileText,
   Loader2,
   type LucideIcon,
@@ -259,7 +260,7 @@ export default function ModelSelector({
           hidden={!open}
           // Force display:none when closed so a lingering panel cannot eat clicks
           // (HTML [hidden] can be overridden by author CSS in some setups).
-          className={`absolute right-0 top-[calc(100%+0.5rem)] z-20 w-[18rem] overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-lg shadow-zinc-900/5 dark:border-zinc-700 dark:bg-zinc-900 dark:shadow-black/40 ${
+          className={`absolute right-0 top-[calc(100%+0.5rem)] z-20 w-[18rem] overflow-visible rounded-xl border border-zinc-200 bg-white shadow-lg shadow-zinc-900/5 dark:border-zinc-700 dark:bg-zinc-900 dark:shadow-black/40 ${
             open ? "" : "pointer-events-none"
           }`}
           style={open ? undefined : { display: "none" }}
@@ -359,51 +360,118 @@ export function ModelOptionSeparator() {
   return <div className="my-1 border-t border-zinc-100 dark:border-zinc-800" role="separator" />;
 }
 
-/** Language hint section nested inside the model / transcript-source menu. */
+/** Language hint as a flyout submenu inside the model / transcript-source menu. */
 export function LanguageSection() {
   const language = useEditorStore((s) => s.transcriptLanguage);
   const setLanguage = useEditorStore((s) => s.setTranscriptLanguage);
   const selector = useSelectorCtx();
+  const [submenuOpen, setSubmenuOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const submenuId = useId();
+  const active = TRANSCRIPT_LANGUAGES[language];
+
+  useEffect(() => {
+    if (!submenuOpen) return;
+    const onPointer = (e: PointerEvent) => {
+      if (!rootRef.current?.contains(e.target as Node)) setSubmenuOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        setSubmenuOpen(false);
+      }
+    };
+    document.addEventListener("pointerdown", onPointer);
+    document.addEventListener("keydown", onKey, true);
+    return () => {
+      document.removeEventListener("pointerdown", onPointer);
+      document.removeEventListener("keydown", onKey, true);
+    };
+  }, [submenuOpen]);
 
   const select = (next: TranscriptLanguage) => {
     setLanguage(next);
+    setSubmenuOpen(false);
     selector.closeMenu();
   };
 
   return (
-    <div>
+    <div ref={rootRef}>
       <p className="px-2.5 pb-1 pt-1.5 text-[11px] font-medium tracking-wide text-zinc-400 dark:text-zinc-500">
         Language
       </p>
-      <div className="space-y-1">
-        {TRANSCRIPT_LANGUAGE_ORDER.map((id) => {
-          const option = TRANSCRIPT_LANGUAGES[id];
-          const selected = id === language;
-          return (
-            <button
-              key={id}
-              type="button"
-              role="option"
-              aria-selected={selected}
-              onClick={() => select(id)}
-              className={`flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition ${
-                selected
-                  ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
-                  : "text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-800/60"
-              }`}
-            >
-              <span className="min-w-0 flex-1 text-[13px] font-medium leading-tight">
-                {option.nativeLabel}
-              </span>
-              {selected && (
-                <Check
-                  size={14}
-                  className="shrink-0 text-zinc-500 dark:text-zinc-300"
-                />
-              )}
-            </button>
-          );
-        })}
+      <div className="relative">
+        <button
+          type="button"
+          aria-haspopup="menu"
+          aria-expanded={submenuOpen}
+          aria-controls={submenuId}
+          onClick={() => {
+            setSubmenuOpen((v) => !v);
+            selector.keepMenuOpen();
+          }}
+          className={`flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition ${
+            submenuOpen
+              ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
+              : "text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-800/60"
+          }`}
+        >
+          <span className="text-[15px] leading-none" aria-hidden>
+            {active.flag}
+          </span>
+          <span className="min-w-0 flex-1 text-[13px] font-medium leading-tight">
+            {active.nativeLabel}
+          </span>
+          <ChevronRight
+            size={14}
+            className={`shrink-0 text-zinc-400 transition dark:text-zinc-500 ${
+              submenuOpen ? "rotate-180" : ""
+            }`}
+          />
+        </button>
+
+        <div
+          id={submenuId}
+          role="menu"
+          aria-label="Transcript language"
+          hidden={!submenuOpen}
+          className={`absolute right-full top-0 z-30 mr-1.5 w-44 overflow-hidden rounded-xl border border-zinc-200 bg-white p-1 shadow-lg shadow-zinc-900/5 dark:border-zinc-700 dark:bg-zinc-900 dark:shadow-black/40 ${
+            submenuOpen ? "" : "pointer-events-none"
+          }`}
+          style={submenuOpen ? undefined : { display: "none" }}
+        >
+          {TRANSCRIPT_LANGUAGE_ORDER.map((id) => {
+            const option = TRANSCRIPT_LANGUAGES[id];
+            const selected = id === language;
+            return (
+              <button
+                key={id}
+                type="button"
+                role="menuitemradio"
+                aria-checked={selected}
+                onClick={() => select(id)}
+                className={`flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition ${
+                  selected
+                    ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
+                    : "text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-800/60"
+                }`}
+              >
+                <span className="text-[15px] leading-none" aria-hidden>
+                  {option.flag}
+                </span>
+                <span className="min-w-0 flex-1 text-[13px] font-medium leading-tight">
+                  {option.nativeLabel}
+                </span>
+                {selected && (
+                  <Check
+                    size={14}
+                    className="shrink-0 text-zinc-500 dark:text-zinc-300"
+                  />
+                )}
+              </button>
+            );
+          })}
+        </div>
       </div>
     </div>
   );

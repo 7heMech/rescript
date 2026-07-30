@@ -6,10 +6,10 @@ import {
 } from "../lib/languages";
 
 {
-  if (DEFAULT_TRANSCRIPT_LANGUAGE !== "auto") {
-    throw new Error("expected default language to be auto");
+  if (DEFAULT_TRANSCRIPT_LANGUAGE !== "en") {
+    throw new Error("expected default language to be en");
   }
-  if (!isTranscriptLanguage("auto")) throw new Error("expected auto to be valid");
+  if (isTranscriptLanguage("auto")) throw new Error("did not expect auto to be valid");
   if (!isTranscriptLanguage("en")) throw new Error("expected en to be valid");
   if (!isTranscriptLanguage("es")) throw new Error("expected es to be valid");
   if (!isTranscriptLanguage("fr")) throw new Error("expected fr to be valid");
@@ -22,14 +22,16 @@ import {
   const labels = TRANSCRIPT_LANGUAGE_ORDER.map(
     (id) => TRANSCRIPT_LANGUAGES[id].nativeLabel
   );
-  if (labels.join(",") !== "Auto,English,Español,Français,Deutsch,中文") {
+  if (labels.join(",") !== "English,Español,Français,Deutsch,中文") {
     throw new Error(`unexpected language order: ${labels.join(",")}`);
   }
 }
 
 {
-  if (TRANSCRIPT_LANGUAGES.auto.whisperCode !== null) {
-    throw new Error("expected auto whisperCode to be null");
+  for (const id of TRANSCRIPT_LANGUAGE_ORDER) {
+    if (!TRANSCRIPT_LANGUAGES[id].flag) {
+      throw new Error(`expected flag for ${id}`);
+    }
   }
 }
 

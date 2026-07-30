@@ -1,54 +1,48 @@
-export type TranscriptLanguage = "auto" | "en" | "es" | "fr" | "de" | "zh";
+export type TranscriptLanguage = "en" | "es" | "fr" | "de" | "zh";
 
 export interface TranscriptLanguageInfo {
   label: string;
   nativeLabel: string;
-  /** Whisper language code; null means auto-detect. */
-  whisperCode: string | null;
+  /** Flag emoji shown beside the language name. */
+  flag: string;
 }
 
 const LANGUAGE_STORAGE_KEY = "rescript.transcript-language";
 
-export const DEFAULT_TRANSCRIPT_LANGUAGE: TranscriptLanguage = "auto";
+export const DEFAULT_TRANSCRIPT_LANGUAGE: TranscriptLanguage = "en";
 
 export const TRANSCRIPT_LANGUAGES: Record<
   TranscriptLanguage,
   TranscriptLanguageInfo
 > = {
-  auto: {
-    label: "Auto",
-    nativeLabel: "Auto",
-    whisperCode: null,
-  },
   en: {
     label: "English",
     nativeLabel: "English",
-    whisperCode: "en",
+    flag: "🇺🇸",
   },
   es: {
     label: "Spanish",
     nativeLabel: "Español",
-    whisperCode: "es",
+    flag: "🇪🇸",
   },
   fr: {
     label: "French",
     nativeLabel: "Français",
-    whisperCode: "fr",
+    flag: "🇫🇷",
   },
   de: {
     label: "German",
     nativeLabel: "Deutsch",
-    whisperCode: "de",
+    flag: "🇩🇪",
   },
   zh: {
     label: "Chinese",
     nativeLabel: "中文",
-    whisperCode: "zh",
+    flag: "🇨🇳",
   },
 };
 
 export const TRANSCRIPT_LANGUAGE_ORDER: TranscriptLanguage[] = [
-  "auto",
   "en",
   "es",
   "fr",
@@ -60,7 +54,6 @@ export function isTranscriptLanguage(
   value: unknown
 ): value is TranscriptLanguage {
   return (
-    value === "auto" ||
     value === "en" ||
     value === "es" ||
     value === "fr" ||
