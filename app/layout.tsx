@@ -63,7 +63,11 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <head>
-        <script dangerouslySetInnerHTML={{ __html: appearanceBootScript }} />
+        <Script
+          id="appearance-boot"
+          strategy="beforeInteractive"
+          dangerouslySetInnerHTML={{ __html: appearanceBootScript }}
+        />
         {/* Provides COOP/COEP via a service worker on static hosts (GitHub
             Pages) that can't send headers; no-op when the server already
             sends them. Required for SharedArrayBuffer / multi-threading.
