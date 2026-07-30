@@ -48,6 +48,9 @@ export const metadata: Metadata = {
   },
 };
 
+/** Apply stored appearance before paint to avoid a light→dark flash. */
+const appearanceBootScript = `(function(){try{if(localStorage.getItem("rescript.appearance")==="dark")document.documentElement.classList.add("dark")}catch(e){}})();`;
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -57,9 +60,10 @@ export default function RootLayout({
     <html
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
-      style={{ colorScheme: "light dark" }}
+      suppressHydrationWarning
     >
       <head>
+        <script dangerouslySetInnerHTML={{ __html: appearanceBootScript }} />
         {/* Provides COOP/COEP via a service worker on static hosts (GitHub
             Pages) that can't send headers; no-op when the server already
             sends them. Required for SharedArrayBuffer / multi-threading.

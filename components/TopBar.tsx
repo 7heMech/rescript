@@ -4,6 +4,7 @@ import { useEditorStore } from "@/lib/store";
 import Image from "next/image";
 import logo from "@/assets/logo.png";
 import { useWindowChrome } from "@/hooks/useWindowChrome";
+import SettingsMenu from "./SettingsMenu";
 
 function truncateMiddle(value: string, maxLength = 40): string {
   if (value.length <= maxLength) return value;
@@ -14,7 +15,7 @@ function truncateMiddle(value: string, maxLength = 40): string {
   return `${value.slice(0, frontChars)}${ellipsis}${value.slice(value.length - backChars)}`;
 }
 
-export default function TopBar({children}: {children?: React.ReactNode}) {
+export default function TopBar({ children }: { children?: React.ReactNode }) {
   const { draggable, trafficLights } = useWindowChrome();
   const videoFile = useEditorStore((s) => s.videoFile);
   const reset = useEditorStore((s) => s.reset);
@@ -53,7 +54,8 @@ export default function TopBar({children}: {children?: React.ReactNode}) {
       )}
 
       <div className="app-no-drag ml-auto flex items-center gap-1">
-        {children && children}
+        {children}
+        <SettingsMenu />
       </div>
     </header>
   );

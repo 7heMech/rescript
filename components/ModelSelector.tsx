@@ -89,13 +89,24 @@ export function useOptionTrigger(
  * With no children, renders the default Whisper Base / Small rows.
  *
  * Options stay mounted (hidden when closed) so custom triggers remain registered.
+ *
+ * Use `embedded` to render only the option list inside another panel (Settings).
  */
 export default function ModelSelector({
   children,
   groupLabel = "Speech model",
+  embedded = false,
+  onClose,
+  onKeepOpen,
 }: {
   children?: ReactNode;
   groupLabel?: string;
+  /** Render the option list only — for nesting inside Settings. */
+  embedded?: boolean;
+  /** Called when an option wants to dismiss the parent panel (embedded). */
+  onClose?: () => void;
+  /** Called when an option needs the parent panel to stay open (embedded). */
+  onKeepOpen?: () => void;
 }) {
   const model = useEditorStore((s) => s.model);
   const setModel = useEditorStore((s) => s.setModel);
@@ -109,7 +120,7 @@ export default function ModelSelector({
   }, []);
 
   useEffect(() => {
-    if (!open) return;
+    if (embedded || !open) return;
     const onPointer = (e: PointerEvent) => {
       if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
     };
@@ -122,10 +133,16 @@ export default function ModelSelector({
       document.removeEventListener("pointerdown", onPointer);
       document.removeEventListener("keydown", onKey);
     };
-  }, [open]);
+  }, [open, embedded]);
 
-  const closeMenu = useCallback(() => setOpen(false), []);
-  const keepMenuOpen = useCallback(() => setOpen(true), []);
+  const closeMenu = useCallback(() => {
+    if (embedded) onClose?.();
+    else setOpen(false);
+  }, [embedded, onClose]);
+  const keepMenuOpen = useCallback(() => {
+    if (embedded) onKeepOpen?.();
+    else setOpen(true);
+  }, [embedded, onKeepOpen]);
 
   const registerTrigger = useCallback((id: string, trigger: OptionTrigger) => {
     setTriggers((prev) => {
@@ -184,6 +201,19 @@ export default function ModelSelector({
       <ModelOption id="small" />
     </>
   );
+
+  if (embedded) {
+    return (
+      <ModelSelectorCtx.Provider value={ctx}>
+        <div>
+          <p className="px-3 pb-1 pt-2.5 text-[11px] font-medium tracking-wide text-zinc-400 dark:text-zinc-500">
+            {groupLabel}
+          </p>
+          <div className="space-y-1 p-1 pb-1.5">{options}</div>
+        </div>
+      </ModelSelectorCtx.Provider>
+    );
+  }
 
   return (
     <ModelSelectorCtx.Provider value={ctx}>

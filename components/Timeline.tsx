@@ -35,7 +35,7 @@ import {
 import type { ClipSegment, Word } from "@/lib/types";
 import { VAD_SAMPLE_RATE } from "@/lib/vad";
 import { useCutRanges } from "@/hooks/useCutRanges";
-import { usePrefersDark } from "@/hooks/usePrefersDark";
+import { useIsDark } from "@/hooks/useIsDark";
 
 const RULER_H = 18;
 const WORDBAR_H = 28;
@@ -104,7 +104,7 @@ export default function Timeline() {
   const [hoveredClipIndex, setHoveredClipIndex] = useState<number | null>(null);
   /** Id of the split marker under the pointer, if any. */
   const [hoveredSplitId, setHoveredSplitId] = useState<number | null>(null);
-  const dark = usePrefersDark();
+  const dark = useIsDark();
 
   const fitPps = duration > 0 && width > 0 ? width / duration : 50;
   const pps = fitPps * zoom;

@@ -14,11 +14,7 @@ import TranscriptPanel from "./TranscriptPanel";
 import MediaPreview from "./MediaPreview";
 import Timeline from "./Timeline";
 import ExportDialog from "./ExportDialog";
-import SocialLinks from "./SocialLinks";
 import { Download, Redo2, Undo2 } from "lucide-react";
-import { ModelOption, ModelOptionSeparator } from "./ModelSelector";
-import ModelSelector from "./ModelSelector";
-import ImportTranscriptOption from "./ImportTranscriptOption";
 import LogoLoader from "./LogoLoader";
 
 /** How long the desktop mode-change overlay stays up. Matches the macOS
@@ -225,21 +221,12 @@ export default function Editor() {
     <div className="relative flex h-dvh flex-col overflow-hidden bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
       {status === "idle" ? (
         <>
-          {isElectron && <TopBar>
-            <ModelSelector groupLabel="Transcript source">
-              <ModelOption id="base" />
-              <ModelOption id="small" />
-              <ModelOptionSeparator />
-              <ImportTranscriptOption />
-            </ModelSelector>
-          </TopBar>}
+          <TopBar />
           <UploadScreen onFile={loadVideo} />
         </>
       ) : (
         <>
           <TopBar>
-            <SocialLinks />
-            <div className="mx-1 h-5 w-px bg-zinc-200 dark:bg-zinc-700" />
             <button
               onClick={undo}
               disabled={!canUndo}
