@@ -198,6 +198,7 @@ export default function TranscriptScrollIndicator({
   const railRef = useRef<HTMLDivElement>(null);
   const thumbRef = useRef<HTMLDivElement>(null);
   const labelRef = useRef<HTMLSpanElement>(null);
+  const gradientRef = useRef<HTMLDivElement>(null);
   const tickEls = useRef<(HTMLSpanElement | null)[]>([]);
   const minorEls = useRef<(HTMLSpanElement | null)[]>([]);
   const anchors = useRef<Anchor[]>([]);
@@ -218,7 +219,8 @@ export default function TranscriptScrollIndicator({
     const rail = railRef.current;
     const thumb = thumbRef.current;
     const label = labelRef.current;
-    if (!scroller || !rail || !thumb || !label) return;
+    const gradient = gradientRef.current;
+    if (!scroller || !rail || !thumb || !label || !gradient) return;
     const geometry = geometryOf(scroller, rail.clientHeight);
     if (!geometry) return;
     const { railH, viewport, range, thumbH, travel } = geometry;
@@ -442,6 +444,8 @@ export default function TranscriptScrollIndicator({
             }`}
         />
       ))}
+      {/* Gradient overlay */}
+      <div ref={gradientRef} className="absolute pointer-events-none right-0 bottom-0 w-12 h-8 bg-gradient-to-t from-white to-transparent" />
       <div
         ref={thumbRef}
         className={`absolute top-0 right-0.5 w-1 rounded-full transition-colors ${active ? "bg-zinc-400" : "bg-zinc-300"

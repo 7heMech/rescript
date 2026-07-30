@@ -504,7 +504,7 @@ export default function TranscriptPanel() {
   return (
     // min-h-0 keeps this pane from growing to the transcript's full height —
     // without it the panel wrapper scrolls instead of the list below.
-    <section className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-white">
+    <section className="relative flex min-h-0 min-w-0 overflow-y-hidden flex-1 flex-col bg-white">
       {/* Floats above the scroller rather than sticking inside it, so the
           rubber-band overscroll only carries the transcript, not the bar. */}
       <div className="absolute inset-x-0 top-0 z-10 flex h-10 items-center gap-2 border-b border-zinc-100/80 bg-white/75 px-3 backdrop-blur-md sm:px-4">
@@ -720,7 +720,8 @@ export default function TranscriptPanel() {
           )}
         </div>
       </div>
-
+      {/* Gradient overlay */}
+      <div className="absolute z-10 pointer-events-none inset-x-0 bottom-0 w-full h-20 bg-gradient-to-t from-white to-transparent" />
       <TranscriptScrollIndicator scrollRef={scrollRef} contentRef={containerRef} />
     </section>
   );
