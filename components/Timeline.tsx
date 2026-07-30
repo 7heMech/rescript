@@ -27,8 +27,8 @@ const RULER_H = 18;
 const WORDBAR_H = 28;
 const SAMPLE_RATE = 16000;
 const TICK_STEPS = [0.1, 0.25, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600];
-/** Pixels-per-second below which word chips hide (too dense). */
-const WORD_VIS_PPS = 22;
+/** Pixels-per-second below which the timeline is considered "small". */
+const SMALL_PPS = 22;
 /** Pixels-per-second above which edge handles appear on words. */
 const HANDLE_VIS_PPS = 40;
 const MIN_ZOOM = 1;
@@ -460,7 +460,6 @@ export default function Timeline() {
 
   // Word labels for the visible window
   const visibleWords = useMemo(() => {
-    if (pps < WORD_VIS_PPS) return [];
     const t0 = scrollLeft / pps - 1;
     const t1 = (scrollLeft + width) / pps + 1;
     return words.filter((w) => w.end >= t0 && w.start <= t1);
@@ -751,9 +750,9 @@ export default function Timeline() {
           </div>
         )}
 
-        {pps < WORD_VIS_PPS && ready && (
+        {pps < SMALL_PPS && ready && (
           <div className="pointer-events-none absolute bottom-2 left-1/2 z-10 -translate-x-1/2 rounded-full bg-zinc-900/70 px-2.5 py-1 text-[10px] text-white/90 backdrop-blur-sm transition-opacity">
-            Zoom in to edit word timing
+            Scroll to zoom in/out
           </div>
         )}
       </div>
