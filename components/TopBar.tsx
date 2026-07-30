@@ -5,6 +5,15 @@ import Image from "next/image";
 import logo from "@/assets/logo.png";
 import { useWindowChrome } from "@/hooks/useWindowChrome";
 
+function truncateMiddle(value: string, maxLength = 40): string {
+  if (value.length <= maxLength) return value;
+  const ellipsis = "...";
+  const charsToShow = maxLength - ellipsis.length;
+  const frontChars = Math.ceil(charsToShow / 2);
+  const backChars = Math.floor(charsToShow / 2);
+  return `${value.slice(0, frontChars)}${ellipsis}${value.slice(value.length - backChars)}`;
+}
+
 export default function TopBar({children}: {children?: React.ReactNode}) {
   const { draggable, trafficLights } = useWindowChrome();
   const videoFile = useEditorStore((s) => s.videoFile);
@@ -35,8 +44,11 @@ export default function TopBar({children}: {children?: React.ReactNode}) {
       </span>
 
       {videoFile && (
-        <div className="pointer-events-none absolute left-1/2 hidden -translate-x-1/2 items-center text-[13px] text-zinc-500 sm:flex line-clamp-1 truncate">
-          {videoFile.name}
+        <div
+          className="pointer-events-none absolute left-1/2 hidden -translate-x-1/2 items-center text-[13px] text-zinc-500 sm:flex"
+          title={videoFile.name}
+        >
+          {truncateMiddle(videoFile.name)}
         </div>
       )}
 

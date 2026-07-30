@@ -519,7 +519,7 @@ export default function Timeline() {
           {trimmed > 0.01 && (
             <span
               title={`${formatTime(trimmed)} removed — original length ${formatTime(duration)}`}
-              className="shrink-0 font-mono rounded-full bg-red-50 px-1.5 py-0.5 text-[10px] font-medium tabular-nums leading-none text-red-500"
+              className="hidden sm:inline-block shrink-0 font-mono rounded-full bg-red-50 px-1.5 py-0.5 text-[10px] font-medium tabular-nums leading-none text-red-500"
             >
               −{formatTime(trimmed)}
             </span>
