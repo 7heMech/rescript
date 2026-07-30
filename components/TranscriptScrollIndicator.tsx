@@ -11,8 +11,8 @@ import {
 } from "react";
 import { useEditorStore } from "@/lib/store";
 
-/** Height of the transcript's floating header. The first readable line sits
- *  just below it, and that line is the one the rail reports a time for. */
+/** Height of the transcript's floating header. It covers the top of the
+ *  scroller, so the readable area — and its midline — starts below it. */
 const HEADER_H = 40;
 const MIN_THUMB_H = 28;
 /** Kept in sync with the label's `h-3.5` so it can be centred on the thumb. */
@@ -66,6 +66,37 @@ function railTime(seconds: number): string {
   const m = Math.floor((total % 3600) / 60);
   if (h > 0) return `${h}h${String(m).padStart(2, "0")}`;
   return `${m}:${String(total % 60).padStart(2, "0")}`;
+}
+
+/** The scroller and rail measurements every position derives from. */
+type Geometry = {
+  railH: number;
+  viewport: number;
+  /** Scrollable distance. */
+  range: number;
+  thumbH: number;
+  /** Distance the thumb's top edge covers, top to bottom. */
+  travel: number;
+};
+
+/** Null when there is nothing to scroll, and so nothing to indicate. */
+function geometryOf(scroller: HTMLElement, railH: number): Geometry | null {
+  const viewport = scroller.clientHeight;
+  const range = scroller.scrollHeight - viewport;
+  if (railH <= 0 || range <= 1) return null;
+  const thumbH = Math.max(MIN_THUMB_H, (viewport / scroller.scrollHeight) * railH);
+  return { railH, viewport, range, thumbH, travel: railH - thumbH };
+}
+
+/** Scroll offset of the pane's midline. The readable area starts below the
+ *  header, so its middle sits a little past half the viewport. */
+const midline = (viewport: number) => (HEADER_H + viewport) / 2;
+
+/** Rail position for the content at `top`: where the thumb's centre lands once
+ *  that content has been scrolled to the middle of the pane. */
+function railY(top: number, geometry: Geometry): number {
+  const { range, travel, thumbH, viewport } = geometry;
+  return ((top - midline(viewport)) / range) * travel + thumbH / 2;
 }
 
 /** Media time of the transcript at `top`, interpolated between measured lines. */
@@ -185,23 +216,23 @@ export default function TranscriptScrollIndicator({
     const thumb = thumbRef.current;
     const label = labelRef.current;
     if (!scroller || !rail || !thumb || !label) return;
-    const railH = rail.clientHeight;
-    const viewport = scroller.clientHeight;
-    const range = scroller.scrollHeight - viewport;
-    if (railH <= 0 || range <= 1) return;
+    const geometry = geometryOf(scroller, rail.clientHeight);
+    if (!geometry) return;
+    const { railH, viewport, range, thumbH, travel } = geometry;
 
-    const thumbH = Math.max(MIN_THUMB_H, (viewport / scroller.scrollHeight) * railH);
-    const travel = railH - thumbH;
     const scrollTop = clamp(scroller.scrollTop, 0, range);
     const y = (scrollTop / range) * travel;
+    // Ticks and the label read off the thumb's centre, which is the point that
+    // tracks the middle of the pane — the text the eye is actually resting on.
+    const centre = y + thumbH / 2;
 
     thumb.style.height = `${thumbH}px`;
     thumb.style.transform = `translateY(${y}px)`;
-    label.style.transform = `translateY(${clamp(y - LABEL_H / 2, 0, railH - LABEL_H)}px)`;
-    label.textContent = railTime(timeAt(anchors.current, scrollTop + HEADER_H));
+    label.style.transform = `translateY(${clamp(centre - LABEL_H / 2, 0, railH - LABEL_H)}px)`;
+    label.textContent = railTime(timeAt(anchors.current, scrollTop + midline(viewport)));
 
-    emphasize(tickEls.current, tickPos.current, y, MAJOR);
-    emphasize(minorEls.current, minorPos.current, y, MINOR);
+    emphasize(tickEls.current, tickPos.current, centre, MAJOR);
+    emphasize(minorEls.current, minorPos.current, centre, MINOR);
   }, [scrollRef]);
 
   const measure = useCallback(() => {
@@ -225,12 +256,10 @@ export default function TranscriptScrollIndicator({
     }
     anchors.current = measured;
 
-    const viewport = scroller.clientHeight;
-    const range = scroller.scrollHeight - viewport;
-    const railH = rail.clientHeight;
+    const geometry = geometryOf(scroller, rail.clientHeight);
     const first = measured[0]?.time ?? 0;
     const last = measured[measured.length - 1]?.time ?? 0;
-    if (measured.length < 2 || range <= 1 || railH <= 0 || last <= first) {
+    if (!geometry || measured.length < 2 || last <= first) {
       tickPos.current = [];
       minorPos.current = [];
       setTicks([]);
@@ -239,19 +268,21 @@ export default function TranscriptScrollIndicator({
       return;
     }
 
-    const thumbH = Math.max(MIN_THUMB_H, (viewport / scroller.scrollHeight) * railH);
-    const travel = railH - thumbH;
+    const { railH, travel } = geometry;
     const spanned = last - first;
     const step =
       TICK_STEPS.find((s) => (s / spanned) * travel >= MIN_TICK_GAP) ??
       TICK_STEPS[TICK_STEPS.length - 1];
     const next: Tick[] = [];
     for (let t = Math.ceil(first / step) * step; t <= last; t += step) {
-      next.push({ time: t, y: clamp((topAt(measured, t) / range) * travel, 0, travel) });
+      const y = railY(topAt(measured, t), geometry);
+      // Times that only ever sit above or below the middle of the pane — the
+      // opening and closing screenful — have nowhere on the rail to land.
+      if (y >= 0 && y <= railH) next.push({ time: t, y });
     }
     const between = subdivide(
       next.map((tick) => tick.y),
-      travel
+      railH
     );
     tickPos.current = next.map((tick) => tick.y);
     minorPos.current = between;
