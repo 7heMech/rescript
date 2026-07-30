@@ -66,16 +66,7 @@ export default function MediaPreview() {
   }, [setCurrentTime]);
 
   const togglePlay = useCallback(() => {
-    const media = mediaRef.current;
-    if (!media) return;
-    if (media.paused) {
-      const cut = cutRangeAt(media.currentTime, cutsRef.current);
-      if (cut) media.currentTime = cut.end + 0.001;
-      if (media.currentTime >= media.duration - 0.05) media.currentTime = 0;
-      void media.play();
-    } else {
-      media.pause();
-    }
+    useEditorStore.getState().togglePlayback();
   }, []);
 
   if (!mediaUrl) return null;

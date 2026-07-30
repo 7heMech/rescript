@@ -31,7 +31,6 @@ import {
 import { useEditorStore } from "@/lib/store";
 import {
   canSplitAt,
-  cutRangeAt,
   formatTime,
   getActiveSceneBoundaries,
   getClipSegments,
@@ -486,17 +485,8 @@ export default function Timeline() {
   const trimmed = duration - editedDuration;
 
   const togglePlay = useCallback(() => {
-    const media = useEditorStore.getState().videoEl;
-    if (!media) return;
-    if (media.paused) {
-      const cut = cutRangeAt(media.currentTime, cuts);
-      if (cut) media.currentTime = cut.end + 0.001;
-      if (media.currentTime >= media.duration - 0.05) media.currentTime = 0;
-      void media.play();
-    } else {
-      media.pause();
-    }
-  }, [cuts]);
+    useEditorStore.getState().togglePlayback();
+  }, []);
 
   const skip = useCallback((delta: number) => {
     const { videoEl, setCurrentTime } = useEditorStore.getState();
@@ -517,9 +507,11 @@ export default function Timeline() {
   const showHandles = pps >= HANDLE_VIS_PPS;
 
   return (
-    <footer className="flex h-40 shrink-0 flex-col border-t border-zinc-200 bg-white sm:h-52">
-      <div className="relative flex h-10 shrink-0 items-center gap-2 border-b border-zinc-100 px-2.5">
-        <div className="flex min-w-0 flex-1 items-center gap-2">
+    <footer className="flex h-48 shrink-0 flex-col border-t border-zinc-200 bg-white sm:h-52">
+      {/* Mobile wraps the transport onto its own row; from `sm` up it is
+          absolutely centred so it stays put as the side groups change width. */}
+      <div className="relative flex shrink-0 flex-wrap items-center gap-x-2 border-b border-zinc-100 px-2.5 sm:h-10 sm:flex-nowrap">
+        <div className="order-1 flex h-9 min-w-0 flex-1 items-center gap-2 sm:h-auto">
           <span className="shrink-0 text-[11px] font-mono tabular-nums leading-none text-zinc-900">
             {formatTime(originalToEdited(currentTime, cuts))}
             <span className="text-zinc-400"> / {formatTime(editedDuration)}</span>
@@ -527,14 +519,14 @@ export default function Timeline() {
           {trimmed > 0.01 && (
             <span
               title={`${formatTime(trimmed)} removed — original length ${formatTime(duration)}`}
-              className="hidden shrink-0 font-mono rounded-full bg-red-50 px-1.5 py-0.5 text-[10px] font-medium tabular-nums leading-none text-red-500 sm:inline-block"
+              className="shrink-0 font-mono rounded-full bg-red-50 px-1.5 py-0.5 text-[10px] font-medium tabular-nums leading-none text-red-500"
             >
               −{formatTime(trimmed)}
             </span>
           )}
         </div>
 
-        <div className="absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center gap-1.5">
+        <div className="order-3 -mx-2.5 flex h-9 w-[calc(100%+1.25rem)] items-center justify-center gap-1.5 border-t border-zinc-100 sm:absolute sm:left-1/2 sm:top-1/2 sm:order-2 sm:mx-0 sm:h-auto sm:w-auto sm:-translate-x-1/2 sm:-translate-y-1/2 sm:border-t-0">
           <button
             type="button"
             disabled={!ready}
@@ -568,7 +560,7 @@ export default function Timeline() {
           </button>
         </div>
 
-        <div className="flex flex-1 items-center justify-end gap-1">
+        <div className="order-2 flex h-9 items-center justify-end gap-1 sm:order-3 sm:h-auto sm:flex-1">
           <button
             type="button"
             disabled={!ready || !splitOk}

@@ -188,6 +188,8 @@ export default function Editor() {
   }, [status, isElectron]);
 
   // Global shortcuts: space = play/pause, ⌘Z / ⇧⌘Z = undo / redo, S = split.
+  // Capture phase so Space is ours before a focused <button> synthesizes a click
+  // (which would double-toggle playback and look like the hotkey "didn't work").
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
@@ -196,8 +198,8 @@ export default function Editor() {
       const s = useEditorStore.getState();
       if (e.code === "Space" && s.videoEl && !s.exportOpen) {
         e.preventDefault();
-        if (s.videoEl.paused) void s.videoEl.play();
-        else s.videoEl.pause();
+        e.stopPropagation();
+        s.togglePlayback();
       } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
         e.preventDefault();
         if (e.shiftKey) s.redo();
@@ -214,8 +216,8 @@ export default function Editor() {
         s.splitAtPlayhead();
       }
     };
-    document.addEventListener("keydown", handler);
-    return () => document.removeEventListener("keydown", handler);
+    document.addEventListener("keydown", handler, true);
+    return () => document.removeEventListener("keydown", handler, true);
   }, []);
 
   // Flush pending autosave when the tab hides or unloads.
