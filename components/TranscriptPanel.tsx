@@ -2,6 +2,7 @@
 
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  ArrowUpFromLine,
   Eye,
   EyeOff,
   FileText,
@@ -316,7 +317,7 @@ export default function TranscriptPanel() {
                 title="Replace transcript from SRT, VTT, or JSON"
                 className="flex cursor-pointer h-7 items-center gap-1.5 rounded-lg px-2 text-xs text-zinc-500 transition hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
               >
-                <FileText size={14} />
+                <ArrowUpFromLine size={14} />
                 <span className="hidden sm:inline">Import</span>
               </button>
               <input
