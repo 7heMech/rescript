@@ -18,7 +18,7 @@ const MIN_THUMB_H = 28;
 /** Kept in sync with the label's `h-3.5` so it can be centred on the thumb. */
 const LABEL_H = 14;
 /** Candidate spacings between ticks, in seconds, coarsest last. */
-const TICK_STEPS = [5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600];
+const SCROLL_RAIL_TICK_STEPS_S = [5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600];
 const MIN_TICK_GAP = 13;
 /** Timestamps land wherever the text puts them, so the gaps between them are
  *  filled with plain ruler ticks at roughly this pitch. */
@@ -276,8 +276,8 @@ export default function TranscriptScrollIndicator({
     const { railH, travel } = geometry;
     const spanned = last - first;
     const step =
-      TICK_STEPS.find((s) => (s / spanned) * travel >= MIN_TICK_GAP) ??
-      TICK_STEPS[TICK_STEPS.length - 1];
+      SCROLL_RAIL_TICK_STEPS_S.find((s) => (s / spanned) * travel >= MIN_TICK_GAP) ??
+      SCROLL_RAIL_TICK_STEPS_S[SCROLL_RAIL_TICK_STEPS_S.length - 1];
     const next: Tick[] = [];
     for (let t = Math.ceil(first / step) * step; t <= last; t += step) {
       const y = railY(topAt(measured, t), geometry);

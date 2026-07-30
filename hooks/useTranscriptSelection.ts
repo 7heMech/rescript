@@ -7,6 +7,7 @@ import {
   useState,
   type RefObject,
 } from "react";
+import { PLAYHEAD_EPSILON_S } from "@/lib/edits";
 import { useEditorStore } from "@/lib/store";
 import type { Word } from "@/lib/types";
 
@@ -186,9 +187,7 @@ export function useTranscriptSelection({
   }, []);
 
   const seekToWord = useCallback((word: Word) => {
-    const { videoEl, setCurrentTime } = useEditorStore.getState();
-    if (videoEl) videoEl.currentTime = word.start + 0.001;
-    setCurrentTime(word.start + 0.001);
+    useEditorStore.getState().seekTo(word.start + PLAYHEAD_EPSILON_S);
   }, []);
 
   const handleWordClick = useCallback(

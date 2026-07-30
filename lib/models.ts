@@ -32,9 +32,6 @@ export interface ModelInfo {
 /** Display order for Whisper rows in the homepage source dropdown. */
 export const WHISPER_ORDER: WhisperModel[] = ["base", "small"];
 
-/** @deprecated Prefer WHISPER_ORDER; kept for older imports. */
-export const MODEL_ORDER = WHISPER_ORDER;
-
 const WHISPER_DTYPE = {
   // q4 decoder: q8 fails session creation on onnxruntime-web 1.26
   // (Missing required scale … MatMulNBits).

@@ -29,6 +29,7 @@ import {
   listProjects,
   type ProjectMeta,
 } from "@/lib/projects";
+import { isElectron } from "@/lib/platform";
 import { useEditorStore } from "@/lib/store";
 import type { Word } from "@/lib/types";
 
@@ -154,7 +155,6 @@ export default function UploadScreen({
 }: {
   onFile: (file: File, options?: { words?: Word[] }) => void;
 }) {
-  const isElectron = /electron/i.test(navigator.userAgent);
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   const [projects, setProjects] = useState<ProjectMeta[]>([]);
