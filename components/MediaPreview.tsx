@@ -143,7 +143,7 @@ export default function MediaPreview() {
       </div>
 
       <div className="mt-3 flex shrink-0 items-center justify-center gap-2">
-        <span className="mr-1 w-24 text-right text-xs tabular-nums text-zinc-500 sm:mr-2 sm:w-28">
+        <span className="shrink-0 line-clamp-1 mr-1 w-24 text-right text-xs tabular-nums text-zinc-500 sm:mr-2 sm:w-28">
           {formatTime(originalToEdited(currentTime, cuts))}
           <span className="text-zinc-300"> / {formatTime(editedDuration)}</span>
         </span>
@@ -168,7 +168,7 @@ export default function MediaPreview() {
         >
           <SkipForward size={15} />
         </button>
-        <span className="ml-2 hidden w-28 text-xs tabular-nums text-zinc-400 sm:block">
+        <span className="ml-2 hidden w-28 shrink-0 line-clamp-1 text-xs tabular-nums text-zinc-400 sm:block">
           {editedDuration < duration - 0.01 && <>original {formatTime(duration)}</>}
         </span>
       </div>

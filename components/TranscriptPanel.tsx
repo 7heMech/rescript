@@ -501,8 +501,12 @@ export default function TranscriptPanel() {
   const busy = status === "preparing" || status === "transcribing";
 
   return (
-    <section className="flex min-w-0 flex-1 flex-col bg-white">
-      <div className="flex h-10 shrink-0 items-center gap-2 border-b border-zinc-100 px-3 sm:px-4">
+    // min-h-0 keeps this pane from growing to the transcript's full height —
+    // without it the panel wrapper scrolls instead of the list below.
+    <section className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-white">
+      {/* Floats above the scroller rather than sticking inside it, so the
+          rubber-band overscroll only carries the transcript, not the bar. */}
+      <div className="absolute inset-x-0 top-0 z-10 flex h-10 items-center gap-2 border-b border-zinc-100/80 bg-white/75 px-3 backdrop-blur-md sm:px-4">
         <span className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
           Transcript
         </span>
@@ -555,7 +559,10 @@ export default function TranscriptPanel() {
         </div>
       </div>
 
-      <div ref={scrollRef} className="relative min-h-0 flex-1 overflow-y-auto">
+      <div
+        ref={scrollRef}
+        className="relative min-h-0 flex-1 overflow-y-auto pt-10 scroll-pt-10"
+      >
         <div ref={containerRef} className="relative mx-auto max-w-2xl px-4 py-6 sm:px-8 sm:py-8">
           {busy && (
             <div className="flex flex-col items-start gap-4">
