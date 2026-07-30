@@ -105,15 +105,13 @@ bundles Chromium via Electron and sets the same isolation headers on its
 
 MIT
 
+---
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-111?style=flat-square)](LICENSE)
 [![Platforms](https://img.shields.io/badge/platforms-Web%20·%20macOS%20·%20Windows%20·%20Linux-111?style=flat-square)](#download)
 [![Electron](https://img.shields.io/badge/Electron-42-111?style=flat-square&logo=electron&logoColor=9FEAF9)](https://www.electronjs.org/)
 [![Stars](https://img.shields.io/github/stars/wassgha/rescript?style=flat-square&color=111)](https://github.com/wassgha/rescript/stargazers)
 [![Latest release](https://img.shields.io/github/v/release/wassgha/rescript?label=latest%20release&sort=semver&style=flat-square&color=111)](https://github.com/wassgha/rescript/releases/latest)
-
-
----
 
 Built by [@wassgha](https://x.com/wassgha) — follow along on X for updates, or
 come say hi in the [Discord](https://discord.gg/RCv4gcwE4).
