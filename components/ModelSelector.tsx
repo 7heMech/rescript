@@ -17,6 +17,7 @@ import {
   ChevronDown,
   ChevronRight,
   FileText,
+  Languages,
   Loader2,
   type LucideIcon,
 } from "lucide-react";
@@ -207,7 +208,10 @@ export default function ModelSelector({
         ? "Import transcript"
         : String(model));
   const languageInfo = TRANSCRIPT_LANGUAGES[transcriptLanguage];
-  const showLanguageInTrigger = isWhisperModel(model) && !activeTrigger?.busy;
+  const showLanguageInTrigger =
+    isWhisperModel(model) &&
+    !activeTrigger?.busy &&
+    transcriptLanguage !== "en";
 
   // Always mount options (hidden when closed) so custom triggers stay registered.
   const options = children ?? (
@@ -244,7 +248,7 @@ export default function ModelSelector({
               : undefined
           }
           onClick={() => setOpen((v) => !v)}
-          className="inline-flex max-w-[22rem] items-center gap-2 rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-[13px] font-medium text-zinc-800 cursor-pointer transition hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:border-zinc-600 dark:hover:bg-zinc-800"
+          className="inline-flex max-w-[18rem] items-center gap-2 rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-[13px] font-medium text-zinc-800 cursor-pointer transition hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:border-zinc-600 dark:hover:bg-zinc-800"
         >
           {activeTrigger?.busy ? (
             <Loader2 size={14} className="shrink-0 animate-spin text-zinc-500" />
@@ -264,11 +268,13 @@ export default function ModelSelector({
                 >
                   |
                 </span>
-                <span className="shrink-0 text-[13px] leading-none" aria-hidden>
-                  {languageInfo.flag}
-                </span>
+                <Languages
+                  size={14}
+                  className="shrink-0 text-zinc-500 dark:text-zinc-400"
+                  aria-hidden
+                />
                 <span className="shrink-0 font-normal text-zinc-500 dark:text-zinc-400">
-                  {languageInfo.locale}
+                  {languageInfo.code}
                 </span>
               </>
             )}

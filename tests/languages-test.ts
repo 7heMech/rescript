@@ -31,10 +31,10 @@ import {
   for (const id of TRANSCRIPT_LANGUAGE_ORDER) {
     const info = TRANSCRIPT_LANGUAGES[id];
     if (!info.flag) throw new Error(`expected flag for ${id}`);
-    if (!info.locale) throw new Error(`expected locale for ${id}`);
-  }
-  if (TRANSCRIPT_LANGUAGES.en.locale !== "en-US") {
-    throw new Error(`unexpected en locale: ${TRANSCRIPT_LANGUAGES.en.locale}`);
+    if (!info.code) throw new Error(`expected code for ${id}`);
+    if (info.code !== id.toUpperCase()) {
+      throw new Error(`unexpected code for ${id}: ${info.code}`);
+    }
   }
 }
 
