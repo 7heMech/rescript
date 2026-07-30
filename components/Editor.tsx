@@ -17,10 +17,12 @@ import ExportDialog from "./ExportDialog";
 import { Download, Redo2, Undo2 } from "lucide-react";
 import LogoLoader from "./LogoLoader";
 import SettingsMenu from "./SettingsMenu";
-import { ModelOption, ModelOptionSeparator } from "./ModelSelector";
-import ModelSelector from "./ModelSelector";
+import ModelSelector, {
+  LanguageSection,
+  ModelOption,
+  ModelOptionSeparator,
+} from "./ModelSelector";
 import ImportTranscriptOption from "./ImportTranscriptOption";
-import LanguageSelector from "./LanguageSelector";
 
 /** How long the desktop mode-change overlay stays up. Matches the macOS
  *  `setBounds(..., animate)` duration plus a small buffer so the layout
@@ -227,10 +229,11 @@ export default function Editor() {
       {status === "idle" ? (
         <>
           {isElectron && <TopBar>
-            <LanguageSelector />
             <ModelSelector groupLabel="Transcript source">
               <ModelOption id="base" />
               <ModelOption id="small" />
+              <ModelOptionSeparator />
+              <LanguageSection />
               <ModelOptionSeparator />
               <ImportTranscriptOption />
             </ModelSelector>

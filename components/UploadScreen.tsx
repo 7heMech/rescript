@@ -18,11 +18,11 @@ import logo from "@/assets/logo.png";
 import SocialLinks from "./SocialLinks";
 import SettingsMenu from "./SettingsMenu";
 import ModelSelector, {
+  LanguageSection,
   ModelOption,
   ModelOptionSeparator,
 } from "./ModelSelector";
 import ImportTranscriptOption from "./ImportTranscriptOption";
-import LanguageSelector from "./LanguageSelector";
 import { useCrossOriginIsolated } from "@/hooks/useCrossOriginIsolated";
 import { detectMediaKind, MEDIA_ACCEPT } from "@/lib/media";
 import { formatTime } from "@/lib/edits";
@@ -274,10 +274,11 @@ export default function UploadScreen({
               <div className="flex flex-wrap items-center gap-2 sm:justify-end">
                 <SettingsMenu />
                 <div className="h-5 w-px bg-zinc-200 dark:bg-zinc-700" />
-                <LanguageSelector />
                 <ModelSelector groupLabel="Transcript source">
                   <ModelOption id="base" />
                   <ModelOption id="small" />
+                  <ModelOptionSeparator />
+                  <LanguageSection />
                   <ModelOptionSeparator />
                   <ImportTranscriptOption />
                 </ModelSelector>

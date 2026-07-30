@@ -9,7 +9,10 @@
 import type { ModelChoice } from "./models";
 import { isModelChoice } from "./models";
 import type { TranscriptLanguage } from "./languages";
-import { isTranscriptLanguage } from "./languages";
+import {
+  DEFAULT_TRANSCRIPT_LANGUAGE,
+  isTranscriptLanguage,
+} from "./languages";
 import type { MediaKind } from "./media";
 import type { ManualCut, SceneBoundary, Word } from "./types";
 
@@ -126,7 +129,7 @@ export async function listProjects(): Promise<ProjectMeta[]> {
       model: r.model,
       transcriptLanguage: isTranscriptLanguage(r.transcriptLanguage)
         ? r.transcriptLanguage
-        : "en",
+        : DEFAULT_TRANSCRIPT_LANGUAGE,
       updatedAt: r.updatedAt,
       createdAt: r.createdAt,
     }))
@@ -167,7 +170,7 @@ export async function putProject(input: ProjectWrite): Promise<string> {
     model: isModelChoice(input.model) ? input.model : "base",
     transcriptLanguage: isTranscriptLanguage(input.transcriptLanguage)
       ? input.transcriptLanguage
-      : "en",
+      : DEFAULT_TRANSCRIPT_LANGUAGE,
     words: input.words,
     showDeleted: input.showDeleted,
     manualCuts: input.manualCuts ?? [],

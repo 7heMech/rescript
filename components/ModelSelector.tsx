@@ -13,13 +13,23 @@ import {
 } from "react";
 import {
   AudioLines,
+  Check,
   ChevronDown,
   FileText,
   Loader2,
   type LucideIcon,
 } from "lucide-react";
+import {
+  TRANSCRIPT_LANGUAGE_ORDER,
+  TRANSCRIPT_LANGUAGES,
+  type TranscriptLanguage,
+} from "@/lib/languages";
 import { MODELS, isWhisperModel, type ModelChoice } from "@/lib/models";
-import { hydrateModelPreference, useEditorStore } from "@/lib/store";
+import {
+  hydrateModelPreference,
+  hydrateTranscriptLanguagePreference,
+  useEditorStore,
+} from "@/lib/store";
 
 export type ModelOptionContextValue = {
   /** Currently selected source id. */
@@ -117,6 +127,7 @@ export default function ModelSelector({
 
   useEffect(() => {
     hydrateModelPreference();
+    hydrateTranscriptLanguagePreference();
   }, []);
 
   useEffect(() => {
@@ -346,4 +357,54 @@ export function ModelOption({
 /** Separator between option groups (e.g. Whisper vs import). */
 export function ModelOptionSeparator() {
   return <div className="my-1 border-t border-zinc-100 dark:border-zinc-800" role="separator" />;
+}
+
+/** Language hint section nested inside the model / transcript-source menu. */
+export function LanguageSection() {
+  const language = useEditorStore((s) => s.transcriptLanguage);
+  const setLanguage = useEditorStore((s) => s.setTranscriptLanguage);
+  const selector = useSelectorCtx();
+
+  const select = (next: TranscriptLanguage) => {
+    setLanguage(next);
+    selector.closeMenu();
+  };
+
+  return (
+    <div>
+      <p className="px-2.5 pb-1 pt-1.5 text-[11px] font-medium tracking-wide text-zinc-400 dark:text-zinc-500">
+        Language
+      </p>
+      <div className="space-y-1">
+        {TRANSCRIPT_LANGUAGE_ORDER.map((id) => {
+          const option = TRANSCRIPT_LANGUAGES[id];
+          const selected = id === language;
+          return (
+            <button
+              key={id}
+              type="button"
+              role="option"
+              aria-selected={selected}
+              onClick={() => select(id)}
+              className={`flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition ${
+                selected
+                  ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
+                  : "text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-800/60"
+              }`}
+            >
+              <span className="min-w-0 flex-1 text-[13px] font-medium leading-tight">
+                {option.nativeLabel}
+              </span>
+              {selected && (
+                <Check
+                  size={14}
+                  className="shrink-0 text-zinc-500 dark:text-zinc-300"
+                />
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
 }

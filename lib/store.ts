@@ -29,6 +29,7 @@ import {
 } from "./models";
 import type { ModelChoice } from "./models";
 import {
+  DEFAULT_TRANSCRIPT_LANGUAGE,
   isTranscriptLanguage,
   loadTranscriptLanguagePreference,
   saveTranscriptLanguagePreference,
@@ -240,7 +241,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   duration: 0,
   audio: null,
   model: "base",
-  transcriptLanguage: "en",
+  transcriptLanguage: DEFAULT_TRANSCRIPT_LANGUAGE,
   pendingTranscript: null,
   projectId: null,
   skipTranscription: false,
@@ -325,7 +326,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       model: isModelChoice(record.model) ? record.model : "base",
       transcriptLanguage: isTranscriptLanguage(record.transcriptLanguage)
         ? record.transcriptLanguage
-        : "en",
+        : DEFAULT_TRANSCRIPT_LANGUAGE,
       projectId: record.id,
       skipTranscription: true,
       pendingTranscript: null,
