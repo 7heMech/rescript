@@ -750,7 +750,7 @@ export default function TranscriptPanel() {
               {selection.anyKept && (
                 <button
                   onClick={cutSelection}
-                  className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[13px] font-medium text-zinc-700 transition hover:bg-red-50 hover:text-red-600"
+                  className="flex cursor-pointer items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[13px] font-medium text-zinc-700 transition hover:bg-red-50 hover:text-red-600"
                 >
                   <Scissors size={13} />
                   Cut
@@ -759,7 +759,7 @@ export default function TranscriptPanel() {
               {selection.anyDeleted && (
                 <button
                   onClick={restoreSelection}
-                  className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[13px] font-medium text-zinc-700 transition hover:bg-emerald-50 hover:text-emerald-600"
+                  className="flex cursor-pointer items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[13px] font-medium text-zinc-700 transition hover:bg-emerald-50 hover:text-emerald-600"
                 >
                   <RotateCcw size={13} />
                   Restore
@@ -767,7 +767,7 @@ export default function TranscriptPanel() {
               )}
               <button
                 onClick={openCorrect}
-                className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[13px] font-medium text-zinc-700 transition hover:bg-zinc-100"
+                className="flex cursor-pointer items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[13px] font-medium text-zinc-700 transition hover:bg-zinc-100"
               >
                 <Pencil size={13} />
                 Correct
@@ -811,7 +811,7 @@ export default function TranscriptPanel() {
                 <button
                   onClick={applyCorrection}
                   disabled={correctText.trim().length === 0}
-                  className="flex h-8 items-center rounded-full bg-zinc-900 px-4 text-[13px] font-medium text-white transition hover:bg-zinc-700 disabled:opacity-40"
+                  className="cursor-pointer flex h-8 items-center rounded-full bg-zinc-900 px-4 text-[13px] font-medium text-white transition hover:bg-zinc-700 disabled:opacity-40"
                 >
                   Correct
                 </button>
