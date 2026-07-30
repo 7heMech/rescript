@@ -134,8 +134,11 @@ export function useTranscriptSelection({
   const clickSelectionRef = useRef(false);
   // Between mousedown and mouseup, selectionchange only paints marks.
   const mouseDownRef = useRef(false);
+  // Mirrored into a ref so the event handlers below stay stable across edits.
   const cutOutIdsRef = useRef(cutOutIds);
-  cutOutIdsRef.current = cutOutIds;
+  useEffect(() => {
+    cutOutIdsRef.current = cutOutIds;
+  }, [cutOutIds]);
 
   const clearMarks = useCallback(() => {
     for (const el of markedRef.current) el.removeAttribute("data-sel");
