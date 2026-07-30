@@ -82,6 +82,8 @@ audio track. For desktop packaging, signing, and cutting releases, see
 
 ## How it works
 
+[![Rescript Promo](./screenshots/rescript-2.png)](https://wassgha.github.io/rescript/)
+
 1. **Extract** — ffmpeg.wasm decodes the audio track to mono 16 kHz PCM.
 2. **Transcribe** — Whisper runs in a Web Worker with `return_timestamps: "word"`,
    streaming text as it goes; pyannote assigns a speaker to every word.
