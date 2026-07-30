@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Image from "next/image";
 import {
   AudioLines,
   Clapperboard,
@@ -13,7 +14,9 @@ import {
   Trash2,
   Type,
 } from "lucide-react";
+import logo from "@/assets/logo.png";
 import SocialLinks from "./SocialLinks";
+import SettingsMenu from "./SettingsMenu";
 import { useCrossOriginIsolated } from "@/hooks/useCrossOriginIsolated";
 import { detectMediaKind, MEDIA_ACCEPT } from "@/lib/media";
 import { formatTime } from "@/lib/edits";
@@ -247,6 +250,24 @@ export default function UploadScreen({
           overflow-y-auto still lets short viewports (mobile) scroll the top. */}
       <div className="flex min-h-full items-center justify-center p-6">
         <div className="w-full max-w-xl">
+          {!isElectron && (
+            <div className="mb-6 flex items-center justify-between gap-3">
+              <div className="flex min-w-0 items-center">
+                <Image
+                  src={logo}
+                  alt="Rescript"
+                  width={24}
+                  height={24}
+                  priority
+                  className="rounded-sm border border-zinc-200 dark:border-zinc-700"
+                />
+                <p className="ml-2 text-[15px] font-medium text-zinc-800 dark:text-zinc-100">
+                  Rescript
+                </p>
+              </div>
+              <SettingsMenu />
+            </div>
+          )}
           <div
             role="button"
             aria-disabled={!ready}

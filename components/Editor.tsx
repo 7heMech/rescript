@@ -221,7 +221,7 @@ export default function Editor() {
     <div className="relative flex h-dvh flex-col overflow-hidden bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
       {status === "idle" ? (
         <>
-          <TopBar />
+          {isElectron && <TopBar />}
           <UploadScreen onFile={loadVideo} />
         </>
       ) : (
