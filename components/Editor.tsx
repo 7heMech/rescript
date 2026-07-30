@@ -259,7 +259,7 @@ export default function Editor() {
               onClick={undo}
               disabled={!canUndo}
               title="Undo (⌘Z)"
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-800 disabled:opacity-30 disabled:hover:bg-transparent"
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-800 cursor-pointer disabled:opacity-30 disabled:hover:bg-transparent"
             >
               <Undo2 size={16} />
             </button>
@@ -267,7 +267,7 @@ export default function Editor() {
               onClick={redo}
               disabled={!canRedo}
               title="Redo (⇧⌘Z)"
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-800 disabled:opacity-30 disabled:hover:bg-transparent"
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-800 cursor-pointer disabled:opacity-30 disabled:hover:bg-transparent"
             >
               <Redo2 size={16} />
             </button>
@@ -275,7 +275,7 @@ export default function Editor() {
             <button
               onClick={() => setExportOpen(true)}
               disabled={status !== "ready" && status !== "exporting"}
-              className="flex ml-1 h-8 items-center gap-1.5 rounded-full bg-zinc-900 px-4 text-[13px] font-medium text-white transition hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-40"
+              className="flex ml-1 h-8 items-center gap-1.5 rounded-full bg-zinc-900 px-4 text-[13px] font-medium text-white transition hover:bg-zinc-700 cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
             >
               <Download size={14} />
               Export

@@ -28,6 +28,7 @@ import {
   isWordCutOut,
   mapSplitsToWords,
 } from "@/lib/edits";
+import { useTranscriptSelection } from "@/hooks/useTranscriptSelection";
 
 export const SPEAKER_COLORS = [
   "#16a34a", // green
@@ -119,14 +120,6 @@ const SplitMarker = memo(function SplitMarker({
   );
 });
 
-interface SelectionInfo {
-  ids: number[];
-  anyDeleted: boolean;
-  anyKept: boolean;
-  top: number;
-  left: number;
-}
-
 export default function TranscriptPanel() {
   const words = useEditorStore((s) => s.words);
   const manualCuts = useEditorStore((s) => s.manualCuts);
@@ -144,7 +137,6 @@ export default function TranscriptPanel() {
   const importWords = useEditorStore((s) => s.importWords);
   const removeSceneBoundary = useEditorStore((s) => s.removeSceneBoundary);
   const selectedWordIds = useEditorStore((s) => s.selectedWordIds);
-  const setSelectedWords = useEditorStore((s) => s.setSelectedWords);
   const playing = useEditorStore((s) => s.playing);
   const activeWordId = useEditorStore((s) => findActiveWordId(s.words, s.currentTime));
 
@@ -174,7 +166,6 @@ export default function TranscriptPanel() {
   const containerRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
-  const [selection, setSelection] = useState<SelectionInfo | null>(null);
   const [correcting, setCorrecting] = useState<{
     ids: number[];
     top: number;
@@ -182,9 +173,21 @@ export default function TranscriptPanel() {
     containerWidth: number;
   } | null>(null);
   const [correctText, setCorrectText] = useState("");
-  // Mirrors `correcting` so the selectionchange handler (which has its own
-  // dependency list) can freeze the highlight while the popover is open.
+  // Mirrors `correcting` so selection handlers can freeze highlights while open.
   const correctingRef = useRef(false);
+
+  const {
+    selection,
+    clearSelection,
+    clearMarks,
+    handleWordClick,
+    releaseToolbar,
+  } = useTranscriptSelection({
+    containerRef,
+    scrollRef,
+    cutOutIds,
+    correctingRef,
+  });
 
   const turns = useMemo<SpeakerTurn[]>(() => {
     const out: SpeakerTurn[] = [];
@@ -235,190 +238,6 @@ export default function TranscriptPanel() {
     [removeSceneBoundary]
   );
 
-  const seekToWord = useCallback((word: Word) => {
-    const { videoEl, setCurrentTime } = useEditorStore.getState();
-    if (videoEl) videoEl.currentTime = word.start + 0.001;
-    setCurrentTime(word.start + 0.001);
-  }, []);
-
-  // Track text selection over word spans, position the floating toolbar, and
-  // paint our own (dimmed, gap-free) highlight by marking the selected spans.
-  // The native ::selection highlight is made transparent over the words, and
-  // the marking is done imperatively so dragging doesn't re-render the panel.
-  const markedRef = useRef<Set<HTMLElement>>(new Set());
-  // True while the current selection came from clicking a single word. There is
-  // no native range in that case, so the collapsed-selection branch of the
-  // selectionchange handler must not wipe it.
-  const clickSelectionRef = useRef(false);
-
-  const clearMarks = useCallback(() => {
-    for (const el of markedRef.current) el.removeAttribute("data-sel");
-    markedRef.current.clear();
-  }, []);
-
-  const clearSelection = useCallback(() => {
-    clearMarks();
-    clickSelectionRef.current = false;
-    setSelection(null);
-    setSelectedWords([]);
-    window.getSelection()?.removeAllRanges();
-  }, [clearMarks, setSelectedWords]);
-
-  // Clicking a word seeks to it and selects it, so the toolbar and the
-  // Delete/Backspace shortcut work on single words too — not just drags.
-  const handleWordClick = useCallback(
-    (word: Word, el: HTMLElement) => {
-      const nativeSel = window.getSelection();
-      // A drag ends with a click on the word under the cursor; leave the
-      // range-based selection (and the playhead) alone in that case.
-      if (nativeSel && !nativeSel.isCollapsed) return;
-      seekToWord(word);
-      const container = containerRef.current;
-      if (!container) return;
-      clearMarks();
-      el.setAttribute("data-sel", "");
-      markedRef.current.add(el);
-      clickSelectionRef.current = true;
-      const rect = el.getBoundingClientRect();
-      const containerRect = container.getBoundingClientRect();
-      const cutOut = cutOutIds.has(word.id);
-      setSelection({
-        ids: [word.id],
-        anyDeleted: cutOut,
-        anyKept: !cutOut,
-        top: rect.top - containerRect.top - 44,
-        left: Math.max(8, rect.left - containerRect.left + rect.width / 2),
-      });
-      setSelectedWords([word.id]);
-    },
-    [seekToWord, clearMarks, cutOutIds, setSelectedWords]
-  );
-
-  useEffect(() => {
-    const handler = () => {
-      // Keep the highlight frozen on the words being corrected.
-      if (correctingRef.current) return;
-      const container = containerRef.current;
-      const sel = window.getSelection();
-      if (!container || !sel || sel.isCollapsed || sel.rangeCount === 0) {
-        // A click collapses the native selection; that must not clear the
-        // single-word selection the click itself is about to create.
-        if (clickSelectionRef.current) return;
-        clearMarks();
-        setSelection(null);
-        setSelectedWords([]);
-        return;
-      }
-      const range = sel.getRangeAt(0);
-      if (!container.contains(range.commonAncestorContainer)) {
-        if (clickSelectionRef.current) return;
-        clearMarks();
-        setSelection(null);
-        setSelectedWords([]);
-        return;
-      }
-      clickSelectionRef.current = false;
-      const wordMap = new Map(words.map((w) => [w.id, w]));
-      const ids: number[] = [];
-      let anyDeleted = false;
-      let anyKept = false;
-      const marked = new Set<HTMLElement>();
-      container.querySelectorAll<HTMLElement>("[data-wid]").forEach((el) => {
-        if (range.intersectsNode(el)) {
-          const id = Number(el.dataset.wid);
-          ids.push(id);
-          el.setAttribute("data-sel", "");
-          marked.add(el);
-          const w = wordMap.get(id);
-          if (w && cutOutIds.has(w.id)) anyDeleted = true;
-          else anyKept = true;
-        }
-      });
-      for (const el of markedRef.current) {
-        if (!marked.has(el)) el.removeAttribute("data-sel");
-      }
-      markedRef.current = marked;
-      if (ids.length === 0) {
-        setSelection(null);
-        setSelectedWords([]);
-        return;
-      }
-      const rect = range.getBoundingClientRect();
-      const containerRect = container.getBoundingClientRect();
-      setSelection({
-        ids,
-        anyDeleted,
-        anyKept,
-        top: rect.top - containerRect.top - 44,
-        left: Math.max(8, rect.left - containerRect.left + rect.width / 2),
-      });
-      setSelectedWords(ids);
-    };
-    document.addEventListener("selectionchange", handler);
-    return () => {
-      // A click selection has no native range to track, so keep its highlight
-      // across the re-subscriptions this effect goes through.
-      if (!clickSelectionRef.current) clearMarks();
-      document.removeEventListener("selectionchange", handler);
-    };
-  }, [words, cutOutIds, clearMarks, setSelectedWords]);
-
-  // A click-based selection has no native range, so nothing else would drop it:
-  // clear it when the next mousedown lands outside the words and the toolbar.
-  // Only presses inside this panel count — the timeline owns its own clearing,
-  // and clicking a word chip there must not wipe the selection it just made.
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (!clickSelectionRef.current || correctingRef.current) return;
-      const target = e.target as HTMLElement | null;
-      if (!target || !scrollRef.current?.contains(target)) return;
-      if (target.closest("[data-wid], [data-transcript-toolbar]")) return;
-      clearSelection();
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [clearSelection]);
-
-  // Mirror a selection made elsewhere (the timeline wordbar) into this panel:
-  // highlight the words, scroll them into view and place the toolbar. Selections
-  // that originated here already match, so this is a no-op for them.
-  useEffect(() => {
-    if (correctingRef.current) return;
-    const container = containerRef.current;
-    if (!container) return;
-    const shown = selection?.ids ?? [];
-    if (
-      shown.length === selectedWordIds.length &&
-      shown.every((id, i) => id === selectedWordIds[i])
-    ) {
-      return;
-    }
-    const els = selectedWordIds
-      .map((id) => container.querySelector<HTMLElement>(`[data-wid="${id}"]`))
-      .filter((el): el is HTMLElement => el !== null);
-    clearMarks();
-    if (els.length === 0) {
-      clickSelectionRef.current = false;
-      setSelection(null);
-      return;
-    }
-    for (const el of els) {
-      el.setAttribute("data-sel", "");
-      markedRef.current.add(el);
-    }
-    clickSelectionRef.current = true;
-    els[0].scrollIntoView({ block: "nearest" });
-    const rect = els[0].getBoundingClientRect();
-    const containerRect = container.getBoundingClientRect();
-    setSelection({
-      ids: selectedWordIds,
-      anyDeleted: selectedWordIds.some((id) => cutOutIds.has(id)),
-      anyKept: selectedWordIds.some((id) => !cutOutIds.has(id)),
-      top: rect.top - containerRect.top - 44,
-      left: Math.max(8, rect.left - containerRect.left + rect.width / 2),
-    });
-  }, [selectedWordIds, selection, cutOutIds, clearMarks]);
-
   const cutSelection = useCallback(() => {
     if (!selection) return;
     deleteWords(selection.ids);
@@ -439,7 +258,6 @@ export default function TranscriptPanel() {
       .map((w) => w.text)
       .join(" ");
     correctingRef.current = true;
-    clickSelectionRef.current = false;
     setCorrectText(text);
     setCorrecting({
       ids: selection.ids,
@@ -447,16 +265,14 @@ export default function TranscriptPanel() {
       left: selection.left,
       containerWidth: containerRef.current?.clientWidth ?? 640,
     });
-    setSelection(null);
-    window.getSelection()?.removeAllRanges();
-  }, [selection, words]);
+    releaseToolbar();
+  }, [selection, words, releaseToolbar]);
 
   const closeCorrect = useCallback(() => {
     correctingRef.current = false;
-    for (const el of markedRef.current) el.removeAttribute("data-sel");
-    markedRef.current.clear();
+    clearMarks();
     setCorrecting(null);
-  }, []);
+  }, [clearMarks]);
 
   const applyCorrection = useCallback(() => {
     if (!correcting) return;
@@ -650,28 +466,28 @@ export default function TranscriptPanel() {
               {selection.anyKept && (
                 <button
                   onClick={cutSelection}
-                  className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[13px] font-medium text-zinc-700 transition hover:bg-red-50 hover:text-red-600"
+                  className="flex cursor-pointer items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[13px] font-medium text-zinc-700 transition hover:bg-red-50 hover:text-red-600"
                 >
                   <Scissors size={13} />
                   Cut
                 </button>
               )}
-              <button
-                onClick={openCorrect}
-                className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[13px] font-medium text-zinc-700 transition hover:bg-zinc-100"
-              >
-                <Pencil size={13} />
-                Correct
-              </button>
               {selection.anyDeleted && (
                 <button
                   onClick={restoreSelection}
-                  className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[13px] font-medium text-zinc-700 transition hover:bg-emerald-50 hover:text-emerald-600"
+                  className="flex cursor-pointer items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[13px] font-medium text-zinc-700 transition hover:bg-emerald-50 hover:text-emerald-600"
                 >
                   <RotateCcw size={13} />
                   Restore
                 </button>
               )}
+              <button
+                onClick={openCorrect}
+                className="flex cursor-pointer items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[13px] font-medium text-zinc-700 transition hover:bg-zinc-100"
+              >
+                <Pencil size={13} />
+                Correct
+              </button>
             </div>
           )}
 
@@ -711,7 +527,7 @@ export default function TranscriptPanel() {
                 <button
                   onClick={applyCorrection}
                   disabled={correctText.trim().length === 0}
-                  className="flex h-8 items-center rounded-full bg-zinc-900 px-4 text-[13px] font-medium text-white transition hover:bg-zinc-700 disabled:opacity-40"
+                  className="cursor-pointer flex h-8 items-center rounded-full bg-zinc-900 px-4 text-[13px] font-medium text-white transition hover:bg-zinc-700 disabled:opacity-40"
                 >
                   Correct
                 </button>
