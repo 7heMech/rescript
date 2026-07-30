@@ -55,7 +55,6 @@ export default function TopBar({ children }: { children?: React.ReactNode }) {
 
       <div className="app-no-drag ml-auto flex items-center gap-1">
         {children}
-        <SettingsMenu />
       </div>
     </header>
   );

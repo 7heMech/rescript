@@ -2,7 +2,7 @@ export const GITHUB_REPO_URL = "https://github.com/wassgha/rescript";
 export const DISCORD_INVITE_URL = "https://discord.gg/qJAhYFydat";
 export const X_PROFILE_URL = "https://x.com/wassgha";
 
-function GitHubIcon({ size }: { size: number }) {
+export function GitHubIcon({ size }: { size: number }) {
   return (
     <svg
       width={size}
@@ -16,7 +16,7 @@ function GitHubIcon({ size }: { size: number }) {
   );
 }
 
-function DiscordIcon({ size }: { size: number }) {
+export function DiscordIcon({ size }: { size: number }) {
   return (
     <svg
       width={size}
@@ -30,7 +30,7 @@ function DiscordIcon({ size }: { size: number }) {
   );
 }
 
-function XIcon({ size }: { size: number }) {
+export function XIcon({ size }: { size: number }) {
   return (
     <svg
       width={size}

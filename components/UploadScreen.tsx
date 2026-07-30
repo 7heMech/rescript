@@ -70,7 +70,7 @@ function MediaCards({ dragging }: { dragging: boolean }) {
       {CARDS.map(({ icon: Icon, size, iconSize, bars, rest, fan }, i) => (
         <div
           key={i}
-          className={`absolute flex flex-col items-center justify-center gap-1.5 rounded-xl border border-zinc-200 bg-white transition-transform duration-300 ease-out dark:border-zinc-700 dark:bg-zinc-900 ${size} ${dragging ? fan : rest
+          className={`absolute flex flex-col items-center justify-center gap-1.5 rounded-xl border border-zinc-200 bg-white transition-transform duration-300 ease-out dark:border-zinc-800 ${dragging ? "dark:bg-zinc-900" : "dark:bg-zinc-900 group-hover:dark:bg-zinc-900"} ${size} ${dragging ? fan : rest
             }`}
         >
           <Icon size={iconSize} className="text-neutral-400 dark:text-neutral-500" />
@@ -298,11 +298,11 @@ export default function UploadScreen({
               setDragging(false);
               handleFiles(e.dataTransfer.files);
             }}
-            className={`group flex flex-col items-center justify-center rounded-2xl border-2 border-dashed bg-white/80 px-8 py-14 text-center transition dark:bg-zinc-900/80 ${!ready
+            className={`group flex flex-col items-center justify-center rounded-2xl border-2 border-dashed bg-white/80 px-8 py-14 text-center transition dark:bg-zinc-900/40 ${!ready
                 ? "cursor-default border-zinc-200 dark:border-zinc-700"
                 : dragging
-                  ? "cursor-pointer border-neutral-500 bg-neutral-50/80 dark:border-neutral-400 dark:bg-neutral-800/80"
-                  : "cursor-pointer border-zinc-300 hover:border-neutral-400 hover:bg-white dark:border-zinc-600 dark:hover:border-neutral-500 dark:hover:bg-zinc-900"
+                  ? "cursor-pointer border-neutral-500 bg-neutral-50/80 dark:border-neutral-600 dark:bg-zinc-900/60"
+                  : "cursor-pointer border-zinc-300 hover:border-neutral-400 hover:bg-white dark:border-zinc-700 dark:hover:border-neutral-600 dark:hover:bg-zinc-900/60"
               }`}
           >
             {ready ? (
@@ -386,10 +386,6 @@ export default function UploadScreen({
           </div>}
 
           {!isElectron && <div className="mt-6 flex flex-col items-center gap-2">
-            <p className="flex items-center justify-center gap-1.5 text-center text-xs text-zinc-400 dark:text-zinc-500">
-              <Lock size={12} />
-              No uploads, no accounts — your media never leaves this device.
-            </p>
             <SocialLinks variant="text" />
           </div>}
         </div>
