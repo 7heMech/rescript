@@ -14,6 +14,8 @@ export const MIN_CLIP_DURATION = 0.05;
 
 /** Ignore splits this close to an existing edge (seconds). */
 export const SPLIT_EPSILON = 0.04;
+/** Tiny seek offset so playhead lands just inside a kept region. */
+export const PLAYHEAD_EPSILON_S = 0.001;
 
 /**
  * Compute cut ranges from deleted words only (silence between adjacent deleted

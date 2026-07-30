@@ -3,6 +3,7 @@ import type { Word } from "./types";
 /** Caption / transcript files we can turn into timed words. */
 export const TRANSCRIPT_ACCEPT =
   ".srt,.vtt,.json,application/json,text/vtt,text/plain";
+export const TRANSCRIPT_FILE_ERROR = "Choose an SRT, VTT, or JSON file.";
 
 const TRANSCRIPT_EXT = /\.(srt|vtt|json)$/i;
 

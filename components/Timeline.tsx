@@ -10,20 +10,12 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import {
-  ChevronFirst,
-  ChevronLast,
   ChevronLeft,
   ChevronRight,
-  ChevronsLeft,
-  ChevronsRight,
   Maximize2,
   Merge,
   Pause,
   Play,
-  RotateCcwClock,
-  RotateCcwSquare,
-  RotateCwFadingClock,
-  RotateCwSquare,
   SquareSplitHorizontal,
   ZoomIn,
   ZoomOut,
@@ -34,7 +26,6 @@ import {
   formatTime,
   getActiveSceneBoundaries,
   getClipSegments,
-  getCutRanges,
   getEditedDuration,
   getKeepRanges,
   isWordCutOut,
@@ -42,10 +33,11 @@ import {
   trimEdgeBounds,
 } from "@/lib/edits";
 import type { ClipSegment, Word } from "@/lib/types";
+import { VAD_SAMPLE_RATE } from "@/lib/vad";
+import { useCutRanges } from "@/hooks/useCutRanges";
 
 const RULER_H = 18;
 const WORDBAR_H = 28;
-const SAMPLE_RATE = 16000;
 const TICK_STEPS = [0.1, 0.25, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600];
 /** Pixels-per-second below which the timeline is considered "small". */
 const SMALL_PPS = 22;
@@ -71,7 +63,6 @@ type DragKind =
 export default function Timeline() {
   const audio = useEditorStore((s) => s.audio);
   const words = useEditorStore((s) => s.words);
-  const manualCuts = useEditorStore((s) => s.manualCuts);
   const sceneBoundaries = useEditorStore((s) => s.sceneBoundaries);
   const duration = useEditorStore((s) => s.duration);
   const currentTime = useEditorStore((s) => s.currentTime);
@@ -80,10 +71,7 @@ export default function Timeline() {
   const selectedWordIds = useEditorStore((s) => s.selectedWordIds);
   const status = useEditorStore((s) => s.status);
 
-  const cuts = useMemo(
-    () => getCutRanges(words, duration, manualCuts),
-    [words, duration, manualCuts]
-  );
+  const cuts = useCutRanges();
   const keeps = useMemo(() => getKeepRanges(cuts, duration), [cuts, duration]);
   const clips = useMemo(
     () => getClipSegments(keeps, sceneBoundaries),
@@ -235,12 +223,12 @@ export default function Timeline() {
     }
 
     // Waveform
-    const samplesPerPx = SAMPLE_RATE / pps;
+    const samplesPerPx = VAD_SAMPLE_RATE / pps;
     const stride = Math.max(1, Math.floor(samplesPerPx / 40));
     for (let x = 0; x < width; x++) {
       const t = (scrollLeft + x) / pps;
       if (t > duration) break;
-      const i0 = Math.floor(t * SAMPLE_RATE);
+      const i0 = Math.floor(t * VAD_SAMPLE_RATE);
       const i1 = Math.min(audio.length, Math.floor(i0 + samplesPerPx) + 1);
       let min = 0;
       let max = 0;
@@ -335,9 +323,7 @@ export default function Timeline() {
   );
 
   const seekTo = useCallback((t: number) => {
-    const { videoEl, setCurrentTime } = useEditorStore.getState();
-    if (videoEl) videoEl.currentTime = t;
-    setCurrentTime(t);
+    useEditorStore.getState().seekTo(t);
   }, []);
 
   const endDrag = useCallback(() => {
@@ -473,11 +459,6 @@ export default function Timeline() {
     [cuts]
   );
 
-  const doSplit = useCallback(() => {
-    const ok = useEditorStore.getState().splitAtPlayhead();
-    if (!ok) return;
-  }, []);
-
   const editedDuration = useMemo(
     () => getEditedDuration(cuts, duration),
     [cuts, duration]
@@ -564,7 +545,9 @@ export default function Timeline() {
           <button
             type="button"
             disabled={!ready || !splitOk}
-            onClick={doSplit}
+            onClick={() => {
+              useEditorStore.getState().splitAtPlayhead();
+            }}
             title={
               splitOk
                 ? "Split clip at playhead (S)"
