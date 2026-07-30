@@ -56,6 +56,13 @@ body {
   background: transparent;
 }
 
+/* Tailwind's `scrollbar-none` only sets scrollbar-width; Safari before 18.2
+   needs this too. The transcript relies on it to hide its scrollbar in favour
+   of its own time rail (see TranscriptScrollIndicator). */
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
 /* Timeline: split confirmation flash */
 @keyframes tl-split-flash {
   0% {
