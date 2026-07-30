@@ -20,7 +20,7 @@ const MENU_LINKS = [
     href: `${GITHUB_REPO_URL}/issues`,
     Icon: Bug,
   },
-  { label: "Source code", href: GITHUB_REPO_URL, Icon: GitHubIcon },
+  { label: "Homepage", href: GITHUB_REPO_URL, Icon: GitHubIcon },
   { label: "Follow on X", href: X_PROFILE_URL, Icon: XIcon },
 ] as const;
 
