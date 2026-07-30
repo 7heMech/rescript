@@ -28,6 +28,12 @@ import {
   saveModelPreference,
 } from "./models";
 import type { ModelChoice } from "./models";
+import {
+  isTranscriptLanguage,
+  loadTranscriptLanguagePreference,
+  saveTranscriptLanguagePreference,
+  type TranscriptLanguage,
+} from "./languages";
 import { detectMediaKind, type MediaKind } from "./media";
 import {
   deleteProject,
@@ -51,6 +57,8 @@ interface EditorState {
   audio: Float32Array | null;
   /** Transcript source selected on the upload screen (Whisper or import). */
   model: ModelChoice;
+  /** Language hint sent to Whisper when transcribing. */
+  transcriptLanguage: TranscriptLanguage;
   /**
    * Caption file parsed on the upload screen when source is "import".
    * Cleared when switching back to a Whisper model or after media loads.
@@ -110,6 +118,7 @@ interface EditorState {
   /** Delete a saved project; if it is the active one, resets to the home screen. */
   removeProject: (id: string) => Promise<void>;
   setModel: (m: ModelChoice) => void;
+  setTranscriptLanguage: (language: TranscriptLanguage) => void;
   setPendingTranscript: (t: PendingTranscript | null) => void;
   setDuration: (d: number) => void;
   setAudio: (a: Float32Array | null) => void;
@@ -231,6 +240,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   duration: 0,
   audio: null,
   model: "base",
+  transcriptLanguage: "en",
   pendingTranscript: null,
   projectId: null,
   skipTranscription: false,
@@ -313,6 +323,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       mediaKind: record.mediaKind,
       duration: record.duration,
       model: isModelChoice(record.model) ? record.model : "base",
+      transcriptLanguage: isTranscriptLanguage(record.transcriptLanguage)
+        ? record.transcriptLanguage
+        : "en",
       projectId: record.id,
       skipTranscription: true,
       pendingTranscript: null,
@@ -352,6 +365,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     } else {
       set({ model });
     }
+  },
+  setTranscriptLanguage: (transcriptLanguage) => {
+    saveTranscriptLanguagePreference(transcriptLanguage);
+    set({ transcriptLanguage });
   },
   setPendingTranscript: (pendingTranscript) => set({ pendingTranscript }),
   setDuration: (duration) => {
@@ -671,6 +688,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       duration: 0,
       audio: null,
       model: loadModelPreference(),
+      transcriptLanguage: loadTranscriptLanguagePreference(),
       pendingTranscript: null,
       projectId: null,
       skipTranscription: false,
@@ -701,5 +719,13 @@ export function hydrateModelPreference() {
   const stored = loadModelPreference();
   if (stored !== useEditorStore.getState().model) {
     useEditorStore.setState({ model: stored });
+  }
+}
+
+/** Apply the stored transcript language after mount (avoids SSR/localStorage mismatch). */
+export function hydrateTranscriptLanguagePreference() {
+  const stored = loadTranscriptLanguagePreference();
+  if (stored !== useEditorStore.getState().transcriptLanguage) {
+    useEditorStore.setState({ transcriptLanguage: stored });
   }
 }

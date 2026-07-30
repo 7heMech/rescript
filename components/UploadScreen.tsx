@@ -22,6 +22,7 @@ import ModelSelector, {
   ModelOptionSeparator,
 } from "./ModelSelector";
 import ImportTranscriptOption from "./ImportTranscriptOption";
+import LanguageSelector from "./LanguageSelector";
 import { useCrossOriginIsolated } from "@/hooks/useCrossOriginIsolated";
 import { detectMediaKind, MEDIA_ACCEPT } from "@/lib/media";
 import { formatTime } from "@/lib/edits";
@@ -256,7 +257,7 @@ export default function UploadScreen({
       <div className="flex min-h-full items-center justify-center p-6">
         <div className="w-full max-w-xl">
           {!isElectron && (
-            <div className="mb-6 flex items-center justify-between gap-3">
+            <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex min-w-0 items-center">
                 <Image
                   src={logo}
@@ -270,9 +271,10 @@ export default function UploadScreen({
                   Rescript
                 </p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2 sm:justify-end">
                 <SettingsMenu />
                 <div className="h-5 w-px bg-zinc-200 dark:bg-zinc-700" />
+                <LanguageSelector />
                 <ModelSelector groupLabel="Transcript source">
                   <ModelOption id="base" />
                   <ModelOption id="small" />
