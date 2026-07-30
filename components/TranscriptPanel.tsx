@@ -28,6 +28,7 @@ import {
   isWordCutOut,
   mapSplitsToWords,
 } from "@/lib/edits";
+import { useTranscriptSelection } from "@/hooks/useTranscriptSelection";
 
 export const SPEAKER_COLORS = [
   "#16a34a", // green
@@ -119,27 +120,6 @@ const SplitMarker = memo(function SplitMarker({
   );
 });
 
-interface SelectionInfo {
-  ids: number[];
-  anyDeleted: boolean;
-  anyKept: boolean;
-  top: number;
-  left: number;
-}
-
-/** Walk up from a Range boundary to the nearest word span inside `container`. */
-function wordElFromNode(
-  node: Node | null,
-  container: HTMLElement
-): HTMLElement | null {
-  let n: Node | null = node;
-  while (n && n !== container) {
-    if (n instanceof HTMLElement && n.dataset.wid != null) return n;
-    n = n.parentNode;
-  }
-  return null;
-}
-
 export default function TranscriptPanel() {
   const words = useEditorStore((s) => s.words);
   const manualCuts = useEditorStore((s) => s.manualCuts);
@@ -157,7 +137,6 @@ export default function TranscriptPanel() {
   const importWords = useEditorStore((s) => s.importWords);
   const removeSceneBoundary = useEditorStore((s) => s.removeSceneBoundary);
   const selectedWordIds = useEditorStore((s) => s.selectedWordIds);
-  const setSelectedWords = useEditorStore((s) => s.setSelectedWords);
   const playing = useEditorStore((s) => s.playing);
   const activeWordId = useEditorStore((s) => findActiveWordId(s.words, s.currentTime));
 
@@ -172,10 +151,6 @@ export default function TranscriptPanel() {
     }
     return ids;
   }, [words, cuts]);
-  // Keep cut-out state in a ref so click handlers stay stable and WordSpan
-  // memo isn't invalidated whenever the Set identity changes after an edit.
-  const cutOutIdsRef = useRef(cutOutIds);
-  cutOutIdsRef.current = cutOutIds;
 
   // Splits get a joinable edit boundary in the transcript, like the timeline's
   // marker. Splits at the edge of a skipped region are inert and hidden in both.
@@ -191,7 +166,6 @@ export default function TranscriptPanel() {
   const containerRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
-  const [selection, setSelection] = useState<SelectionInfo | null>(null);
   const [correcting, setCorrecting] = useState<{
     ids: number[];
     top: number;
@@ -199,9 +173,21 @@ export default function TranscriptPanel() {
     containerWidth: number;
   } | null>(null);
   const [correctText, setCorrectText] = useState("");
-  // Mirrors `correcting` so the selectionchange handler (which has its own
-  // dependency list) can freeze the highlight while the popover is open.
+  // Mirrors `correcting` so selection handlers can freeze highlights while open.
   const correctingRef = useRef(false);
+
+  const {
+    selection,
+    clearSelection,
+    clearMarks,
+    handleWordClick,
+    releaseToolbar,
+  } = useTranscriptSelection({
+    containerRef,
+    scrollRef,
+    cutOutIds,
+    correctingRef,
+  });
 
   const turns = useMemo<SpeakerTurn[]>(() => {
     const out: SpeakerTurn[] = [];
@@ -252,273 +238,6 @@ export default function TranscriptPanel() {
     [removeSceneBoundary]
   );
 
-  const seekToWord = useCallback((word: Word) => {
-    const { videoEl, setCurrentTime } = useEditorStore.getState();
-    if (videoEl) videoEl.currentTime = word.start + 0.001;
-    setCurrentTime(word.start + 0.001);
-  }, []);
-
-  // Track text selection over word spans, position the floating toolbar, and
-  // paint our own (dimmed, gap-free) highlight by marking the selected spans.
-  // The native ::selection highlight is made transparent over the words, and
-  // the marking is done imperatively so dragging doesn't re-render the panel.
-  const markedRef = useRef<Set<HTMLElement>>(new Set());
-  // True while the current selection came from clicking a single word. There is
-  // no native range in that case, so the collapsed-selection branch of the
-  // selectionchange handler must not wipe it.
-  const clickSelectionRef = useRef(false);
-  // True between mousedown and mouseup — selectionchange only paints marks
-  // while dragging; React/Zustand sync waits for mouseup.
-  const mouseDownRef = useRef(false);
-
-  const clearMarks = useCallback(() => {
-    for (const el of markedRef.current) el.removeAttribute("data-sel");
-    markedRef.current.clear();
-  }, []);
-
-  const clearSelection = useCallback(() => {
-    clearMarks();
-    clickSelectionRef.current = false;
-    setSelection(null);
-    setSelectedWords([]);
-    window.getSelection()?.removeAllRanges();
-  }, [clearMarks, setSelectedWords]);
-
-  // Clicking a word seeks to it and selects it, so the toolbar and the
-  // Delete/Backspace shortcut work on single words too — not just drags.
-  const handleWordClick = useCallback(
-    (word: Word, el: HTMLElement) => {
-      const nativeSel = window.getSelection();
-      // A drag ends with a click on the word under the cursor; leave the
-      // range-based selection (and the playhead) alone in that case.
-      if (nativeSel && !nativeSel.isCollapsed) return;
-      seekToWord(word);
-      const container = containerRef.current;
-      if (!container) return;
-      clearMarks();
-      el.setAttribute("data-sel", "");
-      markedRef.current.add(el);
-      clickSelectionRef.current = true;
-      const rect = el.getBoundingClientRect();
-      const containerRect = container.getBoundingClientRect();
-      const cutOut = cutOutIdsRef.current.has(word.id);
-      setSelection({
-        ids: [word.id],
-        anyDeleted: cutOut,
-        anyKept: !cutOut,
-        top: rect.top - containerRect.top - 44,
-        left: Math.max(8, rect.left - containerRect.left + rect.width / 2),
-      });
-      setSelectedWords([word.id]);
-    },
-    [seekToWord, clearMarks, setSelectedWords]
-  );
-
-  // Paint data-sel marks on every selectionchange; only push selection into
-  // React/Zustand when the mouse is up. Dragging otherwise re-rendered the
-  // whole panel + timeline on every tick.
-  useEffect(() => {
-    const syncSelectionToReact = (info: SelectionInfo | null) => {
-      setSelection(info);
-      const ids = info?.ids ?? [];
-      const prev = useEditorStore.getState().selectedWordIds;
-      if (
-        prev.length !== ids.length ||
-        prev.some((id, i) => id !== ids[i])
-      ) {
-        setSelectedWords(ids);
-      }
-    };
-
-    const markWordRange = (
-      container: HTMLElement,
-      range: Range
-    ): SelectionInfo | null => {
-      const all = container.querySelectorAll<HTMLElement>("[data-wid]");
-      if (all.length === 0) return null;
-
-      const startEl = wordElFromNode(range.startContainer, container);
-      const endEl = wordElFromNode(range.endContainer, container);
-
-      const ids: number[] = [];
-      let anyDeleted = false;
-      let anyKept = false;
-      const marked = new Set<HTMLElement>();
-
-      const markEl = (el: HTMLElement) => {
-        const id = Number(el.dataset.wid);
-        ids.push(id);
-        el.setAttribute("data-sel", "");
-        marked.add(el);
-        if (cutOutIdsRef.current.has(id)) anyDeleted = true;
-        else anyKept = true;
-      };
-
-      if (startEl && endEl) {
-        // Contiguous mark between Range endpoints — avoids intersectsNode
-        // on every word (the hot path during drag).
-        let marking = false;
-        for (const el of all) {
-          const atBoundary = el === startEl || el === endEl;
-          if (atBoundary) {
-            markEl(el);
-            if (startEl === endEl) break;
-            if (marking) break;
-            marking = true;
-          } else if (marking) {
-            markEl(el);
-          }
-        }
-      } else {
-        // Fallback when a boundary isn't inside a word span.
-        for (const el of all) {
-          if (range.intersectsNode(el)) markEl(el);
-        }
-      }
-
-      for (const el of markedRef.current) {
-        if (!marked.has(el)) el.removeAttribute("data-sel");
-      }
-      markedRef.current = marked;
-
-      if (ids.length === 0) return null;
-
-      const rect = range.getBoundingClientRect();
-      const containerRect = container.getBoundingClientRect();
-      return {
-        ids,
-        anyDeleted,
-        anyKept,
-        top: rect.top - containerRect.top - 44,
-        left: Math.max(8, rect.left - containerRect.left + rect.width / 2),
-      };
-    };
-
-    const updateFromNativeSelection = (commit: boolean) => {
-      if (correctingRef.current) return;
-      const container = containerRef.current;
-      const sel = window.getSelection();
-      if (!container || !sel || sel.isCollapsed || sel.rangeCount === 0) {
-        // A click collapses the native selection; that must not clear the
-        // single-word selection the click itself is about to create.
-        if (clickSelectionRef.current) return;
-        clearMarks();
-        if (commit) syncSelectionToReact(null);
-        else setSelection(null);
-        return;
-      }
-      const range = sel.getRangeAt(0);
-      if (!container.contains(range.commonAncestorContainer)) {
-        if (clickSelectionRef.current) return;
-        clearMarks();
-        if (commit) syncSelectionToReact(null);
-        else setSelection(null);
-        return;
-      }
-      clickSelectionRef.current = false;
-      const info = markWordRange(container, range);
-      if (!commit) {
-        // Hide a stale toolbar while dragging; marks stay imperative.
-        setSelection(null);
-        return;
-      }
-      syncSelectionToReact(info);
-    };
-
-    const onSelectionChange = () => {
-      updateFromNativeSelection(!mouseDownRef.current);
-    };
-
-    const onMouseDown = () => {
-      mouseDownRef.current = true;
-    };
-
-    const onMouseUp = (e: MouseEvent) => {
-      if (!mouseDownRef.current) return;
-      mouseDownRef.current = false;
-      const sel = window.getSelection();
-      if (sel && !sel.isCollapsed) {
-        updateFromNativeSelection(true);
-        return;
-      }
-      // Collapsed: mouseup on a word is owned by the click handler. Elsewhere,
-      // commit the clear (unless a click-selection is already active).
-      const target = e.target as HTMLElement | null;
-      if (target?.closest?.("[data-wid]")) return;
-      if (clickSelectionRef.current) return;
-      clearMarks();
-      syncSelectionToReact(null);
-    };
-
-    document.addEventListener("selectionchange", onSelectionChange);
-    document.addEventListener("mousedown", onMouseDown);
-    document.addEventListener("mouseup", onMouseUp);
-    return () => {
-      // A click selection has no native range to track, so keep its highlight
-      // across the re-subscriptions this effect goes through.
-      if (!clickSelectionRef.current) clearMarks();
-      document.removeEventListener("selectionchange", onSelectionChange);
-      document.removeEventListener("mousedown", onMouseDown);
-      document.removeEventListener("mouseup", onMouseUp);
-    };
-  }, [clearMarks, setSelectedWords]);
-
-  // A click-based selection has no native range, so nothing else would drop it:
-  // clear it when the next mousedown lands outside the words and the toolbar.
-  // Only presses inside this panel count — the timeline owns its own clearing,
-  // and clicking a word chip there must not wipe the selection it just made.
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (!clickSelectionRef.current || correctingRef.current) return;
-      const target = e.target as HTMLElement | null;
-      if (!target || !scrollRef.current?.contains(target)) return;
-      if (target.closest("[data-wid], [data-transcript-toolbar]")) return;
-      clearSelection();
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [clearSelection]);
-
-  // Mirror a selection made elsewhere (the timeline wordbar) into this panel:
-  // highlight the words, scroll them into view and place the toolbar. Selections
-  // that originated here already match, so this is a no-op for them.
-  useEffect(() => {
-    if (correctingRef.current) return;
-    const container = containerRef.current;
-    if (!container) return;
-    const shown = selection?.ids ?? [];
-    if (
-      shown.length === selectedWordIds.length &&
-      shown.every((id, i) => id === selectedWordIds[i])
-    ) {
-      return;
-    }
-    const els = selectedWordIds
-      .map((id) => container.querySelector<HTMLElement>(`[data-wid="${id}"]`))
-      .filter((el): el is HTMLElement => el !== null);
-    clearMarks();
-    if (els.length === 0) {
-      clickSelectionRef.current = false;
-      setSelection(null);
-      return;
-    }
-    for (const el of els) {
-      el.setAttribute("data-sel", "");
-      markedRef.current.add(el);
-    }
-    clickSelectionRef.current = true;
-    els[0].scrollIntoView({ block: "nearest" });
-    const rect = els[0].getBoundingClientRect();
-    const containerRect = container.getBoundingClientRect();
-    setSelection({
-      ids: selectedWordIds,
-      anyDeleted: selectedWordIds.some((id) => cutOutIds.has(id)),
-      anyKept: selectedWordIds.some((id) => !cutOutIds.has(id)),
-      top: rect.top - containerRect.top - 44,
-      left: Math.max(8, rect.left - containerRect.left + rect.width / 2),
-    });
-  }, [selectedWordIds, selection, cutOutIds, clearMarks]);
-
   const cutSelection = useCallback(() => {
     if (!selection) return;
     deleteWords(selection.ids);
@@ -539,7 +258,6 @@ export default function TranscriptPanel() {
       .map((w) => w.text)
       .join(" ");
     correctingRef.current = true;
-    clickSelectionRef.current = false;
     setCorrectText(text);
     setCorrecting({
       ids: selection.ids,
@@ -547,16 +265,14 @@ export default function TranscriptPanel() {
       left: selection.left,
       containerWidth: containerRef.current?.clientWidth ?? 640,
     });
-    setSelection(null);
-    window.getSelection()?.removeAllRanges();
-  }, [selection, words]);
+    releaseToolbar();
+  }, [selection, words, releaseToolbar]);
 
   const closeCorrect = useCallback(() => {
     correctingRef.current = false;
-    for (const el of markedRef.current) el.removeAttribute("data-sel");
-    markedRef.current.clear();
+    clearMarks();
     setCorrecting(null);
-  }, []);
+  }, [clearMarks]);
 
   const applyCorrection = useCallback(() => {
     if (!correcting) return;
