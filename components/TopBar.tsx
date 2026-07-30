@@ -35,7 +35,7 @@ export default function TopBar({children}: {children?: React.ReactNode}) {
       </span>
 
       {videoFile && (
-        <div className="pointer-events-none absolute left-1/2 hidden -translate-x-1/2 items-center text-[13px] text-zinc-500 sm:flex">
+        <div className="pointer-events-none absolute left-1/2 hidden -translate-x-1/2 items-center text-[13px] text-zinc-500 sm:flex line-clamp-1 truncate">
           {videoFile.name}
         </div>
       )}

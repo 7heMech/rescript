@@ -157,7 +157,7 @@ export default function MediaPreview() {
         <button
           onClick={togglePlay}
           title="Play / pause (space)"
-          className="flex h-10 w-10 items-center justify-center rounded-full bg-zinc-900 text-white shadow transition hover:bg-zinc-700"
+          className="flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-full bg-zinc-900 text-white shadow transition hover:bg-zinc-700"
         >
           {playing ? <Pause size={16} /> : <Play size={16} className="ml-0.5" />}
         </button>
