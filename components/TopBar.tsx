@@ -21,14 +21,14 @@ export default function TopBar({children}: {children?: React.ReactNode}) {
 
   return (
     <header
-      className={`flex h-13 shrink-0 items-center gap-2 border-b border-zinc-200 bg-white pr-3 transition-[padding-left] duration-200 ease-out ${
+      className={`flex h-13 shrink-0 items-center gap-2 border-b border-zinc-200 bg-white pr-3 transition-[padding-left] duration-200 ease-out dark:border-zinc-800 dark:bg-zinc-900 ${
         draggable ? "app-drag" : ""
       } ${trafficLights ? "pl-22" : "pl-3"}`}
     >
       <button
         onClick={reset}
         title="Start over"
-        className="app-no-drag flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-800"
+        className="app-no-drag flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
       >
         <Image
           src={logo}
@@ -39,13 +39,13 @@ export default function TopBar({children}: {children?: React.ReactNode}) {
           className="rounded-sm"
         />
       </button>
-      <span className="text-sm font-semibold tracking-tight text-zinc-800">
+      <span className="text-sm font-semibold tracking-tight text-zinc-800 dark:text-zinc-100">
         Rescript
       </span>
 
       {videoFile && (
         <div
-          className="pointer-events-none absolute left-1/2 hidden -translate-x-1/2 items-center text-[13px] text-zinc-500 sm:flex"
+          className="pointer-events-none absolute left-1/2 hidden -translate-x-1/2 items-center text-[13px] text-zinc-500 sm:flex dark:text-zinc-400"
           title={videoFile.name}
         >
           {truncateMiddle(videoFile.name)}

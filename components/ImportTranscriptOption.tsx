@@ -211,7 +211,7 @@ function ImportTrigger({
     {
       label,
       icon: FileText,
-      iconClassName: error ? "text-red-500" : "text-zinc-500",
+      iconClassName: error ? "text-red-500" : "text-zinc-500 dark:text-zinc-400",
       busy,
     },
     enabled
@@ -235,7 +235,7 @@ function ImportStatus({
   return (
     <span
       className={`pl-[1.625rem] text-[11px] leading-snug ${
-        error ? "text-red-500" : "text-zinc-500"
+        error ? "text-red-500" : "text-zinc-500 dark:text-zinc-400"
       }`}
     >
       {reading ? (

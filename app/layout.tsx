@@ -57,6 +57,7 @@ export default function RootLayout({
     <html
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      style={{ colorScheme: "light dark" }}
     >
       <head>
         {/* Provides COOP/COEP via a service worker on static hosts (GitHub

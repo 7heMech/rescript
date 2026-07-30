@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, protocol, screen, shell, net } from "electron";
+import { app, BrowserWindow, ipcMain, nativeTheme, protocol, screen, shell, net } from "electron";
 import { join, normalize, extname } from "node:path";
 import { pathToFileURL } from "node:url";
 import { existsSync, statSync } from "node:fs";
@@ -151,7 +151,9 @@ function createWindow(): BrowserWindow {
     ...WINDOW_SIZES.compact,
     minWidth: MIN_SIZE.width,
     minHeight: MIN_SIZE.height,
-    backgroundColor: "#fafafa",
+    // Match the page shell (zinc-50 / zinc-950) so the window doesn't flash
+    // the wrong chrome while the renderer boots.
+    backgroundColor: nativeTheme.shouldUseDarkColors ? "#09090b" : "#fafafa",
     title: "Rescript",
     show: false,
     // macOS: drop the native title bar and let the page's top bar / upload drag

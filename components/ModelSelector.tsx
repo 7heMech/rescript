@@ -194,7 +194,7 @@ export default function ModelSelector({
           aria-expanded={open}
           aria-controls={listId}
           onClick={() => setOpen((v) => !v)}
-          className="inline-flex max-w-[14rem] items-center gap-2 rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-[13px] font-medium text-zinc-800 cursor-pointer transition hover:border-zinc-300 hover:bg-zinc-50"
+          className="inline-flex max-w-[14rem] items-center gap-2 rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-[13px] font-medium text-zinc-800 cursor-pointer transition hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:border-zinc-600 dark:hover:bg-zinc-800"
         >
           {activeTrigger?.busy ? (
             <Loader2 size={14} className="shrink-0 animate-spin text-zinc-500" />
@@ -207,7 +207,7 @@ export default function ModelSelector({
           <span className="truncate">{triggerLabel}</span>
           <ChevronDown
             size={14}
-            className={`shrink-0 text-zinc-400 transition ${open ? "rotate-180" : ""}`}
+            className={`shrink-0 text-zinc-400 transition dark:text-zinc-500 ${open ? "rotate-180" : ""}`}
           />
         </button>
 
@@ -218,12 +218,12 @@ export default function ModelSelector({
           hidden={!open}
           // Force display:none when closed so a lingering panel cannot eat clicks
           // (HTML [hidden] can be overridden by author CSS in some setups).
-          className={`absolute right-0 top-[calc(100%+0.5rem)] z-20 w-[18rem] overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-lg shadow-zinc-900/5 ${
+          className={`absolute right-0 top-[calc(100%+0.5rem)] z-20 w-[18rem] overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-lg shadow-zinc-900/5 dark:border-zinc-700 dark:bg-zinc-900 dark:shadow-black/40 ${
             open ? "" : "pointer-events-none"
           }`}
           style={open ? undefined : { display: "none" }}
         >
-          <p className="px-3 pb-1 pt-2.5 text-[11px] font-medium tracking-wide text-zinc-400">
+          <p className="px-3 pb-1 pt-2.5 text-[11px] font-medium tracking-wide text-zinc-400 dark:text-zinc-500">
             {groupLabel}
           </p>
           <div className="p-1 pb-1.5 space-y-1">{options}</div>
@@ -291,20 +291,20 @@ export function ModelOption({
         onClick={handleClick}
         className={`flex w-full flex-col gap-0.5 rounded-lg px-2.5 py-2 text-left transition cursor-pointer ${
           selected
-            ? "bg-zinc-100 text-zinc-900"
-            : "text-zinc-700 hover:bg-zinc-50"
+            ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
+            : "text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-800/60"
         }`}
       >
         <span className="flex w-full items-center gap-2.5">
           <Icon
             size={15}
-            className={selected ? "text-zinc-700" : "text-zinc-400"}
+            className={selected ? "text-zinc-700 dark:text-zinc-200" : "text-zinc-400 dark:text-zinc-500"}
           />
           <span className="min-w-0 flex-1 text-[13px] font-medium leading-tight">
             {resolvedLabel}
           </span>
           {resolvedMeta && (
-            <span className="shrink-0 text-[11px] text-zinc-400">{resolvedMeta}</span>
+            <span className="shrink-0 text-[11px] text-zinc-400 dark:text-zinc-500">{resolvedMeta}</span>
           )}
         </span>
         {children}
@@ -315,5 +315,5 @@ export function ModelOption({
 
 /** Separator between option groups (e.g. Whisper vs import). */
 export function ModelOptionSeparator() {
-  return <div className="my-1 border-t border-zinc-100" role="separator" />;
+  return <div className="my-1 border-t border-zinc-100 dark:border-zinc-800" role="separator" />;
 }

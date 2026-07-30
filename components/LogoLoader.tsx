@@ -41,7 +41,7 @@ export default function LogoLoader({
     <div
       role="img"
       aria-label="Loading"
-      className={`flex items-center justify-center rounded-[22%] bg-transparent text-black ${className}`}
+      className={`flex items-center justify-center rounded-[22%] bg-transparent text-zinc-900 dark:text-zinc-100 ${className}`}
       style={{ width: size, height: size }}
     >
       <svg

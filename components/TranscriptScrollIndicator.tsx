@@ -429,7 +429,7 @@ export default function TranscriptScrollIndicator({
             minorEls.current[i] = el;
           }}
           style={{ top: y, transitionDelay: `${Math.min(i * 4, 160)}ms` }}
-          className={`absolute right-2.5 h-px origin-right rounded-full bg-zinc-400 transition-transform duration-300 ease-out ${active ? "scale-x-100" : "scale-x-0"
+          className={`absolute right-2.5 h-px origin-right rounded-full bg-zinc-400 transition-transform duration-300 ease-out dark:bg-zinc-500 ${active ? "scale-x-100" : "scale-x-0"
             }`}
         />
       ))}
@@ -440,20 +440,20 @@ export default function TranscriptScrollIndicator({
             tickEls.current[i] = el;
           }}
           style={{ top: tick.y, transitionDelay: `${Math.min(i * 6, 140)}ms` }}
-          className={`absolute right-2.5 h-px origin-right rounded-full bg-zinc-400 transition-transform duration-300 ease-out ${active ? "scale-x-100" : "scale-x-0"
+          className={`absolute right-2.5 h-px origin-right rounded-full bg-zinc-400 transition-transform duration-300 ease-out dark:bg-zinc-500 ${active ? "scale-x-100" : "scale-x-0"
             }`}
         />
       ))}
-      {/* Gradient overlay */}
-      <div ref={gradientRef} className="absolute pointer-events-none right-0 bottom-0 w-12 h-8 bg-gradient-to-t from-white to-transparent" />
+      {/* Gradient overlay — must match the transcript panel surface */}
+      <div ref={gradientRef} className="absolute pointer-events-none right-0 bottom-0 w-12 h-8 bg-gradient-to-t from-white to-transparent dark:from-zinc-900" />
       <div
         ref={thumbRef}
-        className={`absolute top-0 right-0.5 w-1 rounded-full transition-colors ${active ? "bg-zinc-400" : "bg-zinc-300"
+        className={`absolute top-0 right-0.5 w-1 rounded-full transition-colors ${active ? "bg-zinc-400 dark:bg-zinc-500" : "bg-zinc-300 dark:bg-zinc-600"
           }`}
       />
       <span
         ref={labelRef}
-        className={`pointer-events-none absolute top-0 right-7 flex h-3.5 items-center text-[10px] font-medium tabular-nums whitespace-nowrap text-zinc-400 transition-opacity duration-200 ${active ? "opacity-100" : "opacity-0"
+        className={`pointer-events-none absolute top-0 right-7 flex h-3.5 items-center text-[10px] font-medium tabular-nums whitespace-nowrap text-zinc-400 transition-opacity duration-200 dark:text-zinc-500 ${active ? "opacity-100" : "opacity-0"
           }`}
       />
     </div>

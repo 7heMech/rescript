@@ -58,7 +58,7 @@ function SplitWorkspace({ orientation }: { orientation: "horizontal" | "vertical
   );
   const separator = (
     <Separator
-      className={`${horizontal ? "w-px" : "h-px"} bg-zinc-200 outline-none transition-colors hover:bg-zinc-300 data-[separator=active]:bg-zinc-400 data-[separator=focus]:bg-zinc-400`}
+      className={`${horizontal ? "w-px" : "h-px"} bg-zinc-200 outline-none transition-colors hover:bg-zinc-300 data-[separator=active]:bg-zinc-400 data-[separator=focus]:bg-zinc-400 dark:bg-zinc-800 dark:hover:bg-zinc-700 dark:data-[separator=active]:bg-zinc-500 dark:data-[separator=focus]:bg-zinc-500`}
     />
   );
 
@@ -222,7 +222,7 @@ export default function Editor() {
   }, []);
 
   return (
-    <div className="relative flex h-dvh flex-col overflow-hidden bg-zinc-50 text-zinc-900">
+    <div className="relative flex h-dvh flex-col overflow-hidden bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
       {status === "idle" ? (
         <>
           {isElectron && <TopBar>
@@ -239,12 +239,12 @@ export default function Editor() {
         <>
           <TopBar>
             <SocialLinks />
-            <div className="mx-1 h-5 w-px bg-zinc-200" />
+            <div className="mx-1 h-5 w-px bg-zinc-200 dark:bg-zinc-700" />
             <button
               onClick={undo}
               disabled={!canUndo}
               title="Undo (⌘Z)"
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-800 cursor-pointer disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent"
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-800 cursor-pointer disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
             >
               <Undo2 size={16} />
             </button>
@@ -252,15 +252,15 @@ export default function Editor() {
               onClick={redo}
               disabled={!canRedo}
               title="Redo (⇧⌘Z)"
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-800 cursor-pointer disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent"
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-800 cursor-pointer disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
             >
               <Redo2 size={16} />
             </button>
-            <div className="mx-1 h-5 w-px bg-zinc-200" />
+            <div className="mx-1 h-5 w-px bg-zinc-200 dark:bg-zinc-700" />
             <button
               onClick={() => setExportOpen(true)}
               disabled={status !== "ready" && status !== "exporting"}
-              className="flex ml-1 h-8 items-center gap-1.5 rounded-full bg-zinc-900 px-4 text-[13px] font-medium text-white transition hover:bg-zinc-700 cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
+              className="flex ml-1 h-8 items-center gap-1.5 rounded-full bg-zinc-900 px-4 text-[13px] font-medium text-white transition hover:bg-zinc-700 cursor-pointer disabled:cursor-not-allowed disabled:opacity-40 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
             >
               <Download size={14} />
               Export
@@ -272,7 +272,7 @@ export default function Editor() {
       )}
       {modeTransitioning && (
         <div
-          className="absolute inset-0 z-50 flex items-center justify-center bg-zinc-50"
+          className="absolute inset-0 z-50 flex items-center justify-center bg-zinc-50 dark:bg-zinc-950"
           aria-busy="true"
           aria-live="polite"
         >

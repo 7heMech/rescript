@@ -5,6 +5,10 @@
   --font-mono: var(--font-geist-mono);
 }
 
+html {
+  color-scheme: light dark;
+}
+
 body {
   font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
 }
@@ -115,4 +119,24 @@ body {
 .tl-word-handle:hover > span {
   opacity: 1 !important;
   width: 2px;
+}
+
+@media (prefers-color-scheme: dark) {
+  ::selection {
+    background: rgba(99, 102, 241, 0.28);
+  }
+
+  .transcript-words [data-wid][data-sel] {
+    background-color: rgb(67 56 202 / 0.45);
+  }
+  .transcript-words [data-wid][data-sel].word-deleted {
+    background-color: rgb(153 27 27 / 0.55);
+  }
+
+  .scrollbar-thin {
+    scrollbar-color: #52525b transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: #52525b;
+  }
 }
