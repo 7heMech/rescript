@@ -475,6 +475,7 @@ export default function Timeline() {
     () => getEditedDuration(cuts, duration),
     [cuts, duration]
   );
+  const trimmed = duration - editedDuration;
 
   const togglePlay = useCallback(() => {
     const media = useEditorStore.getState().videoEl;
@@ -509,47 +510,53 @@ export default function Timeline() {
 
   return (
     <footer className="flex h-40 shrink-0 flex-col border-t border-zinc-200 bg-white sm:h-52">
-      <div className="relative flex h-10 shrink-0 items-center gap-2 border-b border-zinc-100 px-3">
-        <div className="flex min-w-0 flex-1 items-center gap-1.5">
-          <span className="hidden shrink-0 text-xs font-semibold uppercase tracking-wider text-zinc-400 sm:inline">
-            Timeline
-          </span>
-          <span className="shrink-0 text-xs tabular-nums text-zinc-500">
+      <div className="relative flex h-10 shrink-0 items-center gap-2 border-b border-zinc-100 px-2.5">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <span className="shrink-0 text-[11px] font-mono tabular-nums leading-none text-zinc-900">
             {formatTime(originalToEdited(currentTime, cuts))}
-            <span className="text-zinc-300"> / {formatTime(editedDuration)}</span>
+            <span className="text-zinc-400"> / {formatTime(editedDuration)}</span>
           </span>
+          {trimmed > 0.01 && (
+            <span
+              title={`${formatTime(trimmed)} removed — original length ${formatTime(duration)}`}
+              className="hidden shrink-0 font-mono rounded-full bg-red-50 px-1.5 py-0.5 text-[10px] font-medium tabular-nums leading-none text-red-500 sm:inline-block"
+            >
+              −{formatTime(trimmed)}
+            </span>
+          )}
+        </div>
+
+        <div className="absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center gap-0.5">
           <button
             type="button"
+            disabled={!ready}
             onClick={() => skip(-5)}
             title="Back 5 s"
-            className="flex h-7 w-7 items-center justify-center rounded-full text-zinc-600 transition hover:bg-zinc-100"
+            className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-900 disabled:cursor-not-allowed disabled:text-zinc-300 disabled:hover:bg-transparent"
           >
             <SkipBack size={14} />
           </button>
           <button
             type="button"
+            disabled={!ready}
             onClick={togglePlay}
             title="Play / pause (space)"
-            className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full bg-zinc-900 text-white shadow transition hover:bg-zinc-700"
+            className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-zinc-900 text-white transition hover:bg-zinc-700 active:scale-95 disabled:cursor-not-allowed disabled:bg-zinc-200"
           >
-            {playing ? <Pause size={14} /> : <Play size={14} className="ml-0.5" />}
+            {playing ? <Pause size={13} /> : <Play size={13} className="ml-0.5" />}
           </button>
           <button
             type="button"
+            disabled={!ready}
             onClick={() => skip(5)}
             title="Forward 5 s"
-            className="flex h-7 w-7 items-center justify-center rounded-full text-zinc-600 transition hover:bg-zinc-100"
+            className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-900 disabled:cursor-not-allowed disabled:text-zinc-300 disabled:hover:bg-transparent"
           >
             <SkipForward size={14} />
           </button>
-          {editedDuration < duration - 0.01 && (
-            <span className="hidden truncate text-xs tabular-nums text-zinc-400 lg:inline">
-              original {formatTime(duration)}
-            </span>
-          )}
         </div>
 
-        <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
+        <div className="flex flex-1 items-center justify-end gap-1">
           <button
             type="button"
             disabled={!ready || !splitOk}
@@ -559,54 +566,54 @@ export default function Timeline() {
                 ? "Split clip at playhead (S)"
                 : "Move the playhead onto a kept region to split"
             }
-            className={`group cursor-pointer relative flex h-6 items-center gap-1 rounded-sm px-1 text-xs font-medium transition-all duration-200 ${
+            className={`flex h-7 items-center gap-1.5 rounded-lg px-2 text-xs font-medium transition ${
               ready && splitOk
-                ? "text-black hover:bg-neutral-100 active:scale-[0.97]"
-                : "cursor-not-allowed text-zinc-400"
+                ? "cursor-pointer text-zinc-700 hover:bg-zinc-100 hover:text-zinc-900 active:scale-[0.97]"
+                : "cursor-not-allowed text-zinc-300"
             }`}
           >
-            <SquareSplitHorizontal
-              size={13}
-              className={`transition-transform duration-300`}
-            />
-            Split
+            <SquareSplitHorizontal size={13} />
+            <span className="hidden sm:inline">Split</span>
             <kbd
-              className={`ml-0.5 rounded px-1 py-px text-[10px] font-normal ${
-                ready && splitOk
-                  ? "bg-zinc-200/80 text-zinc-800"
-                  : "bg-zinc-200/80 text-zinc-400"
+              className={`hidden rounded px-1 py-px text-[10px] font-normal sm:inline ${
+                ready && splitOk ? "bg-zinc-100 text-zinc-500" : "bg-zinc-100 text-zinc-300"
               }`}
             >
               S
             </kbd>
           </button>
-        </div>
 
-        <div className="flex flex-1 items-center justify-end gap-0.5">
-          <button
-            type="button"
-            onClick={() => setZoom((z) => Math.max(MIN_ZOOM, z / 1.5))}
-            title="Zoom out"
-            className="flex h-7 w-7 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-100"
-          >
-            <ZoomOut size={14} />
-          </button>
-          <button
-            type="button"
-            onClick={() => setZoom(1)}
-            title="Fit"
-            className="flex h-7 w-7 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-100"
-          >
-            <Maximize2 size={13} />
-          </button>
-          <button
-            type="button"
-            onClick={() => setZoom((z) => Math.min(MAX_ZOOM, z * 1.5))}
-            title="Zoom in — drag word edges to refine timing"
-            className="flex h-7 w-7 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-100"
-          >
-            <ZoomIn size={14} />
-          </button>
+          <div className="mx-0.5 h-4 w-px bg-zinc-200" />
+
+          <div className="flex items-center gap-0.5">
+            <button
+              type="button"
+              onClick={() => setZoom((z) => Math.max(MIN_ZOOM, z / 1.5))}
+              disabled={zoom <= MIN_ZOOM}
+              title="Zoom out"
+              className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-900 disabled:cursor-not-allowed disabled:text-zinc-300 disabled:hover:bg-transparent"
+            >
+              <ZoomOut size={14} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setZoom(1)}
+              disabled={zoom === 1}
+              title="Fit to window"
+              className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-900 disabled:cursor-not-allowed disabled:text-zinc-300 disabled:hover:bg-transparent"
+            >
+              <Maximize2 size={13} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setZoom((z) => Math.min(MAX_ZOOM, z * 1.5))}
+              disabled={zoom >= MAX_ZOOM}
+              title="Zoom in — drag word edges to refine timing"
+              className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-900 disabled:cursor-not-allowed disabled:text-zinc-300 disabled:hover:bg-transparent"
+            >
+              <ZoomIn size={14} />
+            </button>
+          </div>
         </div>
       </div>
 
