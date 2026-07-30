@@ -8,6 +8,11 @@
 
 import type { ModelChoice } from "./models";
 import { isModelChoice } from "./models";
+import type { TranscriptLanguage } from "./languages";
+import {
+  DEFAULT_TRANSCRIPT_LANGUAGE,
+  isTranscriptLanguage,
+} from "./languages";
 import type { MediaKind } from "./media";
 import type { ManualCut, SceneBoundary, Word } from "./types";
 
@@ -22,6 +27,7 @@ export interface ProjectMeta {
   mediaKind: MediaKind;
   duration: number;
   model: ModelChoice;
+  transcriptLanguage: TranscriptLanguage;
   updatedAt: number;
   createdAt: number;
 }
@@ -121,6 +127,9 @@ export async function listProjects(): Promise<ProjectMeta[]> {
       mediaKind: r.mediaKind,
       duration: r.duration,
       model: r.model,
+      transcriptLanguage: isTranscriptLanguage(r.transcriptLanguage)
+        ? r.transcriptLanguage
+        : DEFAULT_TRANSCRIPT_LANGUAGE,
       updatedAt: r.updatedAt,
       createdAt: r.createdAt,
     }))
@@ -159,6 +168,9 @@ export async function putProject(input: ProjectWrite): Promise<string> {
     mediaKind: input.mediaKind,
     duration: input.duration,
     model: isModelChoice(input.model) ? input.model : "base",
+    transcriptLanguage: isTranscriptLanguage(input.transcriptLanguage)
+      ? input.transcriptLanguage
+      : DEFAULT_TRANSCRIPT_LANGUAGE,
     words: input.words,
     showDeleted: input.showDeleted,
     manualCuts: input.manualCuts ?? [],

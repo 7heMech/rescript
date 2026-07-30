@@ -13,13 +13,26 @@ import {
 } from "react";
 import {
   AudioLines,
+  Check,
   ChevronDown,
+  ChevronRight,
   FileText,
+  Languages,
   Loader2,
   type LucideIcon,
 } from "lucide-react";
+import {
+  TRANSCRIPT_LANGUAGE_ORDER,
+  TRANSCRIPT_LANGUAGES,
+  type TranscriptLanguage,
+} from "@/lib/languages";
 import { MODELS, isWhisperModel, type ModelChoice } from "@/lib/models";
-import { hydrateModelPreference, useEditorStore } from "@/lib/store";
+import {
+  hydrateModelPreference,
+  hydrateTranscriptLanguagePreference,
+  useEditorStore,
+} from "@/lib/store";
+import PopupDismissBackdrop from "./PopupDismissBackdrop";
 
 export type ModelOptionContextValue = {
   /** Currently selected source id. */
@@ -110,6 +123,7 @@ export default function ModelSelector({
 }) {
   const model = useEditorStore((s) => s.model);
   const setModel = useEditorStore((s) => s.setModel);
+  const transcriptLanguage = useEditorStore((s) => s.transcriptLanguage);
   const [open, setOpen] = useState(false);
   const [triggers, setTriggers] = useState<Record<string, OptionTrigger>>({});
   const rootRef = useRef<HTMLDivElement>(null);
@@ -117,6 +131,7 @@ export default function ModelSelector({
 
   useEffect(() => {
     hydrateModelPreference();
+    hydrateTranscriptLanguagePreference();
   }, []);
 
   useEffect(() => {
@@ -186,13 +201,18 @@ export default function ModelSelector({
   // custom option (e.g. import) never shows the raw id + default wave icon.
   const TriggerIcon =
     activeTrigger?.icon ?? (model === "import" ? FileText : AudioLines);
-  const triggerLabel =
+  const baseTriggerLabel =
     activeTrigger?.label ??
     (isWhisperModel(model)
       ? MODELS[model].label
       : model === "import"
         ? "Import transcript"
         : String(model));
+  const languageInfo = TRANSCRIPT_LANGUAGES[transcriptLanguage];
+  const showLanguageInTrigger =
+    isWhisperModel(model) &&
+    !activeTrigger?.busy &&
+    transcriptLanguage !== "en";
 
   // Always mount options (hidden when closed) so custom triggers stay registered.
   const options = children ?? (
@@ -217,14 +237,20 @@ export default function ModelSelector({
 
   return (
     <ModelSelectorCtx.Provider value={ctx}>
-      <div ref={rootRef} className="relative shrink-0">
+      {open && <PopupDismissBackdrop onDismiss={() => setOpen(false)} />}
+      <div ref={rootRef} className="relative z-30 shrink-0">
         <button
           type="button"
           aria-haspopup="listbox"
           aria-expanded={open}
           aria-controls={listId}
+          aria-label={
+            showLanguageInTrigger
+              ? `${typeof baseTriggerLabel === "string" ? baseTriggerLabel : "Transcript source"}, ${languageInfo.label}`
+              : undefined
+          }
           onClick={() => setOpen((v) => !v)}
-          className="inline-flex max-w-[14rem] items-center gap-2 rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-[13px] font-medium text-zinc-800 cursor-pointer transition hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:border-zinc-600 dark:hover:bg-zinc-800"
+          className="inline-flex max-w-[18rem] items-center gap-2 rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-[13px] font-medium text-zinc-800 cursor-pointer transition hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:border-zinc-600 dark:hover:bg-zinc-800"
         >
           {activeTrigger?.busy ? (
             <Loader2 size={14} className="shrink-0 animate-spin text-zinc-500" />
@@ -234,7 +260,27 @@ export default function ModelSelector({
               className={`shrink-0 ${activeTrigger?.iconClassName ?? "text-zinc-500"}`}
             />
           )}
-          <span className="truncate">{triggerLabel}</span>
+          <span className="flex min-w-0 items-center gap-1.5 truncate">
+            <span className="truncate">{baseTriggerLabel}</span>
+            {showLanguageInTrigger && (
+              <>
+                <span
+                  className="shrink-0 font-normal text-zinc-300 dark:text-zinc-600"
+                  aria-hidden
+                >
+                  |
+                </span>
+                <Languages
+                  size={14}
+                  className="shrink-0 text-zinc-500 dark:text-zinc-400"
+                  aria-hidden
+                />
+                <span className="shrink-0 font-normal text-zinc-500 dark:text-zinc-400">
+                  {languageInfo.code}
+                </span>
+              </>
+            )}
+          </span>
           <ChevronDown
             size={14}
             className={`shrink-0 text-zinc-400 transition dark:text-zinc-500 ${open ? "rotate-180" : ""}`}
@@ -248,7 +294,7 @@ export default function ModelSelector({
           hidden={!open}
           // Force display:none when closed so a lingering panel cannot eat clicks
           // (HTML [hidden] can be overridden by author CSS in some setups).
-          className={`absolute right-0 top-[calc(100%+0.5rem)] z-20 w-[18rem] overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-lg shadow-zinc-900/5 dark:border-zinc-700 dark:bg-zinc-900 dark:shadow-black/40 ${
+          className={`absolute right-0 top-[calc(100%+0.5rem)] z-20 w-[18rem] overflow-visible rounded-xl border border-zinc-200 bg-white shadow-lg shadow-zinc-900/5 dark:border-zinc-700 dark:bg-zinc-900 dark:shadow-black/40 ${
             open ? "" : "pointer-events-none"
           }`}
           style={open ? undefined : { display: "none" }}
@@ -346,4 +392,121 @@ export function ModelOption({
 /** Separator between option groups (e.g. Whisper vs import). */
 export function ModelOptionSeparator() {
   return <div className="my-1 border-t border-zinc-100 dark:border-zinc-800" role="separator" />;
+}
+
+/** Language hint as a flyout submenu inside the model / transcript-source menu. */
+export function LanguageSection() {
+  const language = useEditorStore((s) => s.transcriptLanguage);
+  const setLanguage = useEditorStore((s) => s.setTranscriptLanguage);
+  const selector = useSelectorCtx();
+  const [submenuOpen, setSubmenuOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const submenuId = useId();
+  const active = TRANSCRIPT_LANGUAGES[language];
+
+  useEffect(() => {
+    if (!submenuOpen) return;
+    const onPointer = (e: PointerEvent) => {
+      if (!rootRef.current?.contains(e.target as Node)) setSubmenuOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        setSubmenuOpen(false);
+      }
+    };
+    document.addEventListener("pointerdown", onPointer);
+    document.addEventListener("keydown", onKey, true);
+    return () => {
+      document.removeEventListener("pointerdown", onPointer);
+      document.removeEventListener("keydown", onKey, true);
+    };
+  }, [submenuOpen]);
+
+  const select = (next: TranscriptLanguage) => {
+    setLanguage(next);
+    setSubmenuOpen(false);
+    selector.closeMenu();
+  };
+
+  return (
+    <div ref={rootRef}>
+      <p className="px-2.5 pb-1 pt-1.5 text-[11px] font-medium tracking-wide text-zinc-400 dark:text-zinc-500">
+        Language
+      </p>
+      <div className="relative">
+        <button
+          type="button"
+          aria-haspopup="menu"
+          aria-expanded={submenuOpen}
+          aria-controls={submenuId}
+          onClick={() => {
+            setSubmenuOpen((v) => !v);
+            selector.keepMenuOpen();
+          }}
+          className={`flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition ${
+            submenuOpen
+              ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
+              : "text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-800/60"
+          }`}
+        >
+          <span className="text-[15px] leading-none" aria-hidden>
+            {active.flag}
+          </span>
+          <span className="min-w-0 flex-1 text-[13px] font-medium leading-tight">
+            {active.nativeLabel}
+          </span>
+          <ChevronRight
+            size={14}
+            className={`shrink-0 text-zinc-400 transition dark:text-zinc-500 ${
+              submenuOpen ? "rotate-180" : ""
+            }`}
+          />
+        </button>
+
+        <div
+          id={submenuId}
+          role="menu"
+          aria-label="Transcript language"
+          hidden={!submenuOpen}
+          className={`absolute right-full top-0 z-30 mr-1.5 w-44 overflow-hidden rounded-xl border border-zinc-200 bg-white p-1 shadow-lg shadow-zinc-900/5 dark:border-zinc-700 dark:bg-zinc-900 dark:shadow-black/40 ${
+            submenuOpen ? "" : "pointer-events-none"
+          }`}
+          style={submenuOpen ? undefined : { display: "none" }}
+        >
+          {TRANSCRIPT_LANGUAGE_ORDER.map((id) => {
+            const option = TRANSCRIPT_LANGUAGES[id];
+            const selected = id === language;
+            return (
+              <button
+                key={id}
+                type="button"
+                role="menuitemradio"
+                aria-checked={selected}
+                onClick={() => select(id)}
+                className={`flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition ${
+                  selected
+                    ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
+                    : "text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-800/60"
+                }`}
+              >
+                <span className="text-[15px] leading-none" aria-hidden>
+                  {option.flag}
+                </span>
+                <span className="min-w-0 flex-1 text-[13px] font-medium leading-tight">
+                  {option.nativeLabel}
+                </span>
+                {selected && (
+                  <Check
+                    size={14}
+                    className="shrink-0 text-zinc-500 dark:text-zinc-300"
+                  />
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
 }

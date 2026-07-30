@@ -88,5 +88,6 @@ export interface WorkerRequest {
   duration: number;
   /** Which Whisper model to use (see lib/models.ts). */
   model: import("./models").WhisperModel;
-  language?: string;
+  /** Whisper language code for the transcript. */
+  language: import("./languages").TranscriptLanguage;
 }

@@ -6,6 +6,7 @@ import type { Word } from "./types";
  * because they are usually legitimate.
  */
 const FILLER_WORDS = new Set([
+  // English
   "um",
   "umm",
   "ummm",
@@ -19,9 +20,39 @@ const FILLER_WORDS = new Set([
   "ahh",
   "eh",
   "ehm",
+  // German
+  "äh",
+  "ähh",
+  "ähhh",
+  "ähm",
+  "ähmm",
+  "öh",
+  "öhm",
+  "ööhm",
+  // French
+  "euh",
+  "euuh",
+  "euuuh",
+  "euhm",
+  "heu",
+  "heum",
+  // Spanish
+  "em",
+  "emm",
+  "emmm",
+  "eee",
+  // Chinese
+  "嗯",
+  "嗯嗯",
+  "呃",
+  "额",
+  "唔",
+  // Shared hums / acknowledgements
   "hm",
   "hmm",
   "hmmm",
+  "mh",
+  "mhh",
   "mm",
   "mmm",
   "mhm",

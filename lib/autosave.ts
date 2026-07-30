@@ -66,6 +66,7 @@ async function writeSnapshot() {
       mediaKind: s.mediaKind,
       duration: s.duration,
       model: s.model,
+      transcriptLanguage: s.transcriptLanguage,
       words: s.words,
       showDeleted: s.showDeleted,
       manualCuts: s.manualCuts,

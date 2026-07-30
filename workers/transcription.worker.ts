@@ -470,6 +470,7 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
   const { audio, duration, model, language } = event.data;
   try {
     const choice: WhisperModel = model ?? "base";
+    const transcriptLanguage = language ?? "en";
 
     // Overlap Whisper + Silero downloads; diarizer warms in the background.
     getDiarizer().catch(() => {});
@@ -482,7 +483,7 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
 
     const { verbatimPrompt } = MODELS[choice];
     const promptedIds = verbatimPrompt
-      ? buildPromptedDecoderIds(transcriber, verbatimPrompt, language ?? "en")
+      ? buildPromptedDecoderIds(transcriber, verbatimPrompt, transcriptLanguage)
       : null;
     if (verbatimPrompt && !promptedIds) {
       console.warn("Could not build verbatim prompt tokens; using default decoding.");
@@ -555,7 +556,9 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
       // mid-utterance (second speaker dropped on continuous speech).
       no_repeat_ngram_size: 4,
       repetition_penalty: 1.05,
-      ...(promptedIds ? { decoder_input_ids: promptedIds } : { language }),
+      ...(promptedIds
+        ? { decoder_input_ids: promptedIds }
+        : { language: transcriptLanguage }),
     };
 
     const rawWords: Word[] = [];
