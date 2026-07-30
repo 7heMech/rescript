@@ -48,7 +48,14 @@ export async function flushProjectAutosave(): Promise<void> {
 async function writeSnapshot() {
   const s = useEditorStore.getState();
   if (s.status !== "ready") return;
-  if (!s.videoFile || !s.mediaKind || s.words.length === 0) return;
+  if (!s.videoFile || !s.mediaKind) return;
+  if (
+    s.words.length === 0 &&
+    s.manualCuts.length === 0 &&
+    s.sceneBoundaries.length === 0
+  ) {
+    return;
+  }
 
   try {
     // putProject preserves createdAt for an existing id within its own

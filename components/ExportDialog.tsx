@@ -13,6 +13,7 @@ export default function ExportDialog() {
   const videoFile = useEditorStore((s) => s.videoFile);
   const mediaKind = useEditorStore((s) => s.mediaKind);
   const duration = useEditorStore((s) => s.duration);
+  const hasAudioTrack = useEditorStore((s) => s.audio !== null);
   const status = useEditorStore((s) => s.status);
   const setStatus = useEditorStore((s) => s.setStatus);
   const exportUrl = useEditorStore((s) => s.exportUrl);
@@ -41,7 +42,9 @@ export default function ExportDialog() {
       const keeps = getKeepRanges(cuts, duration);
       const blob = isAudio
         ? await exportAudio(videoFile, keeps, editedDuration, setProgress)
-        : await exportVideo(videoFile, keeps, editedDuration, setProgress);
+        : await exportVideo(videoFile, keeps, editedDuration, setProgress, {
+            withAudio: hasAudioTrack,
+          });
       const prev = useEditorStore.getState().exportUrl;
       if (prev) URL.revokeObjectURL(prev);
       setExportUrl(URL.createObjectURL(blob));
@@ -50,7 +53,16 @@ export default function ExportDialog() {
     } finally {
       setStatus("ready");
     }
-  }, [videoFile, isAudio, cuts, duration, editedDuration, setStatus, setExportUrl]);
+  }, [
+    videoFile,
+    isAudio,
+    hasAudioTrack,
+    cuts,
+    duration,
+    editedDuration,
+    setStatus,
+    setExportUrl,
+  ]);
 
   if (!open) return null;
 

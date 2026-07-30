@@ -185,7 +185,7 @@ export default function Timeline() {
     ctx.lineTo(width, RULER_H + WORDBAR_H - 0.5);
     ctx.stroke();
 
-    if (!audio || duration === 0) return;
+    if (duration === 0) return;
 
     // Clip selection / hover washes on waveform
     for (const clip of clips) {
@@ -227,6 +227,7 @@ export default function Timeline() {
     }
 
     // Waveform
+    if (!audio) return;
     const samplesPerPx = VAD_SAMPLE_RATE / pps;
     const stride = Math.max(1, Math.floor(samplesPerPx / 40));
     for (let x = 0; x < width; x++) {

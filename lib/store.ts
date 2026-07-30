@@ -112,7 +112,7 @@ interface EditorState {
   setModel: (m: ModelChoice) => void;
   setPendingTranscript: (t: PendingTranscript | null) => void;
   setDuration: (d: number) => void;
-  setAudio: (a: Float32Array) => void;
+  setAudio: (a: Float32Array | null) => void;
   setStatus: (s: EditorStatus) => void;
   setProgress: (p: ProgressInfo) => void;
   setPartialText: (t: string) => void;

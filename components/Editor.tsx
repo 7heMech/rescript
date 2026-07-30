@@ -145,7 +145,7 @@ export default function Editor() {
         s.setProgress({ message: "Extracting audio…", value: null });
         const audio = await extractAudio(videoFile);
         s.setAudio(audio);
-        if (restoreOnly) {
+        if (restoreOnly || !audio) {
           s.setStatus("ready");
           s.setProgress({ message: "", value: null });
         } else {
