@@ -46,6 +46,8 @@ import type { ClipSegment, Word } from "@/lib/types";
 const RULER_H = 18;
 const WORDBAR_H = 28;
 const SAMPLE_RATE = 16000;
+/** Share of the waveform lane a full-scale (±1) signal fills, leaving a margin. */
+const WAVE_LANE_FILL = 0.9;
 const TICK_STEPS = [0.1, 0.25, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600];
 /** Pixels-per-second below which the timeline is considered "small". */
 const SMALL_PPS = 22;
@@ -251,7 +253,10 @@ export default function Timeline() {
       }
       const inCut = cuts.some((c) => t >= c.start && t < c.end);
       ctx.fillStyle = inCut ? "#fca5a5" : "#818cf8";
-      const h = Math.max(1, (max - min) * trackH * 0.45);
+      // Resampling overshoot on hot sources puts samples past ±1, so clamp to
+      // full scale rather than letting the bar spill into the wordbar lane.
+      const peak = Math.min(1, (max - min) / 2);
+      const h = Math.max(1, peak * trackH * WAVE_LANE_FILL);
       ctx.fillRect(x, midY - h / 2, 1, h);
     }
   }, [
