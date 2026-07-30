@@ -260,7 +260,7 @@ export default function Editor() {
               onClick={undo}
               disabled={!canUndo}
               title="Undo (⌘Z)"
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-800 cursor-pointer disabled:opacity-30 disabled:hover:bg-transparent"
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-800 cursor-pointer disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent"
             >
               <Undo2 size={16} />
             </button>
@@ -268,7 +268,7 @@ export default function Editor() {
               onClick={redo}
               disabled={!canRedo}
               title="Redo (⇧⌘Z)"
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-800 cursor-pointer disabled:opacity-30 disabled:hover:bg-transparent"
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-800 cursor-pointer disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent"
             >
               <Redo2 size={16} />
             </button>
