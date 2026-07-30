@@ -13,6 +13,7 @@ import {
   applyWordBounds,
   canSplitAt,
   carrySceneBoundaries,
+  cutRangeAt,
   getClipSegments,
   getCutRanges,
   getKeepRanges,
@@ -152,6 +153,8 @@ interface EditorState {
   setCurrentTime: (t: number) => void;
   setPlaying: (p: boolean) => void;
   setVideoEl: (el: HTMLMediaElement | null) => void;
+  /** Play/pause, skipping out of cut ranges and restarting from the start if parked at the end. */
+  togglePlayback: () => void;
   setExportUrl: (url: string | null) => void;
   setExportOpen: (open: boolean) => void;
   reset: () => void;
@@ -634,6 +637,20 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   setCurrentTime: (currentTime) => set({ currentTime }),
   setPlaying: (playing) => set({ playing }),
   setVideoEl: (videoEl) => set({ videoEl }),
+  togglePlayback: () => {
+    const s = get();
+    const media = s.videoEl;
+    if (!media) return;
+    if (media.paused) {
+      const cuts = getCutRanges(s.words, s.duration, s.manualCuts);
+      const cut = cutRangeAt(media.currentTime, cuts);
+      if (cut) media.currentTime = cut.end + 0.001;
+      if (media.currentTime >= media.duration - 0.05) media.currentTime = 0;
+      void media.play();
+    } else {
+      media.pause();
+    }
+  },
   setExportUrl: (exportUrl) => set({ exportUrl }),
   setExportOpen: (exportOpen) => set({ exportOpen }),
 

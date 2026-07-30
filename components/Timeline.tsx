@@ -9,7 +9,25 @@ import {
   useState,
   type PointerEvent as ReactPointerEvent,
 } from "react";
-import { Maximize2, Merge, SquareSplitHorizontal, ZoomIn, ZoomOut } from "lucide-react";
+import {
+  ChevronFirst,
+  ChevronLast,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  Maximize2,
+  Merge,
+  Pause,
+  Play,
+  RotateCcwClock,
+  RotateCcwSquare,
+  RotateCwFadingClock,
+  RotateCwSquare,
+  SquareSplitHorizontal,
+  ZoomIn,
+  ZoomOut,
+} from "lucide-react";
 import { useEditorStore } from "@/lib/store";
 import {
   canSplitAt,
@@ -17,8 +35,10 @@ import {
   getActiveSceneBoundaries,
   getClipSegments,
   getCutRanges,
+  getEditedDuration,
   getKeepRanges,
   isWordCutOut,
+  originalToEdited,
   trimEdgeBounds,
 } from "@/lib/edits";
 import type { ClipSegment, Word } from "@/lib/types";
@@ -458,6 +478,24 @@ export default function Timeline() {
     if (!ok) return;
   }, []);
 
+  const editedDuration = useMemo(
+    () => getEditedDuration(cuts, duration),
+    [cuts, duration]
+  );
+  const trimmed = duration - editedDuration;
+
+  const togglePlay = useCallback(() => {
+    useEditorStore.getState().togglePlayback();
+  }, []);
+
+  const skip = useCallback((delta: number) => {
+    const { videoEl, setCurrentTime } = useEditorStore.getState();
+    if (!videoEl) return;
+    const t = Math.min(Math.max(0, videoEl.currentTime + delta), videoEl.duration);
+    videoEl.currentTime = t;
+    setCurrentTime(t);
+  }, []);
+
   // Word labels for the visible window
   const visibleWords = useMemo(() => {
     const t0 = scrollLeft / pps - 1;
@@ -469,16 +507,60 @@ export default function Timeline() {
   const showHandles = pps >= HANDLE_VIS_PPS;
 
   return (
-    <footer className="flex h-40 shrink-0 flex-col border-t border-zinc-200 bg-white sm:h-52">
-      <div className="flex h-9 shrink-0 items-center gap-2 border-b border-zinc-100 px-3">
-        <span className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
-          Timeline
-        </span>
-        <span className="text-xs tabular-nums text-zinc-400">
-          {formatTime(currentTime)}
-        </span>
+    <footer className="flex h-48 shrink-0 flex-col border-t border-zinc-200 bg-white sm:h-52">
+      {/* Mobile wraps the transport onto its own row; from `sm` up it is
+          absolutely centred so it stays put as the side groups change width. */}
+      <div className="relative flex shrink-0 flex-wrap items-center gap-x-2 border-b border-zinc-100 px-2.5 sm:h-10 sm:flex-nowrap">
+        <div className="order-1 flex h-9 min-w-0 flex-1 items-center gap-2 sm:h-auto">
+          <span className="shrink-0 text-[11px] font-mono tabular-nums leading-none text-zinc-900">
+            {formatTime(originalToEdited(currentTime, cuts))}
+            <span className="text-zinc-400"> / {formatTime(editedDuration)}</span>
+          </span>
+          {trimmed > 0.01 && (
+            <span
+              title={`${formatTime(trimmed)} removed — original length ${formatTime(duration)}`}
+              className="hidden sm:inline-block shrink-0 font-mono rounded-sm bg-red-50 px-1.5 py-0.5 text-[10px] font-medium tabular-nums leading-none text-red-600"
+            >
+              −{formatTime(trimmed)}
+            </span>
+          )}
+        </div>
 
-        <div className="mx-auto flex items-center">
+        <div className="order-3 -mx-2.5 flex h-9 w-[calc(100%+1.25rem)] items-center justify-center gap-1.5 border-t border-zinc-100 sm:absolute sm:left-1/2 sm:top-1/2 sm:order-2 sm:mx-0 sm:h-auto sm:w-auto sm:-translate-x-1/2 sm:-translate-y-1/2 sm:border-t-0">
+          <button
+            type="button"
+            disabled={!ready}
+            onClick={() => skip(-5)}
+            title="Back 5 s"
+            className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-900 disabled:cursor-not-allowed disabled:text-zinc-300 disabled:hover:bg-transparent"
+          >
+            <ChevronLeft size={14} />
+          </button>
+          <button
+            type="button"
+            disabled={!ready}
+            onClick={togglePlay}
+            title="Play / pause (space)"
+            className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-lg text-zinc-900 transition hover:bg-zinc-100 active:scale-95 disabled:cursor-not-allowed disabled:text-zinc-300 disabled:hover:bg-transparent"
+          >
+            {playing ? (
+              <Pause size={15} />
+            ) : (
+              <Play size={15} className="ml-px" />
+            )}
+          </button>
+          <button
+            type="button"
+            disabled={!ready}
+            onClick={() => skip(5)}
+            title="Forward 5 s"
+            className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-900 disabled:cursor-not-allowed disabled:text-zinc-300 disabled:hover:bg-transparent"
+          >
+            <ChevronRight size={14} />
+          </button>
+        </div>
+
+        <div className="order-2 flex h-9 items-center justify-end gap-1 sm:order-3 sm:h-auto sm:flex-1">
           <button
             type="button"
             disabled={!ready || !splitOk}
@@ -488,54 +570,54 @@ export default function Timeline() {
                 ? "Split clip at playhead (S)"
                 : "Move the playhead onto a kept region to split"
             }
-            className={`group cursor-pointer relative flex h-6 items-center gap-1 rounded-sm px-1 text-xs font-medium transition-all duration-200 ${
+            className={`flex h-7 items-center gap-1.5 rounded-lg px-2 text-xs font-medium transition ${
               ready && splitOk
-                ? "text-black hover:bg-neutral-100 active:scale-[0.97]"
-                : "cursor-not-allowed text-zinc-400"
+                ? "cursor-pointer text-zinc-700 hover:bg-zinc-100 hover:text-zinc-900 active:scale-[0.97]"
+                : "cursor-not-allowed text-zinc-300"
             }`}
           >
-            <SquareSplitHorizontal
-              size={13}
-              className={`transition-transform duration-300`}
-            />
-            Split
+            <SquareSplitHorizontal size={13} />
+            <span className="hidden sm:inline">Split</span>
             <kbd
-              className={`ml-0.5 rounded px-1 py-px text-[10px] font-normal ${
-                ready && splitOk
-                  ? "bg-zinc-200/80 text-zinc-800"
-                  : "bg-zinc-200/80 text-zinc-400"
+              className={`hidden rounded px-1 py-px text-[10px] font-normal sm:inline ${
+                ready && splitOk ? "bg-zinc-100 text-zinc-500" : "bg-zinc-100 text-zinc-300"
               }`}
             >
               S
             </kbd>
           </button>
-        </div>
 
-        <div className="flex items-center gap-0.5">
-          <button
-            type="button"
-            onClick={() => setZoom((z) => Math.max(MIN_ZOOM, z / 1.5))}
-            title="Zoom out"
-            className="flex h-7 w-7 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-100"
-          >
-            <ZoomOut size={14} />
-          </button>
-          <button
-            type="button"
-            onClick={() => setZoom(1)}
-            title="Fit"
-            className="flex h-7 w-7 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-100"
-          >
-            <Maximize2 size={13} />
-          </button>
-          <button
-            type="button"
-            onClick={() => setZoom((z) => Math.min(MAX_ZOOM, z * 1.5))}
-            title="Zoom in — drag word edges to refine timing"
-            className="flex h-7 w-7 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-100"
-          >
-            <ZoomIn size={14} />
-          </button>
+          <div className="mx-0.5 h-4 w-px bg-zinc-200" />
+
+          <div className="flex items-center gap-0.5">
+            <button
+              type="button"
+              onClick={() => setZoom((z) => Math.max(MIN_ZOOM, z / 1.5))}
+              disabled={zoom <= MIN_ZOOM}
+              title="Zoom out"
+              className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-900 disabled:cursor-not-allowed disabled:text-zinc-300 disabled:hover:bg-transparent"
+            >
+              <ZoomOut size={14} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setZoom(1)}
+              disabled={zoom === 1}
+              title="Fit to window"
+              className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-900 disabled:cursor-not-allowed disabled:text-zinc-300 disabled:hover:bg-transparent"
+            >
+              <Maximize2 size={13} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setZoom((z) => Math.min(MAX_ZOOM, z * 1.5))}
+              disabled={zoom >= MAX_ZOOM}
+              title="Zoom in — drag word edges to refine timing"
+              className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-900 disabled:cursor-not-allowed disabled:text-zinc-300 disabled:hover:bg-transparent"
+            >
+              <ZoomIn size={14} />
+            </button>
+          </div>
         </div>
       </div>
 

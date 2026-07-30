@@ -105,6 +105,20 @@ function SplitWorkspace({ orientation }: { orientation: "horizontal" | "vertical
 
 function EditorWorkspace() {
   const isDesktop = useIsDesktopLayout();
+  const mediaKind = useEditorStore((s) => s.mediaKind);
+  // Audio has no visual preview — give the transcript the full workspace and
+  // mount MediaPreview off-layout so the hidden <audio> element still drives
+  // playback / spacebar / timeline controls.
+  if (mediaKind === "audio") {
+    return (
+      <>
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <TranscriptPanel />
+        </div>
+        <MediaPreview />
+      </>
+    );
+  }
   // Keyed so crossing the breakpoint remounts the group and restores that
   // orientation's saved layout instead of carrying sizes across.
   return isDesktop ? (
@@ -174,6 +188,8 @@ export default function Editor() {
   }, [status, isElectron]);
 
   // Global shortcuts: space = play/pause, ⌘Z / ⇧⌘Z = undo / redo, S = split.
+  // Capture phase so Space is ours before a focused <button> synthesizes a click
+  // (which would double-toggle playback and look like the hotkey "didn't work").
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
@@ -182,8 +198,8 @@ export default function Editor() {
       const s = useEditorStore.getState();
       if (e.code === "Space" && s.videoEl && !s.exportOpen) {
         e.preventDefault();
-        if (s.videoEl.paused) void s.videoEl.play();
-        else s.videoEl.pause();
+        e.stopPropagation();
+        s.togglePlayback();
       } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
         e.preventDefault();
         if (e.shiftKey) s.redo();
@@ -200,8 +216,8 @@ export default function Editor() {
         s.splitAtPlayhead();
       }
     };
-    document.addEventListener("keydown", handler);
-    return () => document.removeEventListener("keydown", handler);
+    document.addEventListener("keydown", handler, true);
+    return () => document.removeEventListener("keydown", handler, true);
   }, []);
 
   // Flush pending autosave when the tab hides or unloads.
