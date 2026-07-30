@@ -24,6 +24,9 @@ const MIN_TICK_GAP = 13;
  *  filled with plain ruler ticks at roughly this pitch. */
 const MINOR_GAP = 7;
 const MAX_SUBDIVISIONS = 6;
+/** Matches the ticks' `h-px`. A tick dropped flush with the bottom of the rail
+ *  would hang a pixel past the pane and make the whole panel scrollable. */
+const TICK_H = 1;
 /** How close a tick must be to the thumb to react, and how far it grows. */
 const TICK_REACH = 52;
 const MAJOR: Emphasis = { minW: 4, maxW: 13, minOpacity: 0.3, maxOpacity: 1 };
@@ -126,7 +129,7 @@ function timeAt(anchors: Anchor[], top: number): number {
  * pitch. Timestamps land wherever the text puts them, which leaves the rail
  * looking sparse and arbitrary on its own.
  */
-function subdivide(majors: number[], travel: number): number[] {
+function subdivide(majors: number[], limit: number): number[] {
   if (majors.length < 2) return [];
   const stepsIn = (gap: number) => clamp(Math.round(gap / MINOR_GAP), 1, MAX_SUBDIVISIONS);
   const out: number[] = [];
@@ -143,7 +146,7 @@ function subdivide(majors: number[], travel: number): number[] {
   if (headPitch >= 1) for (let y = head - headPitch; y >= 0; y -= headPitch) out.push(y);
   const tail = majors[majors.length - 1];
   const tailPitch = (tail - majors[majors.length - 2]) / stepsIn(tail - majors[majors.length - 2]);
-  if (tailPitch >= 1) for (let y = tail + tailPitch; y <= travel; y += tailPitch) out.push(y);
+  if (tailPitch >= 1) for (let y = tail + tailPitch; y <= limit; y += tailPitch) out.push(y);
   return out.sort((a, b) => a - b);
 }
 
@@ -278,11 +281,11 @@ export default function TranscriptScrollIndicator({
       const y = railY(topAt(measured, t), geometry);
       // Times that only ever sit above or below the middle of the pane — the
       // opening and closing screenful — have nowhere on the rail to land.
-      if (y >= 0 && y <= railH) next.push({ time: t, y });
+      if (y >= 0 && y <= railH - TICK_H) next.push({ time: t, y });
     }
     const between = subdivide(
       next.map((tick) => tick.y),
-      railH
+      railH - TICK_H
     );
     tickPos.current = next.map((tick) => tick.y);
     minorPos.current = between;
