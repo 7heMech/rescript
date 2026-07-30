@@ -20,18 +20,44 @@ const LABEL_H = 14;
 /** Candidate spacings between ticks, in seconds, coarsest last. */
 const TICK_STEPS = [5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600];
 const MIN_TICK_GAP = 13;
+/** Timestamps land wherever the text puts them, so the gaps between them are
+ *  filled with plain ruler ticks at roughly this pitch. */
+const MINOR_GAP = 7;
+const MAX_SUBDIVISIONS = 6;
 /** How close a tick must be to the thumb to react, and how far it grows. */
 const TICK_REACH = 52;
-const TICK_W = 4;
-const TICK_W_ACTIVE = 13;
+const MAJOR: Emphasis = { minW: 4, maxW: 13, minOpacity: 0.3, maxOpacity: 1 };
+const MINOR: Emphasis = { minW: 2, maxW: 6, minOpacity: 0.12, maxOpacity: 0.5 };
 /** Idle delay before the ticks and the time label retract again. */
 const IDLE_MS = 1000;
 
 /** A measured line of transcript: where it sits, and when it is spoken. */
 type Anchor = { top: number; time: number };
 type Tick = { time: number; y: number };
+/** How a tick reads at rest and when the thumb reaches it. */
+type Emphasis = { minW: number; maxW: number; minOpacity: number; maxOpacity: number };
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+
+/** Grow and brighten ticks as the thumb passes them. */
+function emphasize(
+  els: (HTMLSpanElement | null)[],
+  positions: number[],
+  thumbY: number,
+  { minW, maxW, minOpacity, maxOpacity }: Emphasis
+) {
+  const count = Math.min(els.length, positions.length);
+  for (let i = 0; i < count; i++) {
+    const el = els[i];
+    if (!el) continue;
+    const distance = Math.abs(positions[i] - thumbY);
+    const near = distance > TICK_REACH ? 0 : 1 - distance / TICK_REACH;
+    // Smoothstep, so the emphasis eases in instead of ramping linearly.
+    const e = near * near * (3 - 2 * near);
+    el.style.width = `${minW + (maxW - minW) * e}px`;
+    el.style.opacity = `${minOpacity + (maxOpacity - minOpacity) * e}`;
+  }
+}
 
 /** m:ss (or h:mm past an hour) — no tenths, which only flicker at this size. */
 function railTime(seconds: number): string {
@@ -62,6 +88,32 @@ function timeAt(anchors: Anchor[], top: number): number {
   if (!b || b.top === a.top) return a.time;
   const k = clamp((top - a.top) / (b.top - a.top), 0, 1);
   return a.time + (b.time - a.time) * k;
+}
+
+/**
+ * Plain ruler ticks filling the gaps between timestamps at a roughly even
+ * pitch. Timestamps land wherever the text puts them, which leaves the rail
+ * looking sparse and arbitrary on its own.
+ */
+function subdivide(majors: number[], travel: number): number[] {
+  if (majors.length < 2) return [];
+  const stepsIn = (gap: number) => clamp(Math.round(gap / MINOR_GAP), 1, MAX_SUBDIVISIONS);
+  const out: number[] = [];
+  for (let i = 0; i < majors.length - 1; i++) {
+    const gap = majors[i + 1] - majors[i];
+    if (gap <= 0) continue;
+    const steps = stepsIn(gap);
+    for (let k = 1; k < steps; k++) out.push(majors[i] + (gap * k) / steps);
+  }
+  // Carry the neighbouring pitch past the outermost timestamps so the ruler
+  // runs the whole rail instead of stopping short at both ends.
+  const head = majors[0];
+  const headPitch = (majors[1] - head) / stepsIn(majors[1] - head);
+  if (headPitch >= 1) for (let y = head - headPitch; y >= 0; y -= headPitch) out.push(y);
+  const tail = majors[majors.length - 1];
+  const tailPitch = (tail - majors[majors.length - 2]) / stepsIn(tail - majors[majors.length - 2]);
+  if (tailPitch >= 1) for (let y = tail + tailPitch; y <= travel; y += tailPitch) out.push(y);
+  return out.sort((a, b) => a - b);
 }
 
 /** The inverse of `timeAt`: where `time` falls in scroll coordinates. */
@@ -113,14 +165,17 @@ export default function TranscriptScrollIndicator({
   const thumbRef = useRef<HTMLDivElement>(null);
   const labelRef = useRef<HTMLSpanElement>(null);
   const tickEls = useRef<(HTMLSpanElement | null)[]>([]);
+  const minorEls = useRef<(HTMLSpanElement | null)[]>([]);
   const anchors = useRef<Anchor[]>([]);
-  const tickPos = useRef<Tick[]>([]);
+  const tickPos = useRef<number[]>([]);
+  const minorPos = useRef<number[]>([]);
   const dragging = useRef(false);
   const endDrag = useRef<(() => void) | null>(null);
   const hovering = useRef(false);
   const idleTimer = useRef<number | null>(null);
 
   const [ticks, setTicks] = useState<Tick[]>([]);
+  const [minors, setMinors] = useState<number[]>([]);
   const [active, setActive] = useState(false);
   const [enabled, setEnabled] = useState(false);
 
@@ -145,18 +200,8 @@ export default function TranscriptScrollIndicator({
     label.style.transform = `translateY(${clamp(y - LABEL_H / 2, 0, railH - LABEL_H)}px)`;
     label.textContent = railTime(timeAt(anchors.current, scrollTop + HEADER_H));
 
-    const els = tickEls.current;
-    const count = Math.min(els.length, tickPos.current.length);
-    for (let i = 0; i < count; i++) {
-      const el = els[i];
-      if (!el) continue;
-      const distance = Math.abs(tickPos.current[i].y - y);
-      const near = distance > TICK_REACH ? 0 : 1 - distance / TICK_REACH;
-      // Smoothstep, so the emphasis eases in instead of ramping linearly.
-      const e = near * near * (3 - 2 * near);
-      el.style.width = `${TICK_W + (TICK_W_ACTIVE - TICK_W) * e}px`;
-      el.style.opacity = `${0.3 + 0.7 * e}`;
-    }
+    emphasize(tickEls.current, tickPos.current, y, MAJOR);
+    emphasize(minorEls.current, minorPos.current, y, MINOR);
   }, [scrollRef]);
 
   const measure = useCallback(() => {
@@ -187,7 +232,9 @@ export default function TranscriptScrollIndicator({
     const last = measured[measured.length - 1]?.time ?? 0;
     if (measured.length < 2 || range <= 1 || railH <= 0 || last <= first) {
       tickPos.current = [];
+      minorPos.current = [];
       setTicks([]);
+      setMinors([]);
       setEnabled(false);
       return;
     }
@@ -202,8 +249,14 @@ export default function TranscriptScrollIndicator({
     for (let t = Math.ceil(first / step) * step; t <= last; t += step) {
       next.push({ time: t, y: clamp((topAt(measured, t) / range) * travel, 0, travel) });
     }
-    tickPos.current = next;
+    const between = subdivide(
+      next.map((tick) => tick.y),
+      travel
+    );
+    tickPos.current = next.map((tick) => tick.y);
+    minorPos.current = between;
     setTicks(next);
+    setMinors(between);
     setEnabled(true);
   }, [scrollRef, contentRef, starts]);
 
@@ -231,8 +284,9 @@ export default function TranscriptScrollIndicator({
   // Ticks were just (re)rendered, so their elements can take their emphasis.
   useEffect(() => {
     tickEls.current.length = ticks.length;
+    minorEls.current.length = minors.length;
     paint();
-  }, [ticks, paint]);
+  }, [ticks, minors, paint]);
 
   useEffect(() => {
     const scroller = scrollRef.current;
@@ -332,6 +386,17 @@ export default function TranscriptScrollIndicator({
       className={`absolute top-10 right-0 bottom-0 z-20 w-3 touch-none select-none ${enabled ? "" : "pointer-events-none opacity-0"
         }`}
     >
+      {minors.map((y, i) => (
+        <span
+          key={`minor-${i}`}
+          ref={(el) => {
+            minorEls.current[i] = el;
+          }}
+          style={{ top: y, transitionDelay: `${Math.min(i * 4, 160)}ms` }}
+          className={`absolute right-2.5 h-px origin-right rounded-full bg-zinc-400 transition-transform duration-300 ease-out ${active ? "scale-x-100" : "scale-x-0"
+            }`}
+        />
+      ))}
       {ticks.map((tick, i) => (
         <span
           key={tick.time}
