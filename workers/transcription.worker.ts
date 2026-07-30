@@ -31,6 +31,7 @@ import {
   speechSegmentsFromFrames,
   type SpeechSegment,
 } from "@/lib/vad";
+import { isWebGpuDeviceLostError } from "@/lib/webgpu";
 
 env.allowLocalModels = false;
 // Serve onnxruntime-web WASM from our own origin (offline friendly).
@@ -50,6 +51,8 @@ const SPEECH_PAD_S = 0.4;
  * (timestamps are remapped so the pad does not shift the timeline).
  */
 const WHISPER_LEAD_PAD_S = 0.5;
+
+type AsrChunk = { text: string; timestamp: [number, number | null] };
 
 const post = (msg: WorkerResponse, transfer: Transferable[] = []) =>
   (self as unknown as Worker).postMessage(msg, transfer);
@@ -127,7 +130,13 @@ async function isModelCached(modelId: string): Promise<boolean> {
   }
 }
 
+/** Once set, this worker stays on WASM — a lost WebGPU session cannot be reused. */
+let forceWasm = false;
+/** Device the current ASR pipeline is running on. */
+let asrDevice: "webgpu" | "wasm" = "wasm";
+
 async function pickDevice(): Promise<"webgpu" | "wasm"> {
+  if (forceWasm) return "wasm";
   try {
     const gpu = (globalThis.navigator as Navigator & {
       gpu?: { requestAdapter: () => Promise<unknown | null> };
@@ -146,6 +155,7 @@ async function getAsr(choice: WhisperModel) {
   let promise = asrPromises.get(id);
   if (!promise) {
     const device = await pickDevice();
+    asrDevice = device;
     const label = (await isModelCached(id))
       ? "Loading speech model from cache…"
       : "Downloading speech model…";
@@ -156,6 +166,8 @@ async function getAsr(choice: WhisperModel) {
     }).catch((err) => {
       // WebGPU can fail on some drivers; retry once on plain WASM.
       if (device === "webgpu") {
+        forceWasm = true;
+        asrDevice = "wasm";
         return pipeline("automatic-speech-recognition", id, {
           dtype: dtype.wasm,
           device: "wasm",
@@ -168,6 +180,19 @@ async function getAsr(choice: WhisperModel) {
     promise.catch(() => asrPromises.delete(id));
   }
   return promise;
+}
+
+/** Drop the dead WebGPU pipeline and reload the same model on WASM. */
+async function fallbackAsrToWasm(choice: WhisperModel) {
+  forceWasm = true;
+  asrDevice = "wasm";
+  asrPromises.clear();
+  post({
+    type: "progress",
+    message: "GPU interrupted — continuing on CPU…",
+    value: null,
+  });
+  return getAsr(choice);
 }
 
 /**
@@ -319,8 +344,6 @@ async function detectSpeechSegments(
   }
 }
 
-type AsrChunk = { text: string; timestamp: [number, number | null] };
-
 /** Nominal length given to a word whose end timestamp is missing or unusable. */
 const FALLBACK_WORD_S = 0.5;
 
@@ -450,7 +473,8 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
 
     // Overlap Whisper + Silero downloads; diarizer warms in the background.
     getDiarizer().catch(() => {});
-    const [transcriber, vad] = await Promise.all([getAsr(choice), getVad()]);
+    const [asr, vad] = await Promise.all([getAsr(choice), getVad()]);
+    let transcriber = asr;
 
     post({ type: "progress", message: "Detecting speech…", value: 0 });
     const { segments: speechSegments, frames: speechFrames } =
@@ -481,10 +505,6 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
       (transcriber.processor.feature_extractor.config.chunk_length ?? 30) /
       // @ts-expect-error model config is untyped
       (transcriber.model.config.max_source_positions ?? 1500);
-
-    const tokenizer = transcriber.tokenizer as ConstructorParameters<
-      typeof WhisperTextStreamer
-    >[0];
 
     let speechDone = 0;
     let transcribed = 0;
@@ -550,37 +570,65 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
       const sliceDuration = slice.length / VAD_SAMPLE_RATE;
       const offsetS = seg.startSample / VAD_SAMPLE_RATE - WHISPER_LEAD_PAD_S;
 
-      // Each generate() window consumes `chunkLength - 2 * stride` seconds of
-      // new audio, and the streamer's timestamps rewind to ~0 when the next
-      // window starts. A timestamp lower than the last one seen marks that
-      // boundary; accumulate the offset to recover segment-local time.
-      const windowJumpS = chunkLength - 2 * stride;
-      let windowOffsetS = 0;
-      let lastChunkStartT = 0;
+      // Snapshot progress so a failed WebGPU attempt can be rolled back before
+      // the WASM retry of this same segment.
+      const partialBefore = partial;
+      const progressBefore = { transcribed, chunkFloor, chunkTokens };
 
-      const streamer = new WhisperTextStreamer(tokenizer, {
-        skip_prompt: true,
-        time_precision: timePrecision,
-        on_chunk_start: (t: number) => {
-          if (t < lastChunkStartT) windowOffsetS += windowJumpS;
-          lastChunkStartT = t;
-          reportProgress(
-            Math.max(0, windowOffsetS + t - WHISPER_LEAD_PAD_S),
-            segmentSamples
-          );
-        },
-        callback_function: (text: string) => {
-          partial += text;
-          post({ type: "partial", text: partial });
-          interpolateProgress();
-        },
-      });
+      const runSlice = async () => {
+        // Each generate() window consumes `chunkLength - 2 * stride` seconds of
+        // new audio, and the streamer's timestamps rewind to ~0 when the next
+        // window starts. A timestamp lower than the last one seen marks that
+        // boundary; accumulate the offset to recover segment-local time.
+        const windowJumpS = chunkLength - 2 * stride;
+        let windowOffsetS = 0;
+        let lastChunkStartT = 0;
+        const tokenizer = transcriber.tokenizer as ConstructorParameters<
+          typeof WhisperTextStreamer
+        >[0];
+        const streamer = new WhisperTextStreamer(tokenizer, {
+          skip_prompt: true,
+          time_precision: timePrecision,
+          on_chunk_start: (t: number) => {
+            if (t < lastChunkStartT) windowOffsetS += windowJumpS;
+            lastChunkStartT = t;
+            reportProgress(
+              Math.max(0, windowOffsetS + t - WHISPER_LEAD_PAD_S),
+              segmentSamples
+            );
+          },
+          callback_function: (text: string) => {
+            partial += text;
+            post({ type: "partial", text: partial });
+            interpolateProgress();
+          },
+        });
+        const output = await transcriber(slice, { ...asrOptions, streamer });
+        const result = Array.isArray(output) ? output[0] : output;
+        return (result.chunks ?? []) as AsrChunk[];
+      };
 
-      const output = await transcriber(slice, { ...asrOptions, streamer });
-      const result = Array.isArray(output) ? output[0] : output;
-      const chunks = (result.chunks ?? []) as AsrChunk[];
+      let chunks: AsrChunk[];
+      try {
+        chunks = await runSlice();
+      } catch (err) {
+        // Windows screen lock tears down WebGPU mid-OrtRun. Fall back to WASM
+        // and retry this segment once so the job can finish.
+        if (asrDevice !== "webgpu" || !isWebGpuDeviceLostError(err)) throw err;
+        console.warn(
+          "WebGPU lost during transcription (often after screen lock); falling back to WASM.",
+          err
+        );
+        partial = partialBefore;
+        transcribed = progressBefore.transcribed;
+        chunkFloor = progressBefore.chunkFloor;
+        chunkTokens = progressBefore.chunkTokens;
+        post({ type: "partial", text: partial });
+        transcriber = await fallbackAsrToWasm(choice);
+        chunks = await runSlice();
+      }
+
       rawWords.push(...wordsFromChunks(chunks, offsetS, sliceDuration, duration));
-
       speechDone += segmentSamples;
       reportProgress(0, 0);
     }
@@ -608,7 +656,11 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
     console.error(err);
     post({
       type: "error",
-      message: err instanceof Error ? err.message : "Transcription failed.",
+      message: isWebGpuDeviceLostError(err)
+        ? "Transcription was interrupted when the GPU reset (often after locking the screen). Please try again."
+        : err instanceof Error
+          ? err.message
+          : "Transcription failed.",
     });
   }
 };
