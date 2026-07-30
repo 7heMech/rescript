@@ -9,6 +9,7 @@ import {
   Pencil,
   RotateCcw,
   Scissors,
+  VolumeOff,
   WandSparkles,
   X,
 } from "lucide-react";
@@ -380,6 +381,12 @@ export default function TranscriptPanel() {
             <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-600 dark:border-red-900 dark:bg-red-950/40 dark:text-red-400">
               {error}
             </div>
+          )}
+
+          {status === "ready" && words.length === 0 && (
+              <p className="mt-2 flex items-center gap-1 text-sm font-medium text-zinc-500 dark:text-zinc-500">
+                <VolumeOff size={16} /> No speech detected, make sure this file has audio or import a transcript.
+              </p>
           )}
 
           {status === "ready" && (

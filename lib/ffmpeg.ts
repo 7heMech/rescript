@@ -58,28 +58,38 @@ async function ensureInput(ffmpeg: FFmpeg, file: File): Promise<string> {
 /**
  * Extract the audio track as mono 16 kHz float PCM — the exact format
  * Whisper expects, and what we render the timeline waveform from.
- * Works for both video and audio-only files.
+ * Works for both video and audio-only files. Resolves to null when the file
+ * has no audio track — those still open for editing with an empty transcript.
  */
-export async function extractAudio(file: File): Promise<Float32Array> {
+export async function extractAudio(file: File): Promise<Float32Array | null> {
   const ffmpeg = await getFFmpeg();
   const input = await ensureInput(ffmpeg, file);
   const out = "audio.pcm";
-  const code = await ffmpeg.exec([
-    "-i", input,
-    "-vn",
-    "-ac", "1",
-    "-ar", "16000",
-    "-f", "f32le",
-    "-y", out,
-  ]);
+  let sawAudioStream = false;
+  const logHandler = ({ message }: { type: string; message: string }) => {
+    if (/Stream #\d+:\d+.*: Audio:/.test(message)) sawAudioStream = true;
+  };
+  ffmpeg.on("log", logHandler);
+  let code: number;
+  try {
+    code = await ffmpeg.exec([
+      "-i", input,
+      "-vn",
+      "-ac", "1",
+      "-ar", "16000",
+      "-f", "f32le",
+      "-y", out,
+    ]);
+  } finally {
+    ffmpeg.off("log", logHandler);
+  }
   if (code !== 0) {
+    if (!sawAudioStream) return null;
     throw new Error("Could not extract audio from this file.");
   }
   const data = (await ffmpeg.readFile(out)) as Uint8Array;
   await ffmpeg.deleteFile(out);
-  if (data.byteLength < 4) {
-    throw new Error("This file appears to have no audio track.");
-  }
+  if (data.byteLength < 4) return null;
   // Copy into a fresh buffer so byteOffset/alignment is clean.
   const buf = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
   return new Float32Array(buf as ArrayBuffer);
@@ -88,13 +98,15 @@ export async function extractAudio(file: File): Promise<Float32Array> {
 /**
  * Render the edited video: keep only `keepRanges` of the original media and
  * concatenate them. Re-encodes so cuts land exactly on word boundaries
- * rather than keyframes.
+ * rather than keyframes. `withAudio: false` renders a silent source, whose
+ * missing [0:a] would otherwise fail the whole filtergraph.
  */
 export async function exportVideo(
   file: File,
   keepRanges: TimeRange[],
   editedDuration: number,
-  onProgress: (ratio: number) => void
+  onProgress: (ratio: number) => void,
+  { withAudio = true }: { withAudio?: boolean } = {}
 ): Promise<Blob> {
   if (keepRanges.length === 0) {
     throw new Error("Everything has been deleted — nothing to export.");
@@ -109,12 +121,17 @@ export async function exportVideo(
     const s = r.start.toFixed(3);
     const e = r.end.toFixed(3);
     parts.push(`[0:v]trim=start=${s}:end=${e},setpts=PTS-STARTPTS[v${i}]`);
-    parts.push(`[0:a]atrim=start=${s}:end=${e},asetpts=PTS-STARTPTS[a${i}]`);
-    labels.push(`[v${i}][a${i}]`);
+    labels.push(`[v${i}]`);
+    if (withAudio) {
+      parts.push(`[0:a]atrim=start=${s}:end=${e},asetpts=PTS-STARTPTS[a${i}]`);
+      labels[labels.length - 1] += `[a${i}]`;
+    }
   });
   const filter =
     parts.join(";") +
-    `;${labels.join("")}concat=n=${keepRanges.length}:v=1:a=1[outv][outa]`;
+    `;${labels.join("")}concat=n=${keepRanges.length}:v=1:a=${
+      withAudio ? 1 : 0
+    }[outv]${withAudio ? "[outa]" : ""}`;
 
   const progressHandler = ({ time }: { progress: number; time: number }) => {
     // `time` is the output timestamp in microseconds.
@@ -127,12 +144,11 @@ export async function exportVideo(
       "-i", input,
       "-filter_complex", filter,
       "-map", "[outv]",
-      "-map", "[outa]",
+      ...(withAudio ? ["-map", "[outa]"] : ["-an"]),
       "-c:v", "libx264",
       "-preset", "ultrafast",
       "-crf", "22",
-      "-c:a", "aac",
-      "-b:a", "192k",
+      ...(withAudio ? ["-c:a", "aac", "-b:a", "192k"] : []),
       "-movflags", "+faststart",
       "-y", out,
     ]);
