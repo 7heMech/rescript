@@ -10,12 +10,20 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import {
+  ChevronFirst,
+  ChevronLast,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
   Maximize2,
   Merge,
   Pause,
   Play,
-  SkipBack,
-  SkipForward,
+  RotateCcwClock,
+  RotateCcwSquare,
+  RotateCwFadingClock,
+  RotateCwSquare,
   SquareSplitHorizontal,
   ZoomIn,
   ZoomOut,
@@ -526,7 +534,7 @@ export default function Timeline() {
           )}
         </div>
 
-        <div className="absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center gap-0.5">
+        <div className="absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center gap-1.5">
           <button
             type="button"
             disabled={!ready}
@@ -534,16 +542,20 @@ export default function Timeline() {
             title="Back 5 s"
             className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-900 disabled:cursor-not-allowed disabled:text-zinc-300 disabled:hover:bg-transparent"
           >
-            <SkipBack size={14} />
+            <ChevronLeft size={14} />
           </button>
           <button
             type="button"
             disabled={!ready}
             onClick={togglePlay}
             title="Play / pause (space)"
-            className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-zinc-900 text-white transition hover:bg-zinc-700 active:scale-95 disabled:cursor-not-allowed disabled:bg-zinc-200"
+            className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-lg text-zinc-900 transition hover:bg-zinc-100 active:scale-95 disabled:cursor-not-allowed disabled:text-zinc-300 disabled:hover:bg-transparent"
           >
-            {playing ? <Pause size={13} /> : <Play size={13} className="ml-0.5" />}
+            {playing ? (
+              <Pause size={15} />
+            ) : (
+              <Play size={15} className="ml-px" />
+            )}
           </button>
           <button
             type="button"
@@ -552,7 +564,7 @@ export default function Timeline() {
             title="Forward 5 s"
             className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-900 disabled:cursor-not-allowed disabled:text-zinc-300 disabled:hover:bg-transparent"
           >
-            <SkipForward size={14} />
+            <ChevronRight size={14} />
           </button>
         </div>
 
