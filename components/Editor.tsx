@@ -105,6 +105,20 @@ function SplitWorkspace({ orientation }: { orientation: "horizontal" | "vertical
 
 function EditorWorkspace() {
   const isDesktop = useIsDesktopLayout();
+  const mediaKind = useEditorStore((s) => s.mediaKind);
+  // Audio has no visual preview — give the transcript the full workspace and
+  // mount MediaPreview off-layout so the hidden <audio> element still drives
+  // playback / spacebar / timeline controls.
+  if (mediaKind === "audio") {
+    return (
+      <>
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <TranscriptPanel />
+        </div>
+        <MediaPreview />
+      </>
+    );
+  }
   // Keyed so crossing the breakpoint remounts the group and restores that
   // orientation's saved layout instead of carrying sizes across.
   return isDesktop ? (

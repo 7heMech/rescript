@@ -9,16 +9,29 @@ import {
   useState,
   type PointerEvent as ReactPointerEvent,
 } from "react";
-import { Maximize2, Merge, SquareSplitHorizontal, ZoomIn, ZoomOut } from "lucide-react";
+import {
+  Maximize2,
+  Merge,
+  Pause,
+  Play,
+  SkipBack,
+  SkipForward,
+  SquareSplitHorizontal,
+  ZoomIn,
+  ZoomOut,
+} from "lucide-react";
 import { useEditorStore } from "@/lib/store";
 import {
   canSplitAt,
+  cutRangeAt,
   formatTime,
   getActiveSceneBoundaries,
   getClipSegments,
   getCutRanges,
+  getEditedDuration,
   getKeepRanges,
   isWordCutOut,
+  originalToEdited,
   trimEdgeBounds,
 } from "@/lib/edits";
 import type { ClipSegment, Word } from "@/lib/types";
@@ -458,6 +471,32 @@ export default function Timeline() {
     if (!ok) return;
   }, []);
 
+  const editedDuration = useMemo(
+    () => getEditedDuration(cuts, duration),
+    [cuts, duration]
+  );
+
+  const togglePlay = useCallback(() => {
+    const media = useEditorStore.getState().videoEl;
+    if (!media) return;
+    if (media.paused) {
+      const cut = cutRangeAt(media.currentTime, cuts);
+      if (cut) media.currentTime = cut.end + 0.001;
+      if (media.currentTime >= media.duration - 0.05) media.currentTime = 0;
+      void media.play();
+    } else {
+      media.pause();
+    }
+  }, [cuts]);
+
+  const skip = useCallback((delta: number) => {
+    const { videoEl, setCurrentTime } = useEditorStore.getState();
+    if (!videoEl) return;
+    const t = Math.min(Math.max(0, videoEl.currentTime + delta), videoEl.duration);
+    videoEl.currentTime = t;
+    setCurrentTime(t);
+  }, []);
+
   // Word labels for the visible window
   const visibleWords = useMemo(() => {
     const t0 = scrollLeft / pps - 1;
@@ -470,15 +509,47 @@ export default function Timeline() {
 
   return (
     <footer className="flex h-40 shrink-0 flex-col border-t border-zinc-200 bg-white sm:h-52">
-      <div className="flex h-9 shrink-0 items-center gap-2 border-b border-zinc-100 px-3">
-        <span className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
-          Timeline
-        </span>
-        <span className="text-xs tabular-nums text-zinc-400">
-          {formatTime(currentTime)}
-        </span>
+      <div className="relative flex h-10 shrink-0 items-center gap-2 border-b border-zinc-100 px-3">
+        <div className="flex min-w-0 flex-1 items-center gap-1.5">
+          <span className="hidden shrink-0 text-xs font-semibold uppercase tracking-wider text-zinc-400 sm:inline">
+            Timeline
+          </span>
+          <span className="shrink-0 text-xs tabular-nums text-zinc-500">
+            {formatTime(originalToEdited(currentTime, cuts))}
+            <span className="text-zinc-300"> / {formatTime(editedDuration)}</span>
+          </span>
+          <button
+            type="button"
+            onClick={() => skip(-5)}
+            title="Back 5 s"
+            className="flex h-7 w-7 items-center justify-center rounded-full text-zinc-600 transition hover:bg-zinc-100"
+          >
+            <SkipBack size={14} />
+          </button>
+          <button
+            type="button"
+            onClick={togglePlay}
+            title="Play / pause (space)"
+            className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full bg-zinc-900 text-white shadow transition hover:bg-zinc-700"
+          >
+            {playing ? <Pause size={14} /> : <Play size={14} className="ml-0.5" />}
+          </button>
+          <button
+            type="button"
+            onClick={() => skip(5)}
+            title="Forward 5 s"
+            className="flex h-7 w-7 items-center justify-center rounded-full text-zinc-600 transition hover:bg-zinc-100"
+          >
+            <SkipForward size={14} />
+          </button>
+          {editedDuration < duration - 0.01 && (
+            <span className="hidden truncate text-xs tabular-nums text-zinc-400 lg:inline">
+              original {formatTime(duration)}
+            </span>
+          )}
+        </div>
 
-        <div className="mx-auto flex items-center">
+        <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
           <button
             type="button"
             disabled={!ready || !splitOk}
@@ -511,7 +582,7 @@ export default function Timeline() {
           </button>
         </div>
 
-        <div className="flex items-center gap-0.5">
+        <div className="flex flex-1 items-center justify-end gap-0.5">
           <button
             type="button"
             onClick={() => setZoom((z) => Math.max(MIN_ZOOM, z / 1.5))}
