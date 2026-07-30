@@ -17,20 +17,22 @@ import { findFillerWordIds } from "@/lib/fillers";
 import {
   isTranscriptFile,
   parseTranscriptFile,
+  TRANSCRIPT_FILE_ERROR,
   TRANSCRIPT_ACCEPT,
 } from "@/lib/parseTranscript";
-import type { SpeakerTurn, Word } from "@/lib/types";
+import type { Word } from "@/lib/types";
 import TranscriptScrollIndicator from "./TranscriptScrollIndicator";
 import {
   getActiveSceneBoundaries,
-  getCutRanges,
   getKeepRanges,
   isWordCutOut,
   mapSplitsToWords,
 } from "@/lib/edits";
 import { useTranscriptSelection } from "@/hooks/useTranscriptSelection";
+import { useCutRanges } from "@/hooks/useCutRanges";
+import { findActiveWordId, groupWordsBySpeaker } from "@/lib/transcript";
 
-export const SPEAKER_COLORS = [
+const SPEAKER_COLORS = [
   "#16a34a", // green
   "#2563eb", // blue
   "#9333ea", // purple
@@ -39,26 +41,8 @@ export const SPEAKER_COLORS = [
   "#db2777", // pink
 ];
 
-export const speakerColor = (i: number) =>
+const speakerColor = (i: number) =>
   SPEAKER_COLORS[Math.max(0, i) % SPEAKER_COLORS.length];
-
-function findActiveWordId(words: Word[], t: number): number {
-  // Binary search for the last word starting at or before t.
-  let lo = 0;
-  let hi = words.length - 1;
-  let idx = -1;
-  while (lo <= hi) {
-    const mid = (lo + hi) >> 1;
-    if (words[mid].start <= t) {
-      idx = mid;
-      lo = mid + 1;
-    } else {
-      hi = mid - 1;
-    }
-  }
-  if (idx >= 0 && t < words[idx].end + 0.15) return words[idx].id;
-  return -1;
-}
 
 const WordSpan = memo(function WordSpan({
   word,
@@ -122,7 +106,6 @@ const SplitMarker = memo(function SplitMarker({
 
 export default function TranscriptPanel() {
   const words = useEditorStore((s) => s.words);
-  const manualCuts = useEditorStore((s) => s.manualCuts);
   const sceneBoundaries = useEditorStore((s) => s.sceneBoundaries);
   const duration = useEditorStore((s) => s.duration);
   const status = useEditorStore((s) => s.status);
@@ -140,10 +123,7 @@ export default function TranscriptPanel() {
   const playing = useEditorStore((s) => s.playing);
   const activeWordId = useEditorStore((s) => findActiveWordId(s.words, s.currentTime));
 
-  const cuts = useMemo(
-    () => getCutRanges(words, duration, manualCuts),
-    [words, duration, manualCuts]
-  );
+  const cuts = useCutRanges();
   const cutOutIds = useMemo(() => {
     const ids = new Set<number>();
     for (const w of words) {
@@ -189,15 +169,7 @@ export default function TranscriptPanel() {
     correctingRef,
   });
 
-  const turns = useMemo<SpeakerTurn[]>(() => {
-    const out: SpeakerTurn[] = [];
-    for (const w of words) {
-      const last = out[out.length - 1];
-      if (last && last.speaker === w.speaker) last.words.push(w);
-      else out.push({ speaker: w.speaker, words: [w] });
-    }
-    return out;
-  }, [words]);
+  const turns = useMemo(() => groupWordsBySpeaker(words), [words]);
 
   const deletedCount = useMemo(() => cutOutIds.size, [cutOutIds]);
   const fillerIds = useMemo(() => findFillerWordIds(words), [words]);
@@ -211,7 +183,7 @@ export default function TranscriptPanel() {
       const file = files?.[0];
       if (!file) return;
       if (!isTranscriptFile(file)) {
-        alert("Please choose an SRT, VTT, or JSON transcript.");
+        alert(TRANSCRIPT_FILE_ERROR);
         return;
       }
       if (
@@ -229,13 +201,6 @@ export default function TranscriptPanel() {
       }
     },
     [words.length, importWords]
-  );
-
-  const joinSplit = useCallback(
-    (id: number) => {
-      removeSceneBoundary(id);
-    },
-    [removeSceneBoundary]
   );
 
   const cutSelection = useCallback(() => {
@@ -438,7 +403,7 @@ export default function TranscriptPanel() {
                         return (
                           <React.Fragment key={w.id}>
                             {split && (
-                              <SplitMarker boundaryId={split.id} onJoin={joinSplit} />
+                              <SplitMarker boundaryId={split.id} onJoin={removeSceneBoundary} />
                             )}
                             <WordSpan
                               word={w}

@@ -5,6 +5,7 @@ import { FileText, Loader2 } from "lucide-react";
 import {
   isTranscriptFile,
   parseTranscriptFile,
+  TRANSCRIPT_FILE_ERROR,
   TRANSCRIPT_ACCEPT,
 } from "@/lib/parseTranscript";
 import { isWhisperModel } from "@/lib/models";
@@ -128,7 +129,7 @@ export default function ImportTranscriptOption() {
             }
             if (!isTranscriptFile(file)) {
               setPicking(false);
-              setError("Choose an SRT, VTT, or JSON file.");
+              setError(TRANSCRIPT_FILE_ERROR);
               setPendingTranscript(null);
               setModel("import");
               menu?.keepMenuOpen();

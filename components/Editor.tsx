@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { Group, Panel, Separator, useDefaultLayout } from "react-resizable-panels";
 import { useEditorStore } from "@/lib/store";
 import { extractAudio, getFFmpeg } from "@/lib/ffmpeg";
+import { VAD_SAMPLE_RATE } from "@/lib/vad";
+import { isElectron } from "@/lib/platform";
 import { useTranscriber } from "@/hooks/useTranscriber";
 import TopBar from "./TopBar";
 import UploadScreen from "./UploadScreen";
@@ -141,7 +143,6 @@ export default function Editor() {
   const redo = useEditorStore((s) => s.redo);
   const setExportOpen = useEditorStore((s) => s.setExportOpen);
 
-  const isElectron = /electron/i.test(navigator.userAgent);
   const [modeTransitioning, setModeTransitioning] = useState(false);
   const wasIdle = useRef(status === "idle");
 
@@ -164,7 +165,7 @@ export default function Editor() {
           s.setStatus("ready");
           s.setProgress({ message: "", value: null });
         } else {
-          transcribe(audio, audio.length / 16000);
+          transcribe(audio, audio.length / VAD_SAMPLE_RATE);
         }
       } catch (err) {
         console.error("Processing pipeline failed:", err);
@@ -185,7 +186,7 @@ export default function Editor() {
     setModeTransitioning(true);
     const timer = window.setTimeout(() => setModeTransitioning(false), WINDOW_MODE_OVERLAY_MS);
     return () => window.clearTimeout(timer);
-  }, [status, isElectron]);
+  }, [status]);
 
   // Global shortcuts: space = play/pause, ⌘Z / ⇧⌘Z = undo / redo, S = split.
   // Capture phase so Space is ours before a focused <button> synthesizes a click

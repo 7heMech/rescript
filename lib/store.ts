@@ -17,6 +17,7 @@ import {
   getClipSegments,
   getCutRanges,
   getKeepRanges,
+  PLAYHEAD_EPSILON_S,
   shrinkManualCuts,
   trimEdgeResult,
 } from "./edits";
@@ -32,7 +33,6 @@ import {
   deleteProject,
   fileFromProject,
   getProject,
-  type ProjectMeta,
 } from "./projects";
 
 interface PendingTranscript {
@@ -151,6 +151,7 @@ interface EditorState {
   redo: () => void;
   toggleShowDeleted: () => void;
   setCurrentTime: (t: number) => void;
+  seekTo: (t: number) => void;
   setPlaying: (p: boolean) => void;
   setVideoEl: (el: HTMLMediaElement | null) => void;
   /** Play/pause, skipping out of cut ranges and restarting from the start if parked at the end. */
@@ -635,6 +636,11 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   },
 
   setCurrentTime: (currentTime) => set({ currentTime }),
+  seekTo: (time) => {
+    const media = get().videoEl;
+    if (media) media.currentTime = time;
+    set({ currentTime: time });
+  },
   setPlaying: (playing) => set({ playing }),
   setVideoEl: (videoEl) => set({ videoEl }),
   togglePlayback: () => {
@@ -644,7 +650,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     if (media.paused) {
       const cuts = getCutRanges(s.words, s.duration, s.manualCuts);
       const cut = cutRangeAt(media.currentTime, cuts);
-      if (cut) media.currentTime = cut.end + 0.001;
+      if (cut) media.currentTime = cut.end + PLAYHEAD_EPSILON_S;
       if (media.currentTime >= media.duration - 0.05) media.currentTime = 0;
       void media.play();
     } else {
@@ -697,5 +703,3 @@ export function hydrateModelPreference() {
     useEditorStore.setState({ model: stored });
   }
 }
-
-export type { ProjectMeta };

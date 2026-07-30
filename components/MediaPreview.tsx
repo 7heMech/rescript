@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useRef } from "react";
 import { useEditorStore } from "@/lib/store";
-import { cutRangeAt, getCutRanges } from "@/lib/edits";
+import { cutRangeAt, PLAYHEAD_EPSILON_S } from "@/lib/edits";
+import { useCutRanges } from "@/hooks/useCutRanges";
 
 /**
  * Owns the <video>/<audio> element and the cut-skipping playback loop.
@@ -12,20 +13,18 @@ import { cutRangeAt, getCutRanges } from "@/lib/edits";
 export default function MediaPreview() {
   const mediaUrl = useEditorStore((s) => s.mediaUrl);
   const mediaKind = useEditorStore((s) => s.mediaKind);
-  const words = useEditorStore((s) => s.words);
-  const manualCuts = useEditorStore((s) => s.manualCuts);
-  const duration = useEditorStore((s) => s.duration);
   const setVideoEl = useEditorStore((s) => s.setVideoEl);
   const setDuration = useEditorStore((s) => s.setDuration);
   const setPlaying = useEditorStore((s) => s.setPlaying);
   const setCurrentTime = useEditorStore((s) => s.setCurrentTime);
+  const cuts = useCutRanges();
 
   const mediaRef = useRef<HTMLMediaElement | null>(null);
   const isAudio = mediaKind === "audio";
-  const cutsRef = useRef(getCutRanges(words, duration, manualCuts));
+  const cutsRef = useRef(cuts);
   useEffect(() => {
-    cutsRef.current = getCutRanges(words, duration, manualCuts);
-  }, [words, duration, manualCuts]);
+    cutsRef.current = cuts;
+  }, [cuts]);
 
   const refCb = useCallback(
     (el: HTMLMediaElement | null) => {
@@ -45,7 +44,7 @@ export default function MediaPreview() {
         if (!media.paused) {
           const cut = cutRangeAt(t, cutsRef.current);
           if (cut) {
-            const target = cut.end + 0.001;
+            const target = cut.end + PLAYHEAD_EPSILON_S;
             if (target >= media.duration - 0.05) {
               media.pause();
               media.currentTime = cut.start;
