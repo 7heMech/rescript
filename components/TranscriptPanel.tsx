@@ -20,6 +20,7 @@ import {
   TRANSCRIPT_ACCEPT,
 } from "@/lib/parseTranscript";
 import type { SpeakerTurn, Word } from "@/lib/types";
+import TranscriptScrollIndicator from "./TranscriptScrollIndicator";
 import {
   getActiveSceneBoundaries,
   getCutRanges,
@@ -561,7 +562,7 @@ export default function TranscriptPanel() {
 
       <div
         ref={scrollRef}
-        className="relative min-h-0 flex-1 overflow-y-auto pt-10 scroll-pt-10"
+        className="scrollbar-none relative min-h-0 flex-1 overflow-y-auto pt-10 scroll-pt-10"
       >
         <div ref={containerRef} className="relative mx-auto max-w-2xl px-4 py-6 sm:px-8 sm:py-8">
           {busy && (
@@ -719,6 +720,8 @@ export default function TranscriptPanel() {
           )}
         </div>
       </div>
+
+      <TranscriptScrollIndicator scrollRef={scrollRef} contentRef={containerRef} />
     </section>
   );
 }

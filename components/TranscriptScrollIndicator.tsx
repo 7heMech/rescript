@@ -1,0 +1,358 @@
+"use client";
+
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type RefObject,
+} from "react";
+import { useEditorStore } from "@/lib/store";
+
+/** Height of the transcript's floating header. The first readable line sits
+ *  just below it, and that line is the one the rail reports a time for. */
+const HEADER_H = 40;
+const MIN_THUMB_H = 28;
+/** Kept in sync with the label's `h-3.5` so it can be centred on the thumb. */
+const LABEL_H = 14;
+/** Candidate spacings between ticks, in seconds, coarsest last. */
+const TICK_STEPS = [5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600];
+const MIN_TICK_GAP = 13;
+/** How close a tick must be to the thumb to react, and how far it grows. */
+const TICK_REACH = 52;
+const TICK_W = 4;
+const TICK_W_ACTIVE = 13;
+/** Idle delay before the ticks and the time label retract again. */
+const IDLE_MS = 1000;
+
+/** A measured line of transcript: where it sits, and when it is spoken. */
+type Anchor = { top: number; time: number };
+type Tick = { time: number; y: number };
+
+const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+
+/** m:ss (or h:mm past an hour) — no tenths, which only flicker at this size. */
+function railTime(seconds: number): string {
+  const total = Math.max(0, Math.round(seconds));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  if (h > 0) return `${h}h${String(m).padStart(2, "0")}`;
+  return `${m}:${String(total % 60).padStart(2, "0")}`;
+}
+
+/** Media time of the transcript at `top`, interpolated between measured lines. */
+function timeAt(anchors: Anchor[], top: number): number {
+  if (anchors.length === 0) return 0;
+  let lo = 0;
+  let hi = anchors.length - 1;
+  let idx = 0;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (anchors[mid].top <= top) {
+      idx = mid;
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  const a = anchors[idx];
+  const b = anchors[idx + 1];
+  if (!b || b.top === a.top) return a.time;
+  const k = clamp((top - a.top) / (b.top - a.top), 0, 1);
+  return a.time + (b.time - a.time) * k;
+}
+
+/** The inverse of `timeAt`: where `time` falls in scroll coordinates. */
+function topAt(anchors: Anchor[], time: number): number {
+  if (anchors.length === 0) return 0;
+  let lo = 0;
+  let hi = anchors.length - 1;
+  let idx = 0;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (anchors[mid].time <= time) {
+      idx = mid;
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  const a = anchors[idx];
+  const b = anchors[idx + 1];
+  if (!b || b.time === a.time) return a.top;
+  const k = clamp((time - a.time) / (b.time - a.time), 0, 1);
+  return a.top + (b.top - a.top) * k;
+}
+
+/**
+ * Replaces the transcript's native scrollbar with a rail that reads out the
+ * media time of whatever is currently scrolled into view. Ticks mark round
+ * timestamps at the position where they appear in the text, so the thumb
+ * sweeps past them as those moments reach the top of the pane.
+ *
+ * Everything that changes per frame (thumb, label, tick emphasis) is written
+ * straight to the DOM — a scroll this fast should not re-render the panel.
+ */
+export default function TranscriptScrollIndicator({
+  scrollRef,
+  contentRef,
+}: {
+  scrollRef: RefObject<HTMLDivElement | null>;
+  contentRef: RefObject<HTMLDivElement | null>;
+}) {
+  const words = useEditorStore((s) => s.words);
+  const starts = useMemo(() => {
+    const map = new Map<number, number>();
+    for (const w of words) map.set(w.id, w.start);
+    return map;
+  }, [words]);
+
+  const railRef = useRef<HTMLDivElement>(null);
+  const thumbRef = useRef<HTMLDivElement>(null);
+  const labelRef = useRef<HTMLSpanElement>(null);
+  const tickEls = useRef<(HTMLSpanElement | null)[]>([]);
+  const anchors = useRef<Anchor[]>([]);
+  const tickPos = useRef<Tick[]>([]);
+  const dragging = useRef(false);
+  const endDrag = useRef<(() => void) | null>(null);
+  const hovering = useRef(false);
+  const idleTimer = useRef<number | null>(null);
+
+  const [ticks, setTicks] = useState<Tick[]>([]);
+  const [active, setActive] = useState(false);
+  const [enabled, setEnabled] = useState(false);
+
+  const paint = useCallback(() => {
+    const scroller = scrollRef.current;
+    const rail = railRef.current;
+    const thumb = thumbRef.current;
+    const label = labelRef.current;
+    if (!scroller || !rail || !thumb || !label) return;
+    const railH = rail.clientHeight;
+    const viewport = scroller.clientHeight;
+    const range = scroller.scrollHeight - viewport;
+    if (railH <= 0 || range <= 1) return;
+
+    const thumbH = Math.max(MIN_THUMB_H, (viewport / scroller.scrollHeight) * railH);
+    const travel = railH - thumbH;
+    const scrollTop = clamp(scroller.scrollTop, 0, range);
+    const y = (scrollTop / range) * travel;
+
+    thumb.style.height = `${thumbH}px`;
+    thumb.style.transform = `translateY(${y}px)`;
+    label.style.transform = `translateY(${clamp(y - LABEL_H / 2, 0, railH - LABEL_H)}px)`;
+    label.textContent = railTime(timeAt(anchors.current, scrollTop + HEADER_H));
+
+    const els = tickEls.current;
+    const count = Math.min(els.length, tickPos.current.length);
+    for (let i = 0; i < count; i++) {
+      const el = els[i];
+      if (!el) continue;
+      const distance = Math.abs(tickPos.current[i].y - y);
+      const near = distance > TICK_REACH ? 0 : 1 - distance / TICK_REACH;
+      // Smoothstep, so the emphasis eases in instead of ramping linearly.
+      const e = near * near * (3 - 2 * near);
+      el.style.width = `${TICK_W + (TICK_W_ACTIVE - TICK_W) * e}px`;
+      el.style.opacity = `${0.3 + 0.7 * e}`;
+    }
+  }, [scrollRef]);
+
+  const measure = useCallback(() => {
+    const scroller = scrollRef.current;
+    const content = contentRef.current;
+    const rail = railRef.current;
+    if (!scroller || !content || !rail) return;
+
+    // One anchor per rendered line: word spans share an `offsetTop` when they
+    // wrap onto the same line, so the first of each line is enough.
+    const base = content.offsetTop;
+    const measured: Anchor[] = [];
+    let lastTop = -1;
+    for (const span of content.querySelectorAll<HTMLElement>("[data-wid]")) {
+      const top = span.offsetTop;
+      if (top === lastTop) continue;
+      const time = starts.get(Number(span.dataset.wid));
+      if (time === undefined) continue;
+      lastTop = top;
+      measured.push({ top: base + top, time });
+    }
+    anchors.current = measured;
+
+    const viewport = scroller.clientHeight;
+    const range = scroller.scrollHeight - viewport;
+    const railH = rail.clientHeight;
+    const first = measured[0]?.time ?? 0;
+    const last = measured[measured.length - 1]?.time ?? 0;
+    if (measured.length < 2 || range <= 1 || railH <= 0 || last <= first) {
+      tickPos.current = [];
+      setTicks([]);
+      setEnabled(false);
+      return;
+    }
+
+    const thumbH = Math.max(MIN_THUMB_H, (viewport / scroller.scrollHeight) * railH);
+    const travel = railH - thumbH;
+    const spanned = last - first;
+    const step =
+      TICK_STEPS.find((s) => (s / spanned) * travel >= MIN_TICK_GAP) ??
+      TICK_STEPS[TICK_STEPS.length - 1];
+    const next: Tick[] = [];
+    for (let t = Math.ceil(first / step) * step; t <= last; t += step) {
+      next.push({ time: t, y: clamp((topAt(measured, t) / range) * travel, 0, travel) });
+    }
+    tickPos.current = next;
+    setTicks(next);
+    setEnabled(true);
+  }, [scrollRef, contentRef, starts]);
+
+  /** Wake the rail up, and arm the retraction that follows a quiet moment. */
+  const bump = useCallback(() => {
+    setActive(true);
+    if (idleTimer.current !== null) window.clearTimeout(idleTimer.current);
+    idleTimer.current = window.setTimeout(() => {
+      idleTimer.current = null;
+      if (!dragging.current && !hovering.current) setActive(false);
+    }, IDLE_MS);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (idleTimer.current !== null) window.clearTimeout(idleTimer.current);
+      endDrag.current?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    measure();
+  }, [measure]);
+
+  // Ticks were just (re)rendered, so their elements can take their emphasis.
+  useEffect(() => {
+    tickEls.current.length = ticks.length;
+    paint();
+  }, [ticks, paint]);
+
+  useEffect(() => {
+    const scroller = scrollRef.current;
+    if (!scroller) return;
+    let frame = 0;
+    const onScroll = () => {
+      bump();
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        paint();
+      });
+    };
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      scroller.removeEventListener("scroll", onScroll);
+      if (frame) cancelAnimationFrame(frame);
+    };
+  }, [scrollRef, paint, bump]);
+
+  // Re-measure when the pane resizes or the transcript reflows.
+  useEffect(() => {
+    const scroller = scrollRef.current;
+    const content = contentRef.current;
+    if (!scroller || !content) return;
+    let frame = 0;
+    const observer = new ResizeObserver(() => {
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        measure();
+      });
+    });
+    observer.observe(scroller);
+    observer.observe(content);
+    return () => {
+      observer.disconnect();
+      if (frame) cancelAnimationFrame(frame);
+    };
+  }, [scrollRef, contentRef, measure]);
+
+  const onPointerDown = useCallback(
+    (e: ReactPointerEvent<HTMLDivElement>) => {
+      const scroller = scrollRef.current;
+      const rail = railRef.current;
+      const thumb = thumbRef.current;
+      if (!scroller || !rail || !thumb) return;
+      e.preventDefault();
+
+      const railRect = rail.getBoundingClientRect();
+      const thumbRect = thumb.getBoundingClientRect();
+      // Grabbing the thumb keeps the offset; clicking the rail centres it.
+      const grab =
+        e.clientY >= thumbRect.top && e.clientY <= thumbRect.bottom
+          ? e.clientY - thumbRect.top
+          : thumbRect.height / 2;
+      const travel = railRect.height - thumbRect.height;
+      const range = scroller.scrollHeight - scroller.clientHeight;
+
+      const drag = (clientY: number) => {
+        if (travel <= 0) return;
+        const y = clamp(clientY - railRect.top - grab, 0, travel);
+        scroller.scrollTop = (y / travel) * range;
+      };
+      const onMove = (ev: PointerEvent) => drag(ev.clientY);
+      const onUp = () => {
+        dragging.current = false;
+        endDrag.current = null;
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+        bump();
+      };
+
+      dragging.current = true;
+      endDrag.current = onUp;
+      bump();
+      drag(e.clientY);
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+    },
+    [scrollRef, bump]
+  );
+
+  return (
+    <div
+      ref={railRef}
+      aria-hidden
+      onPointerDown={onPointerDown}
+      onPointerEnter={() => {
+        hovering.current = true;
+        bump();
+      }}
+      onPointerLeave={() => {
+        hovering.current = false;
+        bump();
+      }}
+      className={`absolute top-10 right-0 bottom-0 z-20 w-3 touch-none select-none ${enabled ? "" : "pointer-events-none opacity-0"
+        }`}
+    >
+      {ticks.map((tick, i) => (
+        <span
+          key={tick.time}
+          ref={(el) => {
+            tickEls.current[i] = el;
+          }}
+          style={{ top: tick.y, transitionDelay: `${Math.min(i * 6, 140)}ms` }}
+          className={`absolute right-2.5 h-px origin-right rounded-full bg-zinc-400 transition-transform duration-300 ease-out ${active ? "scale-x-100" : "scale-x-0"
+            }`}
+        />
+      ))}
+      <div
+        ref={thumbRef}
+        className={`absolute top-0 right-0.5 w-1 rounded-full transition-colors ${active ? "bg-zinc-400" : "bg-zinc-300"
+          }`}
+      />
+      <span
+        ref={labelRef}
+        className={`pointer-events-none absolute top-0 right-7 flex h-3.5 items-center text-[10px] font-medium tabular-nums whitespace-nowrap text-zinc-400 transition-opacity duration-200 ${active ? "opacity-100" : "opacity-0"
+          }`}
+      />
+    </div>
+  );
+}
