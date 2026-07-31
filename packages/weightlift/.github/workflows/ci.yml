@@ -26,20 +26,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Lint
-        run: npm run lint
+      - name: Typecheck
+        run: npm run typecheck
 
-      - name: Typecheck (web)
-        run: |
-          # next-env.d.ts is gitignored; generate it (and route types) before tsc.
-          npx next typegen
-          npx tsc --noEmit
+      - name: Test
+        run: npm run test
 
-      - name: Typecheck (electron)
-        run: npm run typecheck:electron
-
-      - name: Build Next.js
+      - name: Build
         run: npm run build
-
-      - name: Build Electron main/preload
-        run: npm run build:electron

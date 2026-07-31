@@ -7,10 +7,13 @@
     "name": "wassgha",
     "email": "wassgha@gmail.com"
   },
+  "homepage": "https://github.com/wassgha/weightlift#readme",
+  "bugs": {
+    "url": "https://github.com/wassgha/weightlift/issues"
+  },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/wassgha/rescript.git",
-    "directory": "packages/weightlift"
+    "url": "git+https://github.com/wassgha/weightlift.git"
   },
   "keywords": [
     "ml",
@@ -54,7 +57,10 @@
     "build": "tsc -p tsconfig.build.json",
     "test": "tsx --test tests/**/*-test.ts",
     "typecheck": "tsc -p tsconfig.build.json --noEmit",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build && npm test"
+  },
+  "engines": {
+    "node": ">=18"
   },
   "peerDependencies": {
     "react": ">=18"
@@ -66,7 +72,7 @@
   },
   "devDependencies": {
     "@types/react": "^19",
-    "react": "19.2.4",
+    "react": "^19.0.0",
     "tsx": "^4.22.4",
     "typescript": "^5"
   }

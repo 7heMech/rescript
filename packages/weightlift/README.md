@@ -51,7 +51,7 @@ npm install weightlift
 | `weightlift/react` | `useModel` / `useModelManager` |
 | `weightlift/worker` | `createWorkerReporter` / `attachWorker` |
 
-No runtime adapters — map your callback into `progress.dispatch(...)` (a few lines; see above). UI strings stay in the app: compose from `status` + `fromCache`.
+Map your runtime’s progress callback into `progress.dispatch(...)` at the call site. UI strings stay in the app: compose from `status` + `fromCache`.
 
 ## ModelManager
 
@@ -102,6 +102,20 @@ function Bar({ manager }: { manager: ModelManager }) {
   const label = fromCache ? "Loading from cache…" : "Downloading…";
   // …
 }
+```
+
+## Develop
+
+```bash
+npm install
+npm test
+npm run build
+```
+
+Publish:
+
+```bash
+npm publish
 ```
 
 ## License

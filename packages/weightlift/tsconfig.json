@@ -11,8 +11,7 @@
     "isolatedModules": true,
     "declaration": true,
     "jsx": "react-jsx",
-    "rootDir": ".",
-    "types": ["node"]
+    "rootDir": "."
   },
   "include": ["src/**/*.ts", "tests/**/*.ts"]
 }

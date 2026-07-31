@@ -37,6 +37,6 @@
     "electron",
     "electron-dist",
     "dist",
-    "packages/weightlift"
+    "packages"
   ]
 }

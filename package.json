@@ -11,18 +11,13 @@
     "type": "git",
     "url": "git+https://github.com/wassgha/rescript.git"
   },
-  "workspaces": [
-    "packages/*"
-  ],
   "main": "./electron-dist/main.js",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test:weightlift": "npm run test -w weightlift",
-    "build:weightlift": "npm run build -w weightlift",
-    "postinstall": "npm run build:weightlift && node scripts/copy-assets.mjs",
+    "postinstall": "node scripts/copy-assets.mjs",
     "build:electron": "node scripts/build-electron.mjs",
     "typecheck:electron": "tsc -p electron/tsconfig.json --noEmit",
     "electron:dev": "npm run build:electron && concurrently -k -n next,electron -c cyan,magenta \"next dev\" \"node scripts/electron-dev.mjs\"",
@@ -47,7 +42,7 @@
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "react-resizable-panels": "^4.12.2",
-    "weightlift": "*",
+    "weightlift": "^0.1.0",
     "zustand": "^5.0.14"
   },
   "devDependencies": {
