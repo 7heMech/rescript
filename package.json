@@ -4,9 +4,11 @@
   "description": "Rescript — edit video and audio like you edit text, fully offline.",
   "private": true,
   "author": {
-    "name": "wassgha",
-    "email": "wassgha@gmail.com"
+    "name": "Wassim Gharbi",
+    "email": "wassgha@gmail.com",
+    "url": "https://github.com/wassgha"
   },
+  "license": "PolyForm-Noncommercial-1.0.0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/wassgha/rescript.git"

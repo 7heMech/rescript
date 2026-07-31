@@ -107,11 +107,20 @@ bundles Chromium via Electron and sets the same isolation headers on its
 
 ## License
 
-MIT
+Copyright (c) 2026 Wassim Gharbi and Rescript contributors.
+
+Licensed under the [PolyForm Noncommercial License 1.0.0](LICENSE).
+You may use, modify, and share Rescript for noncommercial purposes only, and
+you must retain the required copyright notice. Commercial use (including
+reselling or redistributing the software for a fee) is not permitted under
+this license. Contact the author for commercial licensing.
+
+Prior releases published under the MIT License remain available under MIT for
+those versions only.
 
 ---
 
-[![License: MIT](https://img.shields.io/badge/license-MIT-111?style=flat-square)](LICENSE)
+[![License: PolyForm Noncommercial](https://img.shields.io/badge/license-PolyForm%20Noncommercial-111?style=flat-square)](LICENSE)
 [![Platforms](https://img.shields.io/badge/platforms-Web%20·%20macOS%20·%20Windows%20·%20Linux-111?style=flat-square)](#download)
 [![Electron](https://img.shields.io/badge/Electron-42-111?style=flat-square&logo=electron&logoColor=9FEAF9)](https://www.electronjs.org/)
 [![Stars](https://img.shields.io/github/stars/wassgha/rescript?style=flat-square&color=111)](https://github.com/wassgha/rescript/stargazers)
