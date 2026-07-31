@@ -7,7 +7,6 @@ import {
   useEffect,
   useId,
   useMemo,
-  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -32,7 +31,7 @@ import {
   hydrateTranscriptLanguagePreference,
   useEditorStore,
 } from "@/lib/store";
-import PopupDismissBackdrop from "./PopupDismissBackdrop";
+import Popover, { PopoverContent, PopoverTrigger } from "./Popover";
 
 export type ModelOptionContextValue = {
   /** Currently selected source id. */
@@ -126,29 +125,12 @@ export default function ModelSelector({
   const transcriptLanguage = useEditorStore((s) => s.transcriptLanguage);
   const [open, setOpen] = useState(false);
   const [triggers, setTriggers] = useState<Record<string, OptionTrigger>>({});
-  const rootRef = useRef<HTMLDivElement>(null);
   const listId = useId();
 
   useEffect(() => {
     hydrateModelPreference();
     hydrateTranscriptLanguagePreference();
   }, []);
-
-  useEffect(() => {
-    if (embedded || !open) return;
-    const onPointer = (e: PointerEvent) => {
-      if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("pointerdown", onPointer);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("pointerdown", onPointer);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open, embedded]);
 
   const closeMenu = useCallback(() => {
     if (embedded) onClose?.();
@@ -237,74 +219,77 @@ export default function ModelSelector({
 
   return (
     <ModelSelectorCtx.Provider value={ctx}>
-      {open && <PopupDismissBackdrop onDismiss={() => setOpen(false)} />}
-      <div ref={rootRef} className="relative z-30 shrink-0">
-        <button
-          type="button"
-          aria-haspopup="listbox"
-          aria-expanded={open}
-          aria-controls={listId}
-          aria-label={
-            showLanguageInTrigger
-              ? `${typeof baseTriggerLabel === "string" ? baseTriggerLabel : "Transcript source"}, ${languageInfo.label}`
-              : undefined
-          }
-          onClick={() => setOpen((v) => !v)}
-          className="inline-flex max-w-[18rem] items-center gap-2 rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-[13px] font-medium text-zinc-800 cursor-pointer transition hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:border-zinc-600 dark:hover:bg-zinc-800"
-        >
-          {activeTrigger?.busy ? (
-            <Loader2 size={14} className="shrink-0 animate-spin text-zinc-500" />
-          ) : (
-            <TriggerIcon
-              size={14}
-              className={`shrink-0 ${activeTrigger?.iconClassName ?? "text-zinc-500"}`}
-            />
-          )}
-          <span className="flex min-w-0 items-center gap-1.5 truncate">
-            <span className="truncate">{baseTriggerLabel}</span>
-            {showLanguageInTrigger && (
-              <>
-                <span
-                  className="shrink-0 font-normal text-zinc-300 dark:text-zinc-600"
-                  aria-hidden
-                >
-                  |
-                </span>
-                <Languages
+      <Popover
+        open={open}
+        onOpenChange={setOpen}
+        placement="bottom-end"
+        backdrop
+      >
+        <div className="relative z-30 shrink-0">
+          <PopoverTrigger>
+            <button
+              type="button"
+              aria-haspopup="listbox"
+              aria-expanded={open}
+              aria-controls={listId}
+              aria-label={
+                showLanguageInTrigger
+                  ? `${typeof baseTriggerLabel === "string" ? baseTriggerLabel : "Transcript source"}, ${languageInfo.label}`
+                  : undefined
+              }
+              onClick={() => setOpen((v) => !v)}
+              className="inline-flex max-w-[18rem] items-center gap-2 rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-[13px] font-medium text-zinc-800 cursor-pointer transition hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:border-zinc-600 dark:hover:bg-zinc-800"
+            >
+              {activeTrigger?.busy ? (
+                <Loader2 size={14} className="shrink-0 animate-spin text-zinc-500" />
+              ) : (
+                <TriggerIcon
                   size={14}
-                  className="shrink-0 text-zinc-500 dark:text-zinc-400"
-                  aria-hidden
+                  className={`shrink-0 ${activeTrigger?.iconClassName ?? "text-zinc-500"}`}
                 />
-                <span className="shrink-0 font-normal text-zinc-500 dark:text-zinc-400">
-                  {languageInfo.code}
-                </span>
-              </>
-            )}
-          </span>
-          <ChevronDown
-            size={14}
-            className={`shrink-0 text-zinc-400 transition dark:text-zinc-500 ${open ? "rotate-180" : ""}`}
-          />
-        </button>
+              )}
+              <span className="flex min-w-0 items-center gap-1.5 truncate">
+                <span className="truncate">{baseTriggerLabel}</span>
+                {showLanguageInTrigger && (
+                  <>
+                    <span
+                      className="shrink-0 font-normal text-zinc-300 dark:text-zinc-600"
+                      aria-hidden
+                    >
+                      |
+                    </span>
+                    <Languages
+                      size={14}
+                      className="shrink-0 text-zinc-500 dark:text-zinc-400"
+                      aria-hidden
+                    />
+                    <span className="shrink-0 font-normal text-zinc-500 dark:text-zinc-400">
+                      {languageInfo.code}
+                    </span>
+                  </>
+                )}
+              </span>
+              <ChevronDown
+                size={14}
+                className={`shrink-0 text-zinc-400 transition dark:text-zinc-500 ${open ? "rotate-180" : ""}`}
+              />
+            </button>
+          </PopoverTrigger>
 
-        <div
-          id={listId}
-          role="listbox"
-          aria-label={groupLabel}
-          hidden={!open}
-          // Force display:none when closed so a lingering panel cannot eat clicks
-          // (HTML [hidden] can be overridden by author CSS in some setups).
-          className={`absolute right-0 top-[calc(100%+0.5rem)] z-20 w-[18rem] overflow-visible rounded-xl border border-zinc-200 bg-white shadow-lg shadow-zinc-900/5 dark:border-zinc-700 dark:bg-zinc-900 dark:shadow-black/40 ${
-            open ? "" : "pointer-events-none"
-          }`}
-          style={open ? undefined : { display: "none" }}
-        >
-          <p className="px-3 pb-1 pt-2.5 text-[11px] font-medium tracking-wide text-zinc-400 dark:text-zinc-500">
-            {groupLabel}
-          </p>
-          <div className="p-1 pb-1.5 space-y-1">{options}</div>
+          {/* Keep options mounted when closed so custom triggers stay registered. */}
+          <PopoverContent
+            id={listId}
+            role="listbox"
+            aria-label={groupLabel}
+            className="z-40 w-[18rem] overflow-visible"
+          >
+            <p className="px-3 pb-1 pt-2.5 text-[11px] font-medium tracking-wide text-zinc-400 dark:text-zinc-500">
+              {groupLabel}
+            </p>
+            <div className="p-1 pb-1.5 space-y-1">{options}</div>
+          </PopoverContent>
         </div>
-      </div>
+      </Popover>
     </ModelSelectorCtx.Provider>
   );
 }
@@ -400,28 +385,8 @@ export function LanguageSection() {
   const setLanguage = useEditorStore((s) => s.setTranscriptLanguage);
   const selector = useSelectorCtx();
   const [submenuOpen, setSubmenuOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
   const submenuId = useId();
   const active = TRANSCRIPT_LANGUAGES[language];
-
-  useEffect(() => {
-    if (!submenuOpen) return;
-    const onPointer = (e: PointerEvent) => {
-      if (!rootRef.current?.contains(e.target as Node)) setSubmenuOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.stopPropagation();
-        setSubmenuOpen(false);
-      }
-    };
-    document.addEventListener("pointerdown", onPointer);
-    document.addEventListener("keydown", onKey, true);
-    return () => {
-      document.removeEventListener("pointerdown", onPointer);
-      document.removeEventListener("keydown", onKey, true);
-    };
-  }, [submenuOpen]);
 
   const select = (next: TranscriptLanguage) => {
     setLanguage(next);
@@ -430,83 +395,92 @@ export function LanguageSection() {
   };
 
   return (
-    <div ref={rootRef}>
+    <div>
       <p className="px-2.5 pb-1 pt-1.5 text-[11px] font-medium tracking-wide text-zinc-400 dark:text-zinc-500">
         Language
       </p>
-      <div className="relative">
-        <button
-          type="button"
-          aria-haspopup="menu"
-          aria-expanded={submenuOpen}
-          aria-controls={submenuId}
-          onClick={() => {
-            setSubmenuOpen((v) => !v);
-            selector.keepMenuOpen();
-          }}
-          className={`flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition ${
-            submenuOpen
-              ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
-              : "text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-800/60"
-          }`}
-        >
-          <span className="text-[15px] leading-none" aria-hidden>
-            {active.flag}
-          </span>
-          <span className="min-w-0 flex-1 text-[13px] font-medium leading-tight">
-            {active.nativeLabel}
-          </span>
-          <ChevronRight
-            size={14}
-            className={`shrink-0 text-zinc-400 transition dark:text-zinc-500 ${
-              submenuOpen ? "rotate-180" : ""
-            }`}
-          />
-        </button>
-
-        <div
-          id={submenuId}
-          role="menu"
-          aria-label="Transcript language"
-          hidden={!submenuOpen}
-          className={`absolute right-full top-0 z-30 mr-1.5 w-44 overflow-hidden rounded-xl border border-zinc-200 bg-white p-1 shadow-lg shadow-zinc-900/5 dark:border-zinc-700 dark:bg-zinc-900 dark:shadow-black/40 ${
-            submenuOpen ? "" : "pointer-events-none"
-          }`}
-          style={submenuOpen ? undefined : { display: "none" }}
-        >
-          {TRANSCRIPT_LANGUAGE_ORDER.map((id) => {
-            const option = TRANSCRIPT_LANGUAGES[id];
-            const selected = id === language;
-            return (
-              <button
-                key={id}
-                type="button"
-                role="menuitemradio"
-                aria-checked={selected}
-                onClick={() => select(id)}
-                className={`flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition ${
-                  selected
-                    ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
-                    : "text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-800/60"
+      {/* No portal: stay in the parent panel DOM so outside-click on the model
+          menu still treats this flyout as inside the floating tree. */}
+      <Popover
+        open={submenuOpen}
+        onOpenChange={setSubmenuOpen}
+        placement="right-start"
+        offsetMain={6}
+        portal={false}
+        escapeStopPropagation
+      >
+        <div className="relative">
+          <PopoverTrigger>
+            <button
+              type="button"
+              aria-haspopup="menu"
+              aria-expanded={submenuOpen}
+              aria-controls={submenuId}
+              onClick={() => {
+                setSubmenuOpen((v) => !v);
+                selector.keepMenuOpen();
+              }}
+              className={`flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition ${
+                submenuOpen
+                  ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
+                  : "text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-800/60"
+              }`}
+            >
+              <span className="text-[15px] leading-none" aria-hidden>
+                {active.flag}
+              </span>
+              <span className="min-w-0 flex-1 text-[13px] font-medium leading-tight">
+                {active.nativeLabel}
+              </span>
+              <ChevronRight
+                size={14}
+                className={`shrink-0 text-zinc-400 transition dark:text-zinc-500 ${
+                  submenuOpen ? "rotate-180" : ""
                 }`}
-              >
-                <span className="text-[15px] leading-none" aria-hidden>
-                  {option.flag}
-                </span>
-                <span className="min-w-0 flex-1 text-[13px] font-medium leading-tight">
-                  {option.nativeLabel}
-                </span>
-                {selected && (
-                  <Check
-                    size={14}
-                    className="shrink-0 text-zinc-500 dark:text-zinc-300"
-                  />
-                )}
-              </button>
-            );
-          })}
+              />
+            </button>
+          </PopoverTrigger>
+
+          <PopoverContent
+            id={submenuId}
+            role="menu"
+            aria-label="Transcript language"
+            className="z-50 w-44 overflow-hidden p-1"
+          >
+            {TRANSCRIPT_LANGUAGE_ORDER.map((id) => {
+              const option = TRANSCRIPT_LANGUAGES[id];
+              const selected = id === language;
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={selected}
+                  onClick={() => select(id)}
+                  className={`flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition ${
+                    selected
+                      ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
+                      : "text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-800/60"
+                  }`}
+                >
+                  <span className="text-[15px] leading-none" aria-hidden>
+                    {option.flag}
+                  </span>
+                  <span className="min-w-0 flex-1 text-[13px] font-medium leading-tight">
+                    {option.nativeLabel}
+                  </span>
+                  {selected && (
+                    <Check
+                      size={14}
+                      className="shrink-0 text-zinc-500 dark:text-zinc-300"
+                    />
+                  )}
+                </button>
+              );
+            })}
+          </PopoverContent>
         </div>
-      </div>
+      </Popover>
     </div>
   );
 }

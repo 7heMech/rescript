@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
-import { Bug, CircleAlert, ExternalLink, Moon, Settings, Sun } from "lucide-react";
+import { useId, useState } from "react";
+import { Bug, ExternalLink, Moon, Settings, Sun } from "lucide-react";
 import {
   DiscordIcon,
   DISCORD_INVITE_URL,
@@ -11,7 +11,7 @@ import {
   X_PROFILE_URL,
 } from "./SocialLinks";
 import { useAppearance } from "@/hooks/useAppearance";
-import PopupDismissBackdrop from "./PopupDismissBackdrop";
+import Popover, { PopoverContent, PopoverTrigger } from "./Popover";
 import type { Appearance } from "@/lib/theme";
 
 const MENU_LINKS = [
@@ -31,54 +31,37 @@ const MENU_LINKS = [
  */
 export default function SettingsMenu() {
   const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
   const panelId = useId();
   const { appearance, setAppearance } = useAppearance();
 
-  useEffect(() => {
-    if (!open) return;
-    const onPointer = (e: PointerEvent) => {
-      if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("pointerdown", onPointer);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("pointerdown", onPointer);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
-
   return (
-    <>
-      {open && (
-        <PopupDismissBackdrop onDismiss={() => setOpen(false)} zClassName="z-20" />
-      )}
-      <div ref={rootRef} className="relative z-30 shrink-0">
-        <button
-          type="button"
-          aria-label="Settings"
-          aria-haspopup="dialog"
-          aria-expanded={open}
-          aria-controls={panelId}
-          title="Settings"
-          onClick={() => setOpen((v) => !v)}
-          className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
-        >
-          <Settings size={16} />
-        </button>
+    <Popover
+      open={open}
+      onOpenChange={setOpen}
+      placement="bottom-end"
+      backdrop
+    >
+      <div className="relative z-30 shrink-0">
+        <PopoverTrigger>
+          <button
+            type="button"
+            aria-label="Settings"
+            aria-haspopup="dialog"
+            aria-expanded={open}
+            aria-controls={panelId}
+            title="Settings"
+            onClick={() => setOpen((v) => !v)}
+            className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+          >
+            <Settings size={16} />
+          </button>
+        </PopoverTrigger>
 
-        <div
+        <PopoverContent
           id={panelId}
           role="dialog"
           aria-label="Settings"
-          hidden={!open}
-          className={`absolute right-0 top-[calc(100%+0.5rem)] z-30 w-[15rem] overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-lg shadow-zinc-900/5 dark:border-zinc-700 dark:bg-zinc-900 dark:shadow-black/40 ${
-            open ? "" : "pointer-events-none"
-          }`}
-          style={open ? undefined : { display: "none" }}
+          className="z-40 w-[15rem] overflow-hidden"
         >
           <section className="border-b border-zinc-100 px-3 py-2.5 dark:border-zinc-800">
             <p className="mb-2 text-[11px] font-medium tracking-wide text-zinc-400 dark:text-zinc-500">
@@ -126,9 +109,9 @@ export default function SettingsMenu() {
               </a>
             ))}
           </section>
-        </div>
+        </PopoverContent>
       </div>
-    </>
+    </Popover>
   );
 }
 
