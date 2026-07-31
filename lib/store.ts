@@ -7,13 +7,16 @@ import type {
   ManualCut,
   ProgressInfo,
   SceneBoundary,
+  TimeRange,
   Word,
 } from "./types";
 import {
+  addManualCut,
   applyWordBounds,
   canSplitAt,
   carrySceneBoundaries,
   cutRangeAt,
+  deleteWordsCoveredBy,
   getClipSegments,
   getCutRanges,
   getKeepRanges,
@@ -135,6 +138,8 @@ interface EditorState {
   importWords: (words: Word[]) => void;
   deleteWords: (ids: number[]) => void;
   restoreWords: (ids: number[]) => void;
+  /** Cut arbitrary time ranges (e.g. detected silences) as manual cuts. */
+  cutRanges: (ranges: TimeRange[]) => void;
   /** Replace the selected (contiguous) words with corrected text. */
   correctWords: (ids: number[], text: string) => void;
   /** Nudge a word's start/end on the timeline (may steal time from neighbors). */
@@ -435,6 +440,21 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         idSet.has(w.id) && !w.deleted ? { ...w, deleted: true } : w
       ),
     });
+  },
+  cutRanges: (ranges) => {
+    const usable = ranges.filter((r) => r.end - r.start > 1e-4);
+    if (usable.length === 0) return;
+    const s = get();
+    let words = s.words;
+    let manualCuts = s.manualCuts;
+    let nextManualCutId = s.nextManualCutId;
+    for (const r of usable) {
+      const added = addManualCut(manualCuts, r.start, r.end, nextManualCutId);
+      manualCuts = added.cuts;
+      nextManualCutId = added.nextId;
+      words = deleteWordsCoveredBy(words, r.start, r.end);
+    }
+    pushEdit(get, set, { words, manualCuts, nextManualCutId });
   },
   restoreWords: (ids) => {
     if (ids.length === 0) return;
