@@ -20,8 +20,7 @@ import {
   env,
   type AutomaticSpeechRecognitionPipeline,
 } from "@huggingface/transformers";
-import { ModelManager } from "weightlift";
-import { transformersAdapter } from "weightlift/adapters/transformers";
+import { ModelManager, type Weightlift } from "weightlift";
 import type { Word, WorkerRequest, WorkerResponse } from "@/lib/types";
 import { MODELS, type WhisperModel } from "@/lib/models";
 import { cleanTranscript } from "@/lib/hallucinations";
@@ -94,6 +93,43 @@ async function pickDevice(): Promise<"webgpu" | "wasm"> {
 }
 
 /**
+ * Map transformers.js progress_callback events into a Weightlift store.
+ * Kept local — weightlift stays runtime-agnostic.
+ */
+function feedTransformersProgress(progress: Weightlift) {
+  return (p: {
+    status?: string;
+    file?: string;
+    loaded?: number;
+    total?: number;
+    progress?: number;
+  }) => {
+    if (p.status === "progress_total") {
+      const total = p.total ?? 0;
+      if (!(total > 0)) return;
+      const loaded =
+        typeof p.progress === "number"
+          ? (p.progress / 100) * total
+          : (p.loaded ?? 0);
+      progress.dispatch({ type: "progress_total", loaded, total });
+      return;
+    }
+    if (p.status === "progress" && p.file) {
+      progress.dispatch({
+        type: "progress",
+        file: p.file,
+        loaded: p.loaded ?? 0,
+        total: p.total,
+      });
+      return;
+    }
+    if (p.status === "done" && p.file) {
+      progress.dispatch({ type: "done", file: p.file });
+    }
+  };
+}
+
+/**
  * Singleton ASR pipelines + download progress, keyed by Hugging Face model id.
  * Concurrent getAsr() calls share one promise; unload() after a WebGPU loss
  * forces a clean reload on WASM.
@@ -106,7 +142,10 @@ asrModels.subscribe((snap) => {
   if (!rec) return;
   post({
     type: "progress",
-    message: rec.message,
+    message:
+      rec.fromCache === true
+        ? "Loading speech model from cache…"
+        : "Downloading speech model…",
     value: rec.indeterminate ? null : rec.percent,
   });
 });
@@ -115,14 +154,10 @@ async function getAsr(choice: WhisperModel) {
   const { id, dtype } = MODELS[choice];
   return asrModels.load<AutomaticSpeechRecognitionPipeline>(id, {
     isCached: () => isModelCached(id),
-    messages: {
-      download: "Downloading speech model…",
-      cache: "Loading speech model from cache…",
-    },
     load: async ({ progress }) => {
       const device = await pickDevice();
       asrDevice = device;
-      const onProgress = transformersAdapter(progress);
+      const onProgress = feedTransformersProgress(progress);
       try {
         return (await pipeline("automatic-speech-recognition", id, {
           dtype: dtype[device],

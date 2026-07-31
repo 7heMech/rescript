@@ -1,7 +1,7 @@
 {
   "name": "weightlift",
   "version": "0.1.0",
-  "description": "In-browser ML model manager with download progress (Transformers.js, WebLLM, and friends).",
+  "description": "In-browser ML model manager with download progress.",
   "license": "MIT",
   "author": {
     "name": "wassgha",
@@ -15,13 +15,13 @@
   "keywords": [
     "ml",
     "model-manager",
-    "transformers.js",
-    "webllm",
-    "whisper",
     "onnx",
     "progress",
     "model-loading",
-    "web-worker"
+    "web-worker",
+    "transformers.js",
+    "clip",
+    "whisper"
   ],
   "type": "module",
   "sideEffects": false,
@@ -37,16 +37,6 @@
       "types": "./dist/react.d.ts",
       "import": "./dist/react.js",
       "default": "./dist/react.js"
-    },
-    "./adapters/transformers": {
-      "types": "./dist/adapters/transformers.d.ts",
-      "import": "./dist/adapters/transformers.js",
-      "default": "./dist/adapters/transformers.js"
-    },
-    "./adapters/webllm": {
-      "types": "./dist/adapters/webllm.d.ts",
-      "import": "./dist/adapters/webllm.js",
-      "default": "./dist/adapters/webllm.js"
     },
     "./worker": {
       "types": "./dist/worker.d.ts",

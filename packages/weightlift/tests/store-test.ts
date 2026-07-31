@@ -5,17 +5,14 @@ import {
   createModelLoader,
   createModelRegistry,
 } from "../src/store.js";
-import { transformersEvent } from "../src/adapters/transformers.js";
-import { webllmEvent } from "../src/adapters/webllm.js";
 
 describe("Weightlift", () => {
   it("starts idle and becomes loading on start()", () => {
     const wl = new Weightlift();
     assert.equal(wl.status, "idle");
     assert.equal(wl.isIdle, true);
-    wl.start("Downloading…");
+    wl.start();
     assert.equal(wl.isLoading, true);
-    assert.equal(wl.getSnapshot().message, "Downloading…");
   });
 
   it("aggregates parallel per-file progress into one percent", () => {
@@ -54,7 +51,6 @@ describe("Weightlift", () => {
     wl.start();
     wl.dispatch({ type: "progress_total", loaded: 50, total: 100 });
     assert.equal(wl.getSnapshot().percent, 0.5);
-    // New files discovered — total doubles, loaded stays 50 → 25%.
     wl.dispatch({ type: "progress_total", loaded: 50, total: 200 });
     assert.ok(wl.getSnapshot().percent !== null);
     assert.ok((wl.getSnapshot().percent as number) <= 0.5);
@@ -76,13 +72,13 @@ describe("Weightlift", () => {
   it("ready / fail / reset lifecycle", () => {
     const wl = new Weightlift();
     wl.start();
-    wl.ready("Cached");
+    wl.ready();
     assert.equal(wl.isReady, true);
     assert.equal(wl.getSnapshot().percent, 1);
 
-    wl.fail(new Error("boom"), "Failed");
+    wl.fail(new Error("boom"));
     assert.equal(wl.hasError, true);
-    assert.equal(wl.getSnapshot().message, "Failed");
+    assert.equal(wl.getSnapshot().error?.message, "boom");
 
     wl.reset();
     assert.equal(wl.isIdle, true);
@@ -128,45 +124,5 @@ describe("createModelRegistry", () => {
     assert.notEqual(a, b);
     assert.equal(await a.load(), "base");
     assert.equal(await b.load(), "small");
-  });
-});
-
-describe("adapters", () => {
-  it("maps transformers.js progress_total", () => {
-    const event = transformersEvent({
-      status: "progress_total",
-      progress: 25,
-      total: 400,
-    });
-    assert.deepEqual(event, {
-      type: "progress_total",
-      loaded: 100,
-      total: 400,
-    });
-  });
-
-  it("maps transformers.js per-file progress", () => {
-    const event = transformersEvent({
-      status: "progress",
-      file: "model.onnx",
-      loaded: 10,
-      total: 20,
-    });
-    assert.deepEqual(event, {
-      type: "progress",
-      file: "model.onnx",
-      loaded: 10,
-      total: 20,
-    });
-  });
-
-  it("maps webllm init progress", () => {
-    const event = webllmEvent({ progress: 0.4, text: "Loading…" });
-    assert.equal(event.type, "progress_total");
-    if (event.type === "progress_total") {
-      assert.equal(event.loaded, 40);
-      assert.equal(event.total, 100);
-      assert.equal(event.message, "Loading…");
-    }
   });
 });

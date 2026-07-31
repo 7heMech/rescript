@@ -12,7 +12,7 @@ export type WeightliftWorkerMessage =
       state: WeightliftState;
     };
 
-/** Minimal sink accepted by adapters (`transformersAdapter`, etc.). */
+/** Minimal sink that accepts normalized events (store or reporter). */
 export interface EventSink {
   dispatch(event: WeightliftEvent): void;
 }
@@ -40,18 +40,8 @@ export interface WorkerReporter {
  * Worker-side helper: every update is forwarded to the main thread as a
  * serializable {@link WeightliftWorkerMessage}.
  *
- * Default `mode: "state"` posts snapshots (cheap JSON, easy UI binding).
- * `mode: "event"` forwards raw events so the main thread can rehydrate into
- * its own {@link Weightlift} via {@link attachWorker} and keep reduce context.
- *
- * ```ts
- * // worker.ts
- * const wl = new Weightlift();
- * const reporter = createWorkerReporter(self, wl);
- * await pipeline(task, id, {
- *   progress_callback: transformersAdapter(reporter),
- * });
- * ```
+ * Default `mode: "state"` posts snapshots. `mode: "event"` forwards raw
+ * events so the main thread can rehydrate via {@link attachWorker}.
  */
 export function createWorkerReporter(
   post: PostMessageTarget | ((message: unknown) => void),
@@ -99,13 +89,6 @@ export function createWorkerReporter(
 /**
  * Main-thread helper: listen for weightlift messages from a worker and apply
  * them onto a local {@link Weightlift} store.
- *
- * ```ts
- * const wl = new Weightlift();
- * const stop = attachWorker(worker, wl);
- * // … wl.subscribe(render) …
- * stop();
- * ```
  */
 export function attachWorker(
   worker: {
@@ -120,7 +103,6 @@ export function attachWorker(
   },
   weightlift: Weightlift,
   options?: {
-    /** Extra callback when a full state snapshot arrives. */
     onState?: (state: WeightliftState) => void;
   }
 ): () => void {
@@ -143,17 +125,13 @@ function mirrorState(weightlift: Weightlift, state: WeightliftState): void {
   weightlift.reset();
   if (state.status === "idle") return;
 
-  weightlift.dispatch({
-    type: "start",
-    message: state.message || undefined,
-  });
+  weightlift.start();
 
   if (state.totalBytes != null && state.totalBytes > 0) {
     weightlift.dispatch({
       type: "progress_total",
       loaded: state.loadedBytes,
       total: state.totalBytes,
-      message: state.message || undefined,
     });
   } else {
     for (const [file, fp] of Object.entries(state.files)) {
@@ -170,9 +148,9 @@ function mirrorState(weightlift: Weightlift, state: WeightliftState): void {
     }
   }
 
-  if (state.status === "ready") weightlift.ready(state.message || undefined);
+  if (state.status === "ready") weightlift.ready();
   if (state.status === "error") {
-    weightlift.fail(state.error ?? new Error(state.message || "load failed"), state.message);
+    weightlift.fail(state.error ?? new Error("load failed"));
   }
 }
 

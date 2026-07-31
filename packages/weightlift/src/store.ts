@@ -9,11 +9,11 @@ import {
 export type Unsubscribe = () => void;
 
 /**
- * Framework-agnostic model-load progress store.
+ * Per-model progress store. Framework-agnostic; safe to use in a web worker.
  *
- * Works in vanilla JS, Vue, Svelte, and — importantly — inside a web worker,
- * where model loading actually happens. Feed it normalized {@link WeightliftEvent}s
- * (directly or via a runtime adapter); subscribe for a single aggregated state.
+ * Feed it normalized {@link WeightliftEvent}s from whatever runtime you use
+ * (Transformers.js `progress_callback`, WebLLM `initProgressCallback`, a
+ * custom fetch loop, …). The {@link ModelManager} owns one of these per id.
  */
 export class Weightlift {
   #state: WeightliftState = { ...INITIAL_STATE, files: {} };
@@ -47,20 +47,20 @@ export class Weightlift {
     }
   }
 
-  /** Convenience: mark loading started with an optional label. */
-  start(message?: string): void {
-    this.dispatch({ type: "start", message });
+  /** Mark loading started. */
+  start(): void {
+    this.dispatch({ type: "start" });
   }
 
-  /** Convenience: mark the model ready. */
-  ready(message?: string): void {
-    this.dispatch({ type: "ready", message });
+  /** Mark the model ready. */
+  ready(): void {
+    this.dispatch({ type: "ready" });
   }
 
-  /** Convenience: record a failure. */
-  fail(error: unknown, message?: string): void {
+  /** Record a failure. */
+  fail(error: unknown): void {
     const err = error instanceof Error ? error : new Error(String(error));
-    this.dispatch({ type: "error", error: err, message });
+    this.dispatch({ type: "error", error: err });
   }
 
   /** Reset to idle (e.g. before loading a different model). */
@@ -68,9 +68,6 @@ export class Weightlift {
     this.dispatch({ type: "reset" });
   }
 
-  /**
-   * Shorthand getters matching the common `isLoading` / `isReady` UI pattern.
-   */
   get status(): WeightliftState["status"] {
     return this.#state.status;
   }
@@ -94,12 +91,11 @@ export class Weightlift {
 
 /**
  * Deduplicating loader for a single model. Prefer {@link ModelManager} when
- * you manage more than one id (cache labels, unload, manager snapshots).
+ * you manage more than one id.
  */
 export function createModelLoader<T>(loadFn: (wl: Weightlift) => Promise<T>): {
   weightlift: Weightlift;
   load: () => Promise<T>;
-  /** Drop the cached promise so the next `load()` runs again. */
   invalidate: () => void;
 } {
   const weightlift = new Weightlift();

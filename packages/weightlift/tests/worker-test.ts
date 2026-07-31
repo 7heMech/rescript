@@ -14,7 +14,7 @@ describe("worker bridge", () => {
     const posted: unknown[] = [];
     const reporter = createWorkerReporter((msg) => posted.push(msg), wl);
 
-    wl.start("Downloading…");
+    wl.start();
     wl.dispatch({ type: "progress_total", loaded: 25, total: 100 });
 
     assert.ok(posted.length >= 2);
@@ -22,7 +22,7 @@ describe("worker bridge", () => {
     assert.equal(isWeightliftMessage(last), true);
     if (isWeightliftMessage(last) && last.kind === "state") {
       assert.equal(last.state.percent, 0.25);
-      assert.equal(last.state.message, "Downloading…");
+      assert.equal(last.state.status, "loading");
     }
     reporter.unsubscribe();
   });
@@ -34,14 +34,14 @@ describe("worker bridge", () => {
       mode: "event",
     });
 
-    reporter.dispatch({ type: "start", message: "Go" });
+    reporter.dispatch({ type: "start" });
     reporter.dispatch({ type: "progress_total", loaded: 1, total: 2 });
 
     assert.equal(posted.length, 2);
     assert.deepEqual(posted[0], {
       type: WEIGHTLIFT_MESSAGE_TYPE,
       kind: "event",
-      event: { type: "start", message: "Go" },
+      event: { type: "start" },
     });
     assert.equal(wl.getSnapshot().percent, 0.5);
   });
@@ -68,7 +68,7 @@ describe("worker bridge", () => {
     worker.emit({
       type: WEIGHTLIFT_MESSAGE_TYPE,
       kind: "event",
-      event: { type: "start", message: "Hi" },
+      event: { type: "start" },
     });
     worker.emit({
       type: WEIGHTLIFT_MESSAGE_TYPE,
@@ -76,7 +76,7 @@ describe("worker bridge", () => {
       event: { type: "progress_total", loaded: 3, total: 4 },
     });
 
-    assert.equal(main.getSnapshot().message, "Hi");
+    assert.equal(main.getSnapshot().status, "loading");
     assert.equal(main.getSnapshot().percent, 0.75);
     stop();
     assert.equal(listeners.size, 0);

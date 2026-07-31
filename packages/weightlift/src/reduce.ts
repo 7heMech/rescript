@@ -6,7 +6,7 @@ import {
 } from "./types.js";
 
 interface InternalTotals {
-  /** Prefer runtime aggregate events when the adapter emits them. */
+  /** Prefer runtime aggregate events when the caller emits them. */
   useTotalEvents: boolean;
   /** Highest percent observed; only moves forward except when totals grow. */
   best: number;
@@ -38,9 +38,8 @@ function sumFiles(files: Record<string, FileProgress>): {
   totalBytes: number | null;
 } {
   // Only files that reported a Content-Length contribute to the percentage.
-  // Files without a total are ignored for the bar (matches how browsers /
-  // transformers.js UIs typically behave) — if *no* file has a total, the
-  // store stays indeterminate.
+  // Files without a total are ignored for the bar — if *no* file has a total,
+  // the store stays indeterminate.
   let loadedBytes = 0;
   let totalBytes = 0;
   let anyTotal = false;
@@ -51,7 +50,6 @@ function sumFiles(files: Record<string, FileProgress>): {
       loadedBytes += Math.min(f.loaded, f.total);
       totalBytes += f.total;
     } else if (f.status === "done") {
-      // Done with unknown total: count bytes we saw so the bar can finish.
       loadedBytes += f.loaded;
       totalBytes += f.loaded;
       if (f.loaded > 0) anyTotal = true;
@@ -101,9 +99,6 @@ function withDerived(
       const reported = reportPercent(ctx, loadedBytes, totalBytes);
       next.percent = reported.percent;
       next.indeterminate = reported.indeterminate;
-    } else if (Object.keys(next.files).length === 0) {
-      next.percent = null;
-      next.indeterminate = true;
     } else {
       next.percent = null;
       next.indeterminate = true;
@@ -122,21 +117,13 @@ export function reduce(
   switch (event.type) {
     case "reset":
       ctx.totals = { useTotalEvents: false, best: 0, lastTotal: 0 };
-      return { ...INITIAL_STATE };
+      return { ...INITIAL_STATE, files: {} };
 
     case "start":
-      return withDerived(
-        state,
-        ctx,
-        {
-          status: "loading",
-          message: event.message ?? state.message,
-          error: null,
-        }
-      );
-
-    case "message":
-      return { ...state, message: event.message };
+      return withDerived(state, ctx, {
+        status: "loading",
+        error: null,
+      });
 
     case "initiate": {
       const files = cloneFiles(state.files);
@@ -179,7 +166,6 @@ export function reduce(
       return {
         ...state,
         status: "loading",
-        message: event.message ?? state.message,
         loadedBytes: event.loaded,
         totalBytes: event.total,
         percent: reported.percent,
@@ -203,8 +189,7 @@ export function reduce(
       return {
         ...state,
         status: "ready",
-        message: event.message ?? state.message,
-        percent: state.indeterminate && state.percent == null ? 1 : (state.percent ?? 1),
+        percent: state.percent ?? 1,
         indeterminate: false,
         error: null,
       };
@@ -213,7 +198,6 @@ export function reduce(
       return {
         ...state,
         status: "error",
-        message: event.message ?? event.error.message,
         error: event.error,
       };
 

@@ -10,16 +10,17 @@ export interface FileProgress {
 }
 
 /**
- * Aggregated model-load state.
+ * Aggregated model-load progress.
  *
  * `percent` is `null` (and `indeterminate` is true) when no usable byte total
  * is known yet — files can download in parallel and some servers omit
  * Content-Length, so a single 0..1 bar is not always available.
+ *
+ * UI copy ("Downloading…") is intentionally not part of this state — compose
+ * labels in the app from `status` / `fromCache` on {@link ModelRecord}.
  */
 export interface WeightliftState {
   status: LoadStatus;
-  /** Human-readable label, e.g. "Downloading speech model…". */
-  message: string;
   files: Record<string, FileProgress>;
   loadedBytes: number;
   /** Sum of known file totals; `null` if none reported a total. */
@@ -31,11 +32,11 @@ export interface WeightliftState {
 }
 
 /**
- * Normalized progress events. Runtime adapters convert Transformers.js /
- * WebLLM / whisper.cpp callbacks into this shape before feeding the store.
+ * Normalized progress events. Map your runtime's callback into these and
+ * `dispatch` them — Transformers.js, WebLLM, whisper.cpp, custom fetch, etc.
  */
 export type WeightliftEvent =
-  | { type: "start"; message?: string }
+  | { type: "start" }
   | { type: "initiate"; file: string }
   | {
       type: "progress";
@@ -49,18 +50,16 @@ export type WeightliftEvent =
    * Preferred over summing per-file events when available — totals are often
    * pre-seeded so the bar does not jump to 100% after the first file finishes.
    */
-  | { type: "progress_total"; loaded: number; total: number; message?: string }
+  | { type: "progress_total"; loaded: number; total: number }
   | { type: "done"; file: string }
-  | { type: "ready"; message?: string }
-  | { type: "error"; error: Error; message?: string }
-  | { type: "message"; message: string }
+  | { type: "ready" }
+  | { type: "error"; error: Error }
   | { type: "reset" };
 
 export type WeightliftListener = (state: WeightliftState) => void;
 
 export const INITIAL_STATE: WeightliftState = {
   status: "idle",
-  message: "",
   files: {},
   loadedBytes: 0,
   totalBytes: null,

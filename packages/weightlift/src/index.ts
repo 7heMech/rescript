@@ -3,19 +3,30 @@
  *
  * @packageDocumentation
  *
+ * Runtime-agnostic: Whisper, CLIP, SigLIP, WebLLM, custom ONNX — anything
+ * that can resolve a promise and optionally report byte progress.
+ *
  * ```ts
  * import { ModelManager } from "weightlift";
- * import { transformersAdapter } from "weightlift/adapters/transformers";
  *
  * const models = new ModelManager();
- * models.define("whisper-base", {
- *   load: async ({ progress }) =>
- *     pipeline("automatic-speech-recognition", modelId, {
- *       progress_callback: transformersAdapter(progress),
- *     }),
+ * models.define("siglip", {
+ *   load: async ({ progress }) => {
+ *     return pipeline("zero-shot-image-classification", modelId, {
+ *       progress_callback: (p) => {
+ *         if (p.status === "progress_total" && p.total) {
+ *           progress.dispatch({
+ *             type: "progress_total",
+ *             loaded: ((p.progress ?? 0) / 100) * p.total,
+ *             total: p.total,
+ *           });
+ *         }
+ *       },
+ *     });
+ *   },
  * });
  *
- * const asr = await models.load("whisper-base");
+ * const clip = await models.load("siglip");
  * ```
  */
 
@@ -49,14 +60,3 @@ export {
   type WeightliftEvent,
   type WeightliftListener,
 } from "./types.js";
-
-export {
-  transformersAdapter,
-  transformersEvent,
-  type TransformersProgressInfo,
-} from "./adapters/transformers.js";
-export {
-  webllmAdapter,
-  webllmEvent,
-  type WebLLMInitProgressReport,
-} from "./adapters/webllm.js";

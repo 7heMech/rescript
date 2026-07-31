@@ -55,36 +55,20 @@ describe("ModelManager", () => {
     assert.equal(models.has("lazy"), true);
   });
 
-  it("labels cache vs download via isCached + messages", async () => {
+  it("exposes fromCache without owning UI copy", async () => {
     const models = new ModelManager();
-    const seen: string[] = [];
-    models.subscribe((s) => {
-      const msg = s.models.w?.message;
-      if (msg) seen.push(msg);
-    });
-
     await models.load("w", {
       isCached: async () => true,
-      messages: {
-        cache: "Loading from cache…",
-        download: "Downloading…",
-      },
       load: async () => "x",
     });
-    assert.ok(seen.includes("Loading from cache…"));
     assert.equal(models.status("w").fromCache, true);
 
     const models2 = new ModelManager();
     await models2.load("w", {
       isCached: async () => false,
-      messages: {
-        cache: "Loading from cache…",
-        download: "Downloading…",
-      },
       load: async () => "x",
     });
     assert.equal(models2.status("w").fromCache, false);
-    assert.equal(models2.status("w").message.includes("Download") || true, true);
   });
 
   it("exposes progress through the load context", async () => {
@@ -103,7 +87,6 @@ describe("ModelManager", () => {
         return "model";
       },
     });
-    // Let the load start.
     await Promise.resolve();
     await Promise.resolve();
     assert.ok(progress);

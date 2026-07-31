@@ -1,20 +1,18 @@
 import { Weightlift, type Unsubscribe } from "./store.js";
 import type { LoadStatus, WeightliftState } from "./types.js";
-import { INITIAL_STATE } from "./types.js";
 
 /** Context passed to a model definition's `load` function. */
 export interface LoadContext {
   /** Stable model key passed to {@link ModelManager.load}. */
   id: string;
   /**
-   * Per-model progress store. Pass to a runtime adapter:
-   * `progress_callback: transformersAdapter(progress)`.
+   * Per-model progress store. Map your runtime's progress callback into
+   * `progress.dispatch({ type: "progress_total" | "progress" | … })`.
    */
   progress: Weightlift;
   /**
    * Result of `isCached()` when provided; `null` if not checked.
-   * Useful for branching load strategy; the manager already sets the
-   * download vs cache message before `load` runs.
+   * Compose UI copy from this in the app — weightlift does not own strings.
    */
   fromCache: boolean | null;
   /** Optional abort signal if the manager starts supporting cancellation. */
@@ -27,18 +25,12 @@ export interface ModelDefinition<T = unknown> {
   load: (ctx: LoadContext) => Promise<T>;
   /**
    * Detect whether weights are already in a browser cache (Cache Storage,
-   * IndexedDB, etc.). Used only for messaging (`messages.cache` vs
-   * `messages.download`) — transformers.js emits the same progress events
-   * for cache reads and network downloads.
+   * IndexedDB, etc.). Exposed on {@link ModelRecord.fromCache} so the app
+   * can choose its own labeling; does not affect load behavior.
    */
   isCached?: () => boolean | Promise<boolean>;
   /** Release GPU/WASM resources when {@link ModelManager.unload} is called. */
   dispose?: (value: T) => void | Promise<void>;
-  messages?: {
-    download?: string;
-    cache?: string;
-    ready?: string;
-  };
 }
 
 /** UI-facing per-model record (no heavyweight model handle). */
@@ -47,7 +39,6 @@ export interface ModelRecord {
   status: LoadStatus;
   /** `true` / `false` after cache check; `null` if not checked or idle. */
   fromCache: boolean | null;
-  message: string;
   percent: number | null;
   indeterminate: boolean;
   loadedBytes: number;
@@ -86,7 +77,6 @@ function recordFrom(entry: Entry): ModelRecord {
     id: entry.id,
     status: p.status,
     fromCache: entry.fromCache,
-    message: p.message,
     percent: p.percent,
     indeterminate: p.indeterminate,
     loadedBytes: p.loadedBytes,
@@ -101,7 +91,6 @@ function idleRecord(id: string): ModelRecord {
     id,
     status: "idle",
     fromCache: null,
-    message: "",
     percent: null,
     indeterminate: true,
     loadedBytes: 0,
@@ -137,27 +126,22 @@ const EMPTY_SNAPSHOT: ManagerSnapshot = {
  * In-browser ML **model manager**: define loaders once, then
  * `load` / `get` / `unload` by id with shared progress state.
  *
- * Handles the things every Transformers.js / WebLLM app hand-rolls:
- * singleton promises (deduped concurrent loads), cache-hit labeling,
- * aggregated download progress, and `isLoading` / `isReady` queries.
+ * Runtime-agnostic — `T` can be a Whisper pipeline, CLIP/SigLIP encoder,
+ * WebLLM engine, or any other handle. weightlift only owns lifecycle + bytes.
  *
  * ```ts
  * const models = new ModelManager();
  *
- * models.define("whisper-base", {
- *   isCached: () => caches.match(…),
- *   messages: {
- *     download: "Downloading speech model…",
- *     cache: "Loading speech model from cache…",
- *   },
+ * models.define("siglip", {
  *   load: async ({ progress }) =>
- *     pipeline("automatic-speech-recognition", "onnx-community/whisper-base", {
- *       progress_callback: transformersAdapter(progress),
+ *     pipeline("zero-shot-image-classification", modelId, {
+ *       progress_callback: (p) => {
+ *         // map runtime events → progress.dispatch(...)
+ *       },
  *     }),
  * });
  *
- * const asr = await models.load("whisper-base");
- * models.subscribe((s) => console.log(s.models["whisper-base"]?.percent));
+ * const clip = await models.load("siglip");
  * ```
  */
 export class ModelManager {
@@ -175,8 +159,6 @@ export class ModelManager {
     }
     if (existing) {
       existing.unsubProgress();
-      // Keep a ready value only if the caller is intentionally replacing the
-      // definition — drop the cached instance so the new loader runs.
       void this.#disposeEntry(existing);
     }
 
@@ -235,12 +217,7 @@ export class ModelManager {
       }
     }
     entry.fromCache = fromCache;
-
-    const message =
-      fromCache === true
-        ? (definition.messages?.cache ?? "Loading model from cache…")
-        : (definition.messages?.download ?? "Downloading model…");
-    progress.start(message);
+    progress.start();
     this.#emit();
 
     try {
@@ -250,7 +227,7 @@ export class ModelManager {
         fromCache,
       });
       entry.value = value;
-      progress.ready(definition.messages?.ready);
+      progress.ready();
       this.#emit();
       return value;
     } catch (err) {
@@ -288,7 +265,7 @@ export class ModelManager {
     return entry ? recordFrom(entry) : idleRecord(id);
   }
 
-  /** Underlying progress store for adapters / advanced use. */
+  /** Underlying progress store for advanced use. */
   progress(id: string): Weightlift | undefined {
     return this.#entries.get(id)?.progress;
   }
