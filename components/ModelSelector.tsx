@@ -7,10 +7,10 @@ import {
   useEffect,
   useId,
   useMemo,
-  useRef,
   useState,
   type ReactNode,
 } from "react";
+import { FloatingPortal } from "@floating-ui/react";
 import {
   AudioLines,
   Check,
@@ -32,6 +32,7 @@ import {
   hydrateTranscriptLanguagePreference,
   useEditorStore,
 } from "@/lib/store";
+import { useAnchoredPopover } from "@/hooks/useAnchoredPopover";
 import PopupDismissBackdrop from "./PopupDismissBackdrop";
 
 export type ModelOptionContextValue = {
@@ -126,8 +127,12 @@ export default function ModelSelector({
   const transcriptLanguage = useEditorStore((s) => s.transcriptLanguage);
   const [open, setOpen] = useState(false);
   const [triggers, setTriggers] = useState<Record<string, OptionTrigger>>({});
-  const rootRef = useRef<HTMLDivElement>(null);
   const listId = useId();
+  const { refs, setReference, setFloating, floatingStyles } =
+    useAnchoredPopover({
+      open,
+      placement: "bottom-end",
+    });
 
   useEffect(() => {
     hydrateModelPreference();
@@ -137,7 +142,10 @@ export default function ModelSelector({
   useEffect(() => {
     if (embedded || !open) return;
     const onPointer = (e: PointerEvent) => {
-      if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
+      const target = e.target as Node;
+      if (refs.domReference.current?.contains(target)) return;
+      if (refs.floating.current?.contains(target)) return;
+      setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setOpen(false);
@@ -148,7 +156,7 @@ export default function ModelSelector({
       document.removeEventListener("pointerdown", onPointer);
       document.removeEventListener("keydown", onKey);
     };
-  }, [open, embedded]);
+  }, [open, embedded, refs]);
 
   const closeMenu = useCallback(() => {
     if (embedded) onClose?.();
@@ -238,8 +246,9 @@ export default function ModelSelector({
   return (
     <ModelSelectorCtx.Provider value={ctx}>
       {open && <PopupDismissBackdrop onDismiss={() => setOpen(false)} />}
-      <div ref={rootRef} className="relative z-30 shrink-0">
+      <div className="relative z-30 shrink-0">
         <button
+          ref={setReference}
           type="button"
           aria-haspopup="listbox"
           aria-expanded={open}
@@ -287,23 +296,31 @@ export default function ModelSelector({
           />
         </button>
 
-        <div
-          id={listId}
-          role="listbox"
-          aria-label={groupLabel}
-          hidden={!open}
-          // Force display:none when closed so a lingering panel cannot eat clicks
-          // (HTML [hidden] can be overridden by author CSS in some setups).
-          className={`absolute right-0 top-[calc(100%+0.5rem)] z-20 w-[18rem] overflow-visible rounded-xl border border-zinc-200 bg-white shadow-lg shadow-zinc-900/5 dark:border-zinc-700 dark:bg-zinc-900 dark:shadow-black/40 ${
-            open ? "" : "pointer-events-none"
-          }`}
-          style={open ? undefined : { display: "none" }}
-        >
-          <p className="px-3 pb-1 pt-2.5 text-[11px] font-medium tracking-wide text-zinc-400 dark:text-zinc-500">
-            {groupLabel}
-          </p>
-          <div className="p-1 pb-1.5 space-y-1">{options}</div>
-        </div>
+        <FloatingPortal>
+          <div
+            ref={setFloating}
+            id={listId}
+            role="listbox"
+            aria-label={groupLabel}
+            hidden={!open}
+            // Force display:none when closed so a lingering panel cannot eat clicks
+            // (HTML [hidden] can be overridden by author CSS in some setups).
+            // Keep options mounted so custom triggers (import busy/error) stay registered.
+            className={`z-40 w-[18rem] overflow-visible rounded-xl border border-zinc-200 bg-white shadow-lg shadow-zinc-900/5 dark:border-zinc-700 dark:bg-zinc-900 dark:shadow-black/40 ${
+              open ? "" : "pointer-events-none"
+            }`}
+            style={
+              open
+                ? floatingStyles
+                : { ...floatingStyles, display: "none" }
+            }
+          >
+            <p className="px-3 pb-1 pt-2.5 text-[11px] font-medium tracking-wide text-zinc-400 dark:text-zinc-500">
+              {groupLabel}
+            </p>
+            <div className="p-1 pb-1.5 space-y-1">{options}</div>
+          </div>
+        </FloatingPortal>
       </div>
     </ModelSelectorCtx.Provider>
   );
@@ -400,14 +417,23 @@ export function LanguageSection() {
   const setLanguage = useEditorStore((s) => s.setTranscriptLanguage);
   const selector = useSelectorCtx();
   const [submenuOpen, setSubmenuOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
   const submenuId = useId();
   const active = TRANSCRIPT_LANGUAGES[language];
+  // Prefer left of the row (former `right-full`); flip/shift keep it on-screen.
+  const { refs, setReference, setFloating, floatingStyles } =
+    useAnchoredPopover({
+      open: submenuOpen,
+      placement: "left-start",
+      offsetMain: 6,
+    });
 
   useEffect(() => {
     if (!submenuOpen) return;
     const onPointer = (e: PointerEvent) => {
-      if (!rootRef.current?.contains(e.target as Node)) setSubmenuOpen(false);
+      const target = e.target as Node;
+      if (refs.domReference.current?.contains(target)) return;
+      if (refs.floating.current?.contains(target)) return;
+      setSubmenuOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -421,7 +447,7 @@ export function LanguageSection() {
       document.removeEventListener("pointerdown", onPointer);
       document.removeEventListener("keydown", onKey, true);
     };
-  }, [submenuOpen]);
+  }, [submenuOpen, refs]);
 
   const select = (next: TranscriptLanguage) => {
     setLanguage(next);
@@ -430,12 +456,13 @@ export function LanguageSection() {
   };
 
   return (
-    <div ref={rootRef}>
+    <div>
       <p className="px-2.5 pb-1 pt-1.5 text-[11px] font-medium tracking-wide text-zinc-400 dark:text-zinc-500">
         Language
       </p>
       <div className="relative">
         <button
+          ref={setReference}
           type="button"
           aria-haspopup="menu"
           aria-expanded={submenuOpen}
@@ -464,15 +491,22 @@ export function LanguageSection() {
           />
         </button>
 
+        {/* Stay in the parent panel DOM (no portal) so outside-click on the
+            model menu still treats this flyout as inside the floating tree. */}
         <div
+          ref={setFloating}
           id={submenuId}
           role="menu"
           aria-label="Transcript language"
           hidden={!submenuOpen}
-          className={`absolute right-full top-0 z-30 mr-1.5 w-44 overflow-hidden rounded-xl border border-zinc-200 bg-white p-1 shadow-lg shadow-zinc-900/5 dark:border-zinc-700 dark:bg-zinc-900 dark:shadow-black/40 ${
+          className={`z-50 w-44 overflow-hidden rounded-xl border border-zinc-200 bg-white p-1 shadow-lg shadow-zinc-900/5 dark:border-zinc-700 dark:bg-zinc-900 dark:shadow-black/40 ${
             submenuOpen ? "" : "pointer-events-none"
           }`}
-          style={submenuOpen ? undefined : { display: "none" }}
+          style={
+            submenuOpen
+              ? floatingStyles
+              : { ...floatingStyles, display: "none" }
+          }
         >
           {TRANSCRIPT_LANGUAGE_ORDER.map((id) => {
             const option = TRANSCRIPT_LANGUAGES[id];
