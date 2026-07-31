@@ -43,6 +43,10 @@ export function useAnchoredPopover({
     open,
     placement,
     strategy: "fixed",
+    // Use top/left instead of transform so nested fixed flyouts (e.g. the
+    // language submenu) are still positioned against the viewport, not trapped
+    // by a transformed ancestor.
+    transform: false,
     whileElementsMounted: autoUpdate,
     middleware: [
       offset(offsetMain),
