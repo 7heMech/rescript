@@ -20,6 +20,7 @@
 # electron compile + electron-builder packages
 /electron-dist/
 /dist/
+packages/weightlift/dist/
 
 # misc
 .DS_Store

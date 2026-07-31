@@ -20,6 +20,8 @@ import {
   env,
   type AutomaticSpeechRecognitionPipeline,
 } from "@huggingface/transformers";
+import { Weightlift } from "weightlift";
+import { transformersAdapter } from "weightlift/adapters/transformers";
 import type { Word, WorkerRequest, WorkerResponse } from "@/lib/types";
 import { MODELS, type WhisperModel } from "@/lib/models";
 import { cleanTranscript } from "@/lib/hallucinations";
@@ -58,60 +60,24 @@ const post = (msg: WorkerResponse, transfer: Transferable[] = []) =>
   (self as unknown as Worker).postMessage(msg, transfer);
 
 /**
- * Aggregate model download progress into a single 0..1 value.
+ * Aggregate model download progress into a single 0..1 value via weightlift.
  *
  * Prefer transformers.js `progress_total` events: those are pre-seeded with
  * every expected file's size, so the bar does not jump to 100% after the first
  * ONNX file finishes while larger siblings are still downloading. Fall back to
- * per-file `progress` only when totals are unavailable, and rescale `best`
- * whenever the known byte total grows so the bar can move backwards honestly.
+ * per-file `progress` when totals are unavailable.
  */
 function makeDownloadTracker(label: string) {
-  const files = new Map<string, { loaded: number; total: number }>();
-  let best = 0;
-  let lastTotal = 0;
-  let useTotalEvents = false;
-
-  const report = (loaded: number, total: number) => {
-    if (total <= 0) return;
-    if (total > lastTotal && lastTotal > 0 && best > 0) {
-      best *= lastTotal / total;
-    }
-    lastTotal = total;
-    best = Math.max(best, Math.min(1, loaded / total));
-    post({ type: "progress", message: label, value: best });
-  };
-
-  return (p: {
-    status?: string;
-    file?: string;
-    loaded?: number;
-    total?: number;
-    progress?: number;
-  }) => {
-    if (p.status === "progress_total") {
-      useTotalEvents = true;
-      const total = p.total ?? 0;
-      const loaded =
-        total > 0 && typeof p.progress === "number"
-          ? (p.progress / 100) * total
-          : (p.loaded ?? 0);
-      report(loaded, total);
-      return;
-    }
-
-    // Per-file fallback when the library could not pre-seed expected files.
-    if (useTotalEvents) return;
-    if (p.status !== "progress" || !p.file || !p.total) return;
-    files.set(p.file, { loaded: p.loaded ?? 0, total: p.total });
-    let loaded = 0;
-    let total = 0;
-    for (const f of files.values()) {
-      loaded += f.loaded;
-      total += f.total;
-    }
-    report(loaded, total);
-  };
+  const wl = new Weightlift();
+  wl.start(label);
+  wl.subscribe((s) => {
+    post({
+      type: "progress",
+      message: s.message || label,
+      value: s.indeterminate ? null : s.percent,
+    });
+  });
+  return transformersAdapter(wl, { message: label });
 }
 
 /**
