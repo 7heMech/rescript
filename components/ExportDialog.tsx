@@ -1,11 +1,60 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import { Download, X } from "lucide-react";
+import {
+  Captions,
+  Download,
+  FileText,
+  Film,
+  Music,
+  X,
+} from "lucide-react";
 import { useEditorStore } from "@/lib/store";
 import { formatTime, getEditedDuration, getKeepRanges } from "@/lib/edits";
-import { exportAudio, exportVideo } from "@/lib/ffmpeg";
+import {
+  exportAudio,
+  exportVideo,
+  type AudioExportFormat,
+  type VideoExportFormat,
+  type VideoExportResolution,
+} from "@/lib/ffmpeg";
+import {
+  downloadTranscript,
+  type SubtitleFormat,
+  type TranscriptDocFormat,
+} from "@/lib/serializeTranscript";
 import { useCutRanges } from "@/hooks/useCutRanges";
+
+type ExportTab = "video" | "audio" | "transcript" | "subtitles";
+
+const VIDEO_FORMATS: { value: VideoExportFormat; label: string }[] = [
+  { value: "mp4", label: "MP4" },
+  { value: "webm", label: "WebM" },
+];
+
+const VIDEO_RESOLUTIONS: { value: VideoExportResolution; label: string }[] = [
+  { value: "original", label: "Original" },
+  { value: "720", label: "720p" },
+  { value: "1080", label: "1080p" },
+  { value: "2160", label: "4K" },
+];
+
+const AUDIO_FORMATS: { value: AudioExportFormat; label: string }[] = [
+  { value: "m4a", label: "M4A" },
+  { value: "mp3", label: "MP3" },
+  { value: "wav", label: "WAV" },
+];
+
+const TRANSCRIPT_FORMATS: { value: TranscriptDocFormat; label: string }[] = [
+  { value: "txt", label: "Plain text" },
+  { value: "md", label: "Markdown" },
+];
+
+const SUBTITLE_FORMATS: { value: SubtitleFormat; label: string }[] = [
+  { value: "srt", label: "SRT" },
+  { value: "vtt", label: "VTT" },
+  { value: "json", label: "JSON" },
+];
 
 export default function ExportDialog() {
   const open = useEditorStore((s) => s.exportOpen);
@@ -13,38 +62,130 @@ export default function ExportDialog() {
   const videoFile = useEditorStore((s) => s.videoFile);
   const mediaKind = useEditorStore((s) => s.mediaKind);
   const duration = useEditorStore((s) => s.duration);
+  const words = useEditorStore((s) => s.words);
   const hasAudioTrack = useEditorStore((s) => s.audio !== null);
   const status = useEditorStore((s) => s.status);
   const setStatus = useEditorStore((s) => s.setStatus);
   const exportUrl = useEditorStore((s) => s.exportUrl);
   const setExportUrl = useEditorStore((s) => s.setExportUrl);
 
+  const isAudioProject = mediaKind === "audio";
+  const [tab, setTab] = useState<ExportTab>("video");
+  const [videoFormat, setVideoFormat] = useState<VideoExportFormat>("mp4");
+  const [resolution, setResolution] = useState<VideoExportResolution>("original");
+  const [audioFormat, setAudioFormat] = useState<AudioExportFormat>("m4a");
+  const [transcriptFormat, setTranscriptFormat] =
+    useState<TranscriptDocFormat>("txt");
+  const [subtitleFormat, setSubtitleFormat] = useState<SubtitleFormat>("srt");
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
   const cuts = useCutRanges();
-  const editedDuration = useMemo(() => getEditedDuration(cuts, duration), [cuts, duration]);
+  const editedDuration = useMemo(
+    () => getEditedDuration(cuts, duration),
+    [cuts, duration]
+  );
   const exporting = status === "exporting";
-  const isAudio = mediaKind === "audio";
-  const ext = isAudio ? "m4a" : "mp4";
-  const formatLabel = isAudio ? "M4A" : "MP4";
+  const hasWords = words.length > 0;
 
-  const fileName = videoFile
-    ? videoFile.name.replace(/\.[^.]+$/, "") + `.edited.${ext}`
-    : `edited.${ext}`;
+  // Fall back when the remembered tab isn't valid for this project.
+  const activeTab: ExportTab =
+    tab === "video" && isAudioProject
+      ? "audio"
+      : tab === "audio" && !hasAudioTrack
+        ? isAudioProject
+          ? "transcript"
+          : "video"
+        : (tab === "transcript" || tab === "subtitles") && !hasWords
+          ? isAudioProject
+            ? "audio"
+            : "video"
+          : tab;
 
-  const start = useCallback(async () => {
+  const baseName = videoFile
+    ? videoFile.name.replace(/\.[^.]+$/, "")
+    : "edited";
+
+  const mediaExt =
+    activeTab === "audio"
+      ? audioFormat
+      : videoFormat === "webm"
+        ? "webm"
+        : "mp4";
+  const mediaFileName = `${baseName}.edited.${mediaExt}`;
+
+  const clearMediaExport = useCallback(() => {
+    const prev = useEditorStore.getState().exportUrl;
+    if (prev) URL.revokeObjectURL(prev);
+    setExportUrl(null);
+    setProgress(0);
+  }, [setExportUrl]);
+
+  const selectTab = useCallback(
+    (next: ExportTab) => {
+      setTab((prev) => {
+        if (prev === next) return prev;
+        clearMediaExport();
+        setError(null);
+        return next;
+      });
+    },
+    [clearMediaExport]
+  );
+
+  const setVideoFormatOption = useCallback(
+    (value: VideoExportFormat) => {
+      setVideoFormat((prev) => {
+        if (prev === value) return prev;
+        clearMediaExport();
+        return value;
+      });
+    },
+    [clearMediaExport]
+  );
+
+  const setResolutionOption = useCallback(
+    (value: VideoExportResolution) => {
+      setResolution((prev) => {
+        if (prev === value) return prev;
+        clearMediaExport();
+        return value;
+      });
+    },
+    [clearMediaExport]
+  );
+
+  const setAudioFormatOption = useCallback(
+    (value: AudioExportFormat) => {
+      setAudioFormat((prev) => {
+        if (prev === value) return prev;
+        clearMediaExport();
+        return value;
+      });
+    },
+    [clearMediaExport]
+  );
+
+  const startMediaExport = useCallback(async () => {
     if (!videoFile) return;
+    if (activeTab === "video" && isAudioProject) return;
+    if (activeTab === "audio" && !hasAudioTrack) return;
+
     setError(null);
     setProgress(0);
     setStatus("exporting");
     try {
       const keeps = getKeepRanges(cuts, duration);
-      const blob = isAudio
-        ? await exportAudio(videoFile, keeps, editedDuration, setProgress)
-        : await exportVideo(videoFile, keeps, editedDuration, setProgress, {
-            withAudio: hasAudioTrack,
-          });
+      const blob =
+        activeTab === "audio"
+          ? await exportAudio(videoFile, keeps, editedDuration, setProgress, {
+              format: audioFormat,
+            })
+          : await exportVideo(videoFile, keeps, editedDuration, setProgress, {
+              withAudio: hasAudioTrack,
+              format: videoFormat,
+              resolution,
+            });
       const prev = useEditorStore.getState().exportUrl;
       if (prev) URL.revokeObjectURL(prev);
       setExportUrl(URL.createObjectURL(blob));
@@ -55,16 +196,84 @@ export default function ExportDialog() {
     }
   }, [
     videoFile,
-    isAudio,
+    activeTab,
+    isAudioProject,
     hasAudioTrack,
     cuts,
     duration,
     editedDuration,
+    audioFormat,
+    videoFormat,
+    resolution,
     setStatus,
     setExportUrl,
   ]);
 
+  const exportText = useCallback(
+    (kind: "transcript" | "subtitles") => {
+      if (!hasWords) return;
+      const format = kind === "transcript" ? transcriptFormat : subtitleFormat;
+      try {
+        downloadTranscript(words, format, baseName, {
+          duration,
+          cuts,
+        });
+        setError(null);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Export failed.");
+      }
+    },
+    [
+      hasWords,
+      words,
+      transcriptFormat,
+      subtitleFormat,
+      baseName,
+      duration,
+      cuts,
+    ]
+  );
+
   if (!open) return null;
+
+  const tabs: {
+    id: ExportTab;
+    label: string;
+    icon: typeof Film;
+    disabled?: boolean;
+    title?: string;
+  }[] = [
+    {
+      id: "video",
+      label: "Video",
+      icon: Film,
+      disabled: isAudioProject,
+      title: isAudioProject
+        ? "Video export isn’t available for audio-only projects"
+        : undefined,
+    },
+    {
+      id: "audio",
+      label: "Audio",
+      icon: Music,
+      disabled: !hasAudioTrack,
+      title: !hasAudioTrack ? "This file has no audio track" : undefined,
+    },
+    {
+      id: "transcript",
+      label: "Transcript",
+      icon: FileText,
+      disabled: !hasWords,
+      title: !hasWords ? "Transcribe or import a transcript first" : undefined,
+    },
+    {
+      id: "subtitles",
+      label: "Subtitles",
+      icon: Captions,
+      disabled: !hasWords,
+      title: !hasWords ? "Transcribe or import a transcript first" : undefined,
+    },
+  ];
 
   // app-no-drag: the backdrop covers the draggable top bar, so it needs to take
   // clicks (dismiss) rather than letting them move the window.
@@ -74,12 +283,12 @@ export default function ExportDialog() {
       onClick={() => !exporting && setOpen(false)}
     >
       <div
-        className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl dark:bg-zinc-900 dark:shadow-black/50"
+        className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl dark:bg-zinc-900 dark:shadow-black/50"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
-            Export {isAudio ? "audio" : "video"}
+            Export
           </h2>
           <button
             onClick={() => setOpen(false)}
@@ -90,73 +299,269 @@ export default function ExportDialog() {
           </button>
         </div>
 
-        <div className="mb-5 grid grid-cols-3 gap-2 text-center">
-          <div className="rounded-xl bg-zinc-50 p-3 dark:bg-zinc-800/60">
-            <p className="text-xs text-zinc-400 dark:text-zinc-500">Original</p>
-            <p className="mt-0.5 text-sm font-semibold tabular-nums text-zinc-800 dark:text-zinc-100">
-              {formatTime(duration)}
-            </p>
-          </div>
-          <div className="rounded-xl bg-zinc-50 p-3 dark:bg-zinc-800/60">
-            <p className="text-xs text-zinc-400 dark:text-zinc-500">Cuts</p>
-            <p className="mt-0.5 text-sm font-semibold tabular-nums text-zinc-800 dark:text-zinc-100">
-              {cuts.length}
-            </p>
-          </div>
-          <div className="rounded-xl bg-neutral-50 p-3 dark:bg-neutral-800/60">
-            <p className="text-xs text-neutral-400 dark:text-neutral-500">Edited</p>
-            <p className="mt-0.5 text-sm font-semibold tabular-nums text-neutral-700 dark:text-neutral-200">
-              {formatTime(editedDuration)}
-            </p>
-          </div>
+        <div
+          className="mb-5 grid grid-cols-4 gap-0.5 rounded-xl bg-zinc-100 p-0.5 dark:bg-zinc-800"
+          role="tablist"
+          aria-label="Export type"
+        >
+          {tabs.map(({ id, label, icon: Icon, disabled, title }) => {
+            const selected = activeTab === id;
+            return (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                aria-selected={selected}
+                disabled={disabled || exporting}
+                title={title}
+                onClick={() => selectTab(id)}
+                className={`flex h-9 items-center justify-center gap-1.5 rounded-[0.625rem] text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-40 ${
+                  selected
+                    ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-zinc-50"
+                    : "text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
+                }`}
+              >
+                <Icon size={13} className="shrink-0 opacity-70" />
+                <span className="hidden sm:inline">{label}</span>
+              </button>
+            );
+          })}
         </div>
 
-        {error && (
-          <p className="mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600 dark:bg-red-950/40 dark:text-red-400">{error}</p>
+        {(activeTab === "video" || activeTab === "audio") && (
+          <div className="mb-5 grid grid-cols-3 gap-2 text-center">
+            <Stat label="Original" value={formatTime(duration)} />
+            <Stat label="Cuts" value={String(cuts.length)} />
+            <Stat label="Edited" value={formatTime(editedDuration)} accent />
+          </div>
         )}
 
-        {exporting ? (
-          <div>
-            <div className="mb-2 flex items-center justify-between text-sm">
-              <span className="font-medium text-zinc-700 dark:text-zinc-200">Rendering in your browser…</span>
-              <span className="tabular-nums text-zinc-400 dark:text-zinc-500">{Math.round(progress * 100)}%</span>
-            </div>
-            <div className="h-2 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
-              <div
-                className="h-full rounded-full bg-neutral-500 transition-[width] duration-300 dark:bg-neutral-400"
-                style={{ width: `${progress * 100}%` }}
-              />
-            </div>
-            <p className="mt-3 text-xs text-zinc-400 dark:text-zinc-500">
-              Re-encoding with ffmpeg.wasm — longer files take a while.
+        {activeTab === "video" && (
+          <div className="mb-5 space-y-4">
+            <OptionGroup
+              label="Format"
+              value={videoFormat}
+              options={VIDEO_FORMATS}
+              disabled={exporting}
+              onChange={setVideoFormatOption}
+            />
+            <OptionGroup
+              label="Resolution"
+              value={resolution}
+              options={VIDEO_RESOLUTIONS}
+              disabled={exporting}
+              onChange={setResolutionOption}
+            />
+          </div>
+        )}
+
+        {activeTab === "audio" && (
+          <div className="mb-5">
+            <OptionGroup
+              label="Format"
+              value={audioFormat}
+              options={AUDIO_FORMATS}
+              disabled={exporting}
+              onChange={setAudioFormatOption}
+            />
+          </div>
+        )}
+
+        {activeTab === "transcript" && (
+          <div className="mb-5 space-y-3">
+            <OptionGroup
+              label="Format"
+              value={transcriptFormat}
+              options={TRANSCRIPT_FORMATS}
+              onChange={setTranscriptFormat}
+            />
+            <p className="text-xs text-zinc-500 dark:text-zinc-400">
+              Speaker-labeled text with cuts removed. No timestamps.
             </p>
           </div>
-        ) : exportUrl ? (
-          <div className="flex flex-col gap-2">
-            <a
-              href={exportUrl}
-              download={fileName}
-              className="flex h-10 items-center justify-center gap-2 rounded-xl bg-neutral-600 px-4 text-sm font-medium text-white transition hover:bg-neutral-500 dark:bg-neutral-500 dark:hover:bg-neutral-400"
-            >
-              <Download size={15} className="shrink-0" />
-              <span className="truncate">Download {fileName}</span>
-            </a>
-            <button
-              onClick={start}
-              className="h-10 rounded-xl text-sm font-medium text-zinc-500 transition hover:bg-zinc-50 dark:text-zinc-400 dark:hover:bg-zinc-800"
-            >
-              Re-export with latest edits
-            </button>
+        )}
+
+        {activeTab === "subtitles" && (
+          <div className="mb-5 space-y-3">
+            <OptionGroup
+              label="Format"
+              value={subtitleFormat}
+              options={SUBTITLE_FORMATS}
+              onChange={setSubtitleFormat}
+            />
+            <p className="text-xs text-zinc-500 dark:text-zinc-400">
+              SRT and VTT use the edited timeline (cuts applied). JSON keeps the
+              full word list for re-import.
+            </p>
           </div>
-        ) : (
+        )}
+
+        {error && (
+          <p className="mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600 dark:bg-red-950/40 dark:text-red-400">
+            {error}
+          </p>
+        )}
+
+        {(activeTab === "video" || activeTab === "audio") &&
+          (exporting ? (
+            <div>
+              <div className="mb-2 flex items-center justify-between text-sm">
+                <span className="font-medium text-zinc-700 dark:text-zinc-200">
+                  Rendering in your browser…
+                </span>
+                <span className="tabular-nums text-zinc-400 dark:text-zinc-500">
+                  {Math.round(progress * 100)}%
+                </span>
+              </div>
+              <div className="h-2 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
+                <div
+                  className="h-full rounded-full bg-neutral-500 transition-[width] duration-300 dark:bg-neutral-400"
+                  style={{ width: `${progress * 100}%` }}
+                />
+              </div>
+              <p className="mt-3 text-xs text-zinc-400 dark:text-zinc-500">
+                Re-encoding with ffmpeg.wasm — longer files take a while.
+              </p>
+            </div>
+          ) : exportUrl ? (
+            <div className="flex flex-col gap-2">
+              <a
+                href={exportUrl}
+                download={mediaFileName}
+                className="flex h-10 items-center justify-center gap-2 rounded-xl bg-neutral-600 px-4 text-sm font-medium text-white transition hover:bg-neutral-500 dark:bg-neutral-500 dark:hover:bg-neutral-400"
+              >
+                <Download size={15} className="shrink-0" />
+                <span className="truncate">Download {mediaFileName}</span>
+              </a>
+              <button
+                onClick={startMediaExport}
+                className="h-10 rounded-xl text-sm font-medium text-zinc-500 transition hover:bg-zinc-50 dark:text-zinc-400 dark:hover:bg-zinc-800"
+              >
+                Re-export with latest edits
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={startMediaExport}
+              className="flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-zinc-900 text-sm font-medium text-white transition hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+            >
+              <Download size={15} />
+              Export{" "}
+              {activeTab === "audio"
+                ? audioFormat.toUpperCase()
+                : videoFormat.toUpperCase()}
+            </button>
+          ))}
+
+        {activeTab === "transcript" && (
           <button
-            onClick={start}
-            className="flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-zinc-900 text-sm font-medium text-white transition hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+            onClick={() => exportText("transcript")}
+            disabled={!hasWords}
+            className="flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-zinc-900 text-sm font-medium text-white transition hover:bg-zinc-700 disabled:opacity-40 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
           >
             <Download size={15} />
-            Export {formatLabel}
+            Download .{transcriptFormat}
           </button>
         )}
+
+        {activeTab === "subtitles" && (
+          <button
+            onClick={() => exportText("subtitles")}
+            disabled={!hasWords}
+            className="flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-zinc-900 text-sm font-medium text-white transition hover:bg-zinc-700 disabled:opacity-40 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+          >
+            <Download size={15} />
+            Download .{subtitleFormat}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Stat({
+  label,
+  value,
+  accent = false,
+}: {
+  label: string;
+  value: string;
+  accent?: boolean;
+}) {
+  return (
+    <div
+      className={`rounded-xl p-3 ${
+        accent
+          ? "bg-neutral-50 dark:bg-neutral-800/60"
+          : "bg-zinc-50 dark:bg-zinc-800/60"
+      }`}
+    >
+      <p
+        className={`text-xs ${
+          accent
+            ? "text-neutral-400 dark:text-neutral-500"
+            : "text-zinc-400 dark:text-zinc-500"
+        }`}
+      >
+        {label}
+      </p>
+      <p
+        className={`mt-0.5 text-sm font-semibold tabular-nums ${
+          accent
+            ? "text-neutral-700 dark:text-neutral-200"
+            : "text-zinc-800 dark:text-zinc-100"
+        }`}
+      >
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function OptionGroup<T extends string>({
+  label,
+  value,
+  options,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  value: T;
+  options: { value: T; label: string }[];
+  disabled?: boolean;
+  onChange: (value: T) => void;
+}) {
+  return (
+    <div>
+      <p className="mb-2 text-[11px] font-medium tracking-wide text-zinc-400 dark:text-zinc-500">
+        {label}
+      </p>
+      <div
+        className="grid gap-0.5 rounded-lg bg-zinc-100 p-0.5 dark:bg-zinc-800"
+        style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}
+        role="radiogroup"
+        aria-label={label}
+      >
+        {options.map((opt) => {
+          const selected = value === opt.value;
+          return (
+            <button
+              key={opt.value}
+              type="button"
+              role="radio"
+              aria-checked={selected}
+              disabled={disabled}
+              onClick={() => onChange(opt.value)}
+              className={`flex h-8 items-center justify-center rounded-md px-1 text-xs font-medium transition disabled:opacity-40 ${
+                selected
+                  ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-zinc-50"
+                  : "text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
+              }`}
+            >
+              {opt.label}
+            </button>
+          );
+        })}
       </div>
     </div>
   );
