@@ -16,10 +16,10 @@ import {
   type Placement,
   type UseFloatingReturn,
 } from "@floating-ui/react";
-import { useAnchoredPopover } from "@/hooks/useAnchoredPopover";
+import { usePopover } from "@/hooks/usePopover";
 import PopupDismissBackdrop from "./PopupDismissBackdrop";
 
-type AnchoredPopoverContextValue = {
+type PopoverContextValue = {
   open: boolean;
   setReference: UseFloatingReturn["refs"]["setReference"];
   setFloating: UseFloatingReturn["refs"]["setFloating"];
@@ -27,15 +27,12 @@ type AnchoredPopoverContextValue = {
   portal: boolean;
 };
 
-const AnchoredPopoverContext =
-  createContext<AnchoredPopoverContextValue | null>(null);
+const PopoverContext = createContext<PopoverContextValue | null>(null);
 
-function useAnchoredPopoverCtx(): AnchoredPopoverContextValue {
-  const ctx = useContext(AnchoredPopoverContext);
+function usePopoverCtx(): PopoverContextValue {
+  const ctx = useContext(PopoverContext);
   if (!ctx) {
-    throw new Error(
-      "AnchoredPopover components must be used within <AnchoredPopover>"
-    );
+    throw new Error("Popover components must be used within <Popover>");
   }
   return ctx;
 }
@@ -45,10 +42,10 @@ function cx(...parts: Array<string | false | undefined | null>) {
 }
 
 /** Shared panel chrome used by menus in the app. */
-export const ANCHORED_POPOVER_PANEL =
+export const POPOVER_PANEL =
   "rounded-xl border border-zinc-200 bg-white shadow-lg shadow-zinc-900/5 dark:border-zinc-700 dark:bg-zinc-900 dark:shadow-black/40";
 
-type AnchoredPopoverProps = {
+type PopoverProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   placement?: Placement;
@@ -71,19 +68,19 @@ type AnchoredPopoverProps = {
  *
  * @example
  * ```tsx
- * <AnchoredPopover open={open} onOpenChange={setOpen} backdrop>
+ * <Popover open={open} onOpenChange={setOpen} backdrop>
  *   <div className="relative z-30 shrink-0">
- *     <AnchoredPopoverTrigger>
+ *     <PopoverTrigger>
  *       <button type="button">Open</button>
- *     </AnchoredPopoverTrigger>
- *     <AnchoredPopoverContent className="z-40 w-60" role="dialog">
+ *     </PopoverTrigger>
+ *     <PopoverContent className="z-40 w-60" role="dialog">
  *       …
- *     </AnchoredPopoverContent>
+ *     </PopoverContent>
  *   </div>
- * </AnchoredPopover>
+ * </Popover>
  * ```
  */
-export default function AnchoredPopover({
+export default function Popover({
   open,
   onOpenChange,
   placement = "bottom-end",
@@ -94,9 +91,13 @@ export default function AnchoredPopover({
   backdropZClassName = "z-20",
   escapeStopPropagation = false,
   children,
-}: AnchoredPopoverProps) {
-  const { refs, setReference, setFloating, floatingStyles } =
-    useAnchoredPopover({ open, placement, offsetMain, padding });
+}: PopoverProps) {
+  const { refs, setReference, setFloating, floatingStyles } = usePopover({
+    open,
+    placement,
+    offsetMain,
+    padding,
+  });
 
   useEffect(() => {
     if (!open) return;
@@ -128,7 +129,7 @@ export default function AnchoredPopover({
   }, [open, onOpenChange, refs, escapeStopPropagation]);
 
   return (
-    <AnchoredPopoverContext.Provider
+    <PopoverContext.Provider
       value={{ open, setReference, setFloating, floatingStyles, portal }}
     >
       {backdrop && open && (
@@ -138,7 +139,7 @@ export default function AnchoredPopover({
         />
       )}
       {children}
-    </AnchoredPopoverContext.Provider>
+    </PopoverContext.Provider>
   );
 }
 
@@ -146,16 +147,16 @@ export default function AnchoredPopover({
  * Attaches the positioning reference ref to a single child element
  * (typically the trigger button).
  */
-export function AnchoredPopoverTrigger({
+export function PopoverTrigger({
   children,
 }: {
   children: ReactElement<{ ref?: Ref<HTMLElement | null> }>;
 }) {
-  const { setReference } = useAnchoredPopoverCtx();
+  const { setReference } = usePopoverCtx();
   return cloneElement(children, { ref: setReference });
 }
 
-type AnchoredPopoverContentProps = HTMLAttributes<HTMLDivElement> & {
+type PopoverContentProps = HTMLAttributes<HTMLDivElement> & {
   children: ReactNode;
   /** When false, skip the shared panel chrome classes. Default true. */
   panelChrome?: boolean;
@@ -165,22 +166,22 @@ type AnchoredPopoverContentProps = HTMLAttributes<HTMLDivElement> & {
  * Floating panel. Stays mounted when closed (`display: none`) so stateful
  * children (e.g. registered option triggers) keep working.
  */
-export function AnchoredPopoverContent({
+export function PopoverContent({
   children,
   className,
   panelChrome = true,
   style,
   hidden,
   ...rest
-}: AnchoredPopoverContentProps) {
-  const { open, setFloating, floatingStyles, portal } = useAnchoredPopoverCtx();
+}: PopoverContentProps) {
+  const { open, setFloating, floatingStyles, portal } = usePopoverCtx();
 
   const panel = (
     <div
       ref={setFloating}
       hidden={hidden ?? !open}
       className={cx(
-        panelChrome && ANCHORED_POPOVER_PANEL,
+        panelChrome && POPOVER_PANEL,
         className,
         open ? undefined : "pointer-events-none"
       )}

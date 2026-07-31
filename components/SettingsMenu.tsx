@@ -11,10 +11,7 @@ import {
   X_PROFILE_URL,
 } from "./SocialLinks";
 import { useAppearance } from "@/hooks/useAppearance";
-import AnchoredPopover, {
-  AnchoredPopoverContent,
-  AnchoredPopoverTrigger,
-} from "./AnchoredPopover";
+import Popover, { PopoverContent, PopoverTrigger } from "./Popover";
 import type { Appearance } from "@/lib/theme";
 
 const MENU_LINKS = [
@@ -38,14 +35,14 @@ export default function SettingsMenu() {
   const { appearance, setAppearance } = useAppearance();
 
   return (
-    <AnchoredPopover
+    <Popover
       open={open}
       onOpenChange={setOpen}
       placement="bottom-end"
       backdrop
     >
       <div className="relative z-30 shrink-0">
-        <AnchoredPopoverTrigger>
+        <PopoverTrigger>
           <button
             type="button"
             aria-label="Settings"
@@ -58,9 +55,9 @@ export default function SettingsMenu() {
           >
             <Settings size={16} />
           </button>
-        </AnchoredPopoverTrigger>
+        </PopoverTrigger>
 
-        <AnchoredPopoverContent
+        <PopoverContent
           id={panelId}
           role="dialog"
           aria-label="Settings"
@@ -112,9 +109,9 @@ export default function SettingsMenu() {
               </a>
             ))}
           </section>
-        </AnchoredPopoverContent>
+        </PopoverContent>
       </div>
-    </AnchoredPopover>
+    </Popover>
   );
 }
 

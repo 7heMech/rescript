@@ -10,7 +10,7 @@ import {
   type UseFloatingReturn,
 } from "@floating-ui/react";
 
-type AnchoredPopover = {
+type PopoverPosition = {
   /** Callback ref for the trigger / anchor element. */
   setReference: UseFloatingReturn["refs"]["setReference"];
   /** Callback ref for the floating panel. */
@@ -21,13 +21,13 @@ type AnchoredPopover = {
 };
 
 /**
- * Collision-aware anchoring for existing popover panels.
+ * Collision-aware anchoring for popover panels.
  *
  * Keeps current visuals (caller owns className / width / chrome) while
  * replacing hard-coded absolute offsets with Floating UI flip + shift so
  * menus stay in the viewport on mobile.
  */
-export function useAnchoredPopover({
+export function usePopover({
   open,
   placement = "bottom-end",
   /** Main-axis gap in px. 8 matches former `top-[calc(100%+0.5rem)]`. */
@@ -38,7 +38,7 @@ export function useAnchoredPopover({
   placement?: Placement;
   offsetMain?: number;
   padding?: number;
-}): AnchoredPopover {
+}): PopoverPosition {
   const { refs, floatingStyles } = useFloating({
     open,
     placement,

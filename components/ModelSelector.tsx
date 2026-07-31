@@ -31,10 +31,7 @@ import {
   hydrateTranscriptLanguagePreference,
   useEditorStore,
 } from "@/lib/store";
-import AnchoredPopover, {
-  AnchoredPopoverContent,
-  AnchoredPopoverTrigger,
-} from "./AnchoredPopover";
+import Popover, { PopoverContent, PopoverTrigger } from "./Popover";
 
 export type ModelOptionContextValue = {
   /** Currently selected source id. */
@@ -222,14 +219,14 @@ export default function ModelSelector({
 
   return (
     <ModelSelectorCtx.Provider value={ctx}>
-      <AnchoredPopover
+      <Popover
         open={open}
         onOpenChange={setOpen}
         placement="bottom-end"
         backdrop
       >
         <div className="relative z-30 shrink-0">
-          <AnchoredPopoverTrigger>
+          <PopoverTrigger>
             <button
               type="button"
               aria-haspopup="listbox"
@@ -277,10 +274,10 @@ export default function ModelSelector({
                 className={`shrink-0 text-zinc-400 transition dark:text-zinc-500 ${open ? "rotate-180" : ""}`}
               />
             </button>
-          </AnchoredPopoverTrigger>
+          </PopoverTrigger>
 
           {/* Keep options mounted when closed so custom triggers stay registered. */}
-          <AnchoredPopoverContent
+          <PopoverContent
             id={listId}
             role="listbox"
             aria-label={groupLabel}
@@ -290,9 +287,9 @@ export default function ModelSelector({
               {groupLabel}
             </p>
             <div className="p-1 pb-1.5 space-y-1">{options}</div>
-          </AnchoredPopoverContent>
+          </PopoverContent>
         </div>
-      </AnchoredPopover>
+      </Popover>
     </ModelSelectorCtx.Provider>
   );
 }
@@ -404,7 +401,7 @@ export function LanguageSection() {
       </p>
       {/* No portal: stay in the parent panel DOM so outside-click on the model
           menu still treats this flyout as inside the floating tree. */}
-      <AnchoredPopover
+      <Popover
         open={submenuOpen}
         onOpenChange={setSubmenuOpen}
         placement="right-start"
@@ -413,7 +410,7 @@ export function LanguageSection() {
         escapeStopPropagation
       >
         <div className="relative">
-          <AnchoredPopoverTrigger>
+          <PopoverTrigger>
             <button
               type="button"
               aria-haspopup="menu"
@@ -442,9 +439,9 @@ export function LanguageSection() {
                 }`}
               />
             </button>
-          </AnchoredPopoverTrigger>
+          </PopoverTrigger>
 
-          <AnchoredPopoverContent
+          <PopoverContent
             id={submenuId}
             role="menu"
             aria-label="Transcript language"
@@ -481,9 +478,9 @@ export function LanguageSection() {
                 </button>
               );
             })}
-          </AnchoredPopoverContent>
+          </PopoverContent>
         </div>
-      </AnchoredPopover>
+      </Popover>
     </div>
   );
 }
