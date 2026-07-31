@@ -95,6 +95,44 @@ export async function extractAudio(file: File): Promise<Float32Array | null> {
   return new Float32Array(buf as ArrayBuffer);
 }
 
+/** Container / codec presets for video export. */
+export type VideoExportFormat = "mp4" | "webm";
+
+/** Target output height. `"original"` keeps the source resolution. */
+export type VideoExportResolution = "original" | "720" | "1080" | "2160";
+
+/** Container / codec presets for audio-only export. */
+export type AudioExportFormat = "m4a" | "mp3" | "wav";
+
+export interface VideoExportOptions {
+  /** When false, render a silent video (source has no audio track). */
+  withAudio?: boolean;
+  format?: VideoExportFormat;
+  resolution?: VideoExportResolution;
+}
+
+export interface AudioExportOptions {
+  format?: AudioExportFormat;
+}
+
+const VIDEO_HEIGHT: Record<Exclude<VideoExportResolution, "original">, number> = {
+  "720": 720,
+  "1080": 1080,
+  "2160": 2160,
+};
+
+/**
+ * Scale filter that fits inside the target height without upscaling, keeping
+ * even dimensions (required by libx264 / libvpx).
+ */
+function scaleFilter(resolution: VideoExportResolution): string | null {
+  if (resolution === "original") return null;
+  const h = VIDEO_HEIGHT[resolution];
+  // Never upscale: cap height at source ih. force_original_aspect_ratio keeps
+  // width proportional; the second scale snaps to even sizes.
+  return `scale=-2:'min(ih,${h})',scale=trunc(iw/2)*2:trunc(ih/2)*2`;
+}
+
 /**
  * Render the edited video: keep only `keepRanges` of the original media and
  * concatenate them. Re-encodes so cuts land exactly on word boundaries
@@ -106,14 +144,19 @@ export async function exportVideo(
   keepRanges: TimeRange[],
   editedDuration: number,
   onProgress: (ratio: number) => void,
-  { withAudio = true }: { withAudio?: boolean } = {}
+  {
+    withAudio = true,
+    format = "mp4",
+    resolution = "original",
+  }: VideoExportOptions = {}
 ): Promise<Blob> {
   if (keepRanges.length === 0) {
     throw new Error("Everything has been deleted — nothing to export.");
   }
   const ffmpeg = await getFFmpeg();
   const input = await ensureInput(ffmpeg, file);
-  const out = "output.mp4";
+  const out = format === "webm" ? "output.webm" : "output.mp4";
+  const scale = scaleFilter(resolution);
 
   const parts: string[] = [];
   const labels: string[] = [];
@@ -127,11 +170,15 @@ export async function exportVideo(
       labels[labels.length - 1] += `[a${i}]`;
     }
   });
-  const filter =
+  let filter =
     parts.join(";") +
     `;${labels.join("")}concat=n=${keepRanges.length}:v=1:a=${
       withAudio ? 1 : 0
     }[outv]${withAudio ? "[outa]" : ""}`;
+  const videoMap = scale ? "[vout]" : "[outv]";
+  if (scale) {
+    filter += `;[outv]${scale}[vout]`;
+  }
 
   const progressHandler = ({ time }: { progress: number; time: number }) => {
     // `time` is the output timestamp in microseconds.
@@ -140,23 +187,39 @@ export async function exportVideo(
   };
   ffmpeg.on("progress", progressHandler);
   try {
+    const codecArgs =
+      format === "webm"
+        ? [
+            "-c:v", "libvpx-vp9",
+            "-crf", "35",
+            "-b:v", "0",
+            "-row-mt", "1",
+            "-cpu-used", "8",
+            ...(withAudio ? ["-c:a", "libopus", "-b:a", "128k"] : []),
+          ]
+        : [
+            "-c:v", "libx264",
+            "-preset", "ultrafast",
+            "-crf", "22",
+            ...(withAudio ? ["-c:a", "aac", "-b:a", "192k"] : []),
+            "-movflags", "+faststart",
+          ];
+
     const code = await ffmpeg.exec([
       "-i", input,
       "-filter_complex", filter,
-      "-map", "[outv]",
+      "-map", videoMap,
       ...(withAudio ? ["-map", "[outa]"] : ["-an"]),
-      "-c:v", "libx264",
-      "-preset", "ultrafast",
-      "-crf", "22",
-      ...(withAudio ? ["-c:a", "aac", "-b:a", "192k"] : []),
-      "-movflags", "+faststart",
+      ...codecArgs,
       "-y", out,
     ]);
     if (code !== 0) throw new Error("Export failed while rendering the video.");
     const data = (await ffmpeg.readFile(out)) as Uint8Array;
     await ffmpeg.deleteFile(out);
     const buf = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
-    return new Blob([buf as ArrayBuffer], { type: "video/mp4" });
+    return new Blob([buf as ArrayBuffer], {
+      type: format === "webm" ? "video/webm" : "video/mp4",
+    });
   } finally {
     ffmpeg.off("progress", progressHandler);
   }
@@ -164,20 +227,22 @@ export async function exportVideo(
 
 /**
  * Render an edited audio-only file: keep only `keepRanges` and concatenate
- * them into an M4A (AAC) container.
+ * them. Works for both audio projects and the audio track of a video file.
  */
 export async function exportAudio(
   file: File,
   keepRanges: TimeRange[],
   editedDuration: number,
-  onProgress: (ratio: number) => void
+  onProgress: (ratio: number) => void,
+  { format = "m4a" }: AudioExportOptions = {}
 ): Promise<Blob> {
   if (keepRanges.length === 0) {
     throw new Error("Everything has been deleted — nothing to export.");
   }
   const ffmpeg = await getFFmpeg();
   const input = await ensureInput(ffmpeg, file);
-  const out = "output.m4a";
+  const out =
+    format === "mp3" ? "output.mp3" : format === "wav" ? "output.wav" : "output.m4a";
 
   const parts: string[] = [];
   const labels: string[] = [];
@@ -197,20 +262,31 @@ export async function exportAudio(
   };
   ffmpeg.on("progress", progressHandler);
   try {
+    const codecArgs =
+      format === "mp3"
+        ? ["-c:a", "libmp3lame", "-b:a", "192k"]
+        : format === "wav"
+          ? ["-c:a", "pcm_s16le"]
+          : ["-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart"];
+
     const code = await ffmpeg.exec([
       "-i", input,
       "-filter_complex", filter,
       "-map", "[outa]",
-      "-c:a", "aac",
-      "-b:a", "192k",
-      "-movflags", "+faststart",
+      ...codecArgs,
       "-y", out,
     ]);
     if (code !== 0) throw new Error("Export failed while rendering the audio.");
     const data = (await ffmpeg.readFile(out)) as Uint8Array;
     await ffmpeg.deleteFile(out);
     const buf = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
-    return new Blob([buf as ArrayBuffer], { type: "audio/mp4" });
+    const mime =
+      format === "mp3"
+        ? "audio/mpeg"
+        : format === "wav"
+          ? "audio/wav"
+          : "audio/mp4";
+    return new Blob([buf as ArrayBuffer], { type: mime });
   } finally {
     ffmpeg.off("progress", progressHandler);
   }

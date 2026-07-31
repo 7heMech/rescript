@@ -31,6 +31,7 @@ builds auto-update from GitHub Releases. Prefer the browser? Use the
 - 🔒 **Private by design** — no server, no auth, no uploads; all media processing happens on-device
 - 📝 **Word-level editing** — select words, press ⌫, the cut follows the text
 - 📥 **Import your own transcript** — skip Whisper and edit with an SRT, VTT, or JSON caption file
+- 📤 **Export hub** — video (MP4/WebM, 720p–4K), audio (M4A/MP3/WAV), transcript (TXT/MD), or subtitles (SRT/VTT/JSON)
 - 🧹 **Filler removal** — one-click cut of "um", "uh", and similar fillers
 - 🗣️ **Speaker diarization** — the transcript is grouped by speaker
 - 🎬 **Timeline** — waveform, wordbar with draggable timing handles, Split,
@@ -41,7 +42,7 @@ builds auto-update from GitHub Releases. Prefer the browser? Use the
 - 🔴 **Cut edges** — drag either edge of a cut to trim independently of Whisper
   timestamps; double-click to reset
 - ⚡ **Live preview** — playback skips your cuts in real time
-- 📦 **In-browser / desktop export** — frame-accurate MP4 (video) or M4A (audio) with ffmpeg.wasm
+- 📦 **In-browser / desktop export** — frame-accurate re-encode with ffmpeg.wasm
 - 🎧 **Audio files** — edit podcasts, voice notes, and interviews the same way as video
 - 🖥️ **Desktop app** — macOS, Windows, and Linux via Electron (signed + notarized on Mac)
 
