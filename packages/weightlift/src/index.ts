@@ -1,22 +1,32 @@
 /**
- * weightlift — framework-agnostic progress state for in-browser ML model loading.
+ * weightlift — in-browser ML model manager with download progress.
  *
  * @packageDocumentation
  *
  * ```ts
- * import { Weightlift } from "weightlift";
+ * import { ModelManager } from "weightlift";
  * import { transformersAdapter } from "weightlift/adapters/transformers";
  *
- * const wl = new Weightlift();
- * wl.subscribe((s) => console.log(s.percent, s.message));
- * wl.start("Downloading model…");
- *
- * await pipeline("feature-extraction", modelId, {
- *   progress_callback: transformersAdapter(wl),
+ * const models = new ModelManager();
+ * models.define("whisper-base", {
+ *   load: async ({ progress }) =>
+ *     pipeline("automatic-speech-recognition", modelId, {
+ *       progress_callback: transformersAdapter(progress),
+ *     }),
  * });
- * wl.ready();
+ *
+ * const asr = await models.load("whisper-base");
  * ```
  */
+
+export {
+  ModelManager,
+  type LoadContext,
+  type ModelDefinition,
+  type ModelRecord,
+  type ManagerSnapshot,
+  type ManagerListener,
+} from "./manager.js";
 
 export {
   Weightlift,
@@ -40,10 +50,6 @@ export {
   type WeightliftListener,
 } from "./types.js";
 
-// Adapters are also available via dedicated entry points:
-//   weightlift/adapters/transformers
-//   weightlift/adapters/webllm
-// Re-exported here for convenience in simple setups.
 export {
   transformersAdapter,
   transformersEvent,

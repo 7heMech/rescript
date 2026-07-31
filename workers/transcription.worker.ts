@@ -20,7 +20,7 @@ import {
   env,
   type AutomaticSpeechRecognitionPipeline,
 } from "@huggingface/transformers";
-import { Weightlift } from "weightlift";
+import { ModelManager } from "weightlift";
 import { transformersAdapter } from "weightlift/adapters/transformers";
 import type { Word, WorkerRequest, WorkerResponse } from "@/lib/types";
 import { MODELS, type WhisperModel } from "@/lib/models";
@@ -60,27 +60,6 @@ const post = (msg: WorkerResponse, transfer: Transferable[] = []) =>
   (self as unknown as Worker).postMessage(msg, transfer);
 
 /**
- * Aggregate model download progress into a single 0..1 value via weightlift.
- *
- * Prefer transformers.js `progress_total` events: those are pre-seeded with
- * every expected file's size, so the bar does not jump to 100% after the first
- * ONNX file finishes while larger siblings are still downloading. Fall back to
- * per-file `progress` when totals are unavailable.
- */
-function makeDownloadTracker(label: string) {
-  const wl = new Weightlift();
-  wl.start(label);
-  wl.subscribe((s) => {
-    post({
-      type: "progress",
-      message: s.message || label,
-      value: s.indeterminate ? null : s.percent,
-    });
-  });
-  return transformersAdapter(wl, { message: label });
-}
-
-/**
  * Whether a model's weights are already in the transformers.js browser cache.
  * Used purely to label the progress UI accurately ("Loading … from cache"
  * instead of "Downloading …"): transformers.js emits identical progress
@@ -114,45 +93,64 @@ async function pickDevice(): Promise<"webgpu" | "wasm"> {
   return "wasm";
 }
 
-// Keyed by model id so choices that share weights reuse one pipeline.
-const asrPromises = new Map<string, Promise<AutomaticSpeechRecognitionPipeline>>();
+/**
+ * Singleton ASR pipelines + download progress, keyed by Hugging Face model id.
+ * Concurrent getAsr() calls share one promise; unload() after a WebGPU loss
+ * forces a clean reload on WASM.
+ */
+const asrModels = new ModelManager();
+asrModels.subscribe((snap) => {
+  const id = snap.loading[0];
+  if (!id) return;
+  const rec = snap.models[id];
+  if (!rec) return;
+  post({
+    type: "progress",
+    message: rec.message,
+    value: rec.indeterminate ? null : rec.percent,
+  });
+});
+
 async function getAsr(choice: WhisperModel) {
   const { id, dtype } = MODELS[choice];
-  let promise = asrPromises.get(id);
-  if (!promise) {
-    const device = await pickDevice();
-    asrDevice = device;
-    const label = (await isModelCached(id))
-      ? "Loading speech model from cache…"
-      : "Downloading speech model…";
-    promise = pipeline("automatic-speech-recognition", id, {
-      dtype: dtype[device],
-      device,
-      progress_callback: makeDownloadTracker(label),
-    }).catch((err) => {
-      // WebGPU can fail on some drivers; retry once on plain WASM.
-      if (device === "webgpu") {
-        forceWasm = true;
-        asrDevice = "wasm";
-        return pipeline("automatic-speech-recognition", id, {
-          dtype: dtype.wasm,
-          device: "wasm",
-          progress_callback: makeDownloadTracker(label),
-        });
+  return asrModels.load<AutomaticSpeechRecognitionPipeline>(id, {
+    isCached: () => isModelCached(id),
+    messages: {
+      download: "Downloading speech model…",
+      cache: "Loading speech model from cache…",
+    },
+    load: async ({ progress }) => {
+      const device = await pickDevice();
+      asrDevice = device;
+      const onProgress = transformersAdapter(progress);
+      try {
+        return (await pipeline("automatic-speech-recognition", id, {
+          dtype: dtype[device],
+          device,
+          progress_callback: onProgress,
+        })) as AutomaticSpeechRecognitionPipeline;
+      } catch (err) {
+        // WebGPU can fail on some drivers; retry once on plain WASM.
+        if (device === "webgpu") {
+          forceWasm = true;
+          asrDevice = "wasm";
+          return (await pipeline("automatic-speech-recognition", id, {
+            dtype: dtype.wasm,
+            device: "wasm",
+            progress_callback: onProgress,
+          })) as AutomaticSpeechRecognitionPipeline;
+        }
+        throw err;
       }
-      throw err;
-    }) as Promise<AutomaticSpeechRecognitionPipeline>;
-    asrPromises.set(id, promise);
-    promise.catch(() => asrPromises.delete(id));
-  }
-  return promise;
+    },
+  });
 }
 
 /** Drop the dead WebGPU pipeline and reload the same model on WASM. */
 async function fallbackAsrToWasm(choice: WhisperModel) {
   forceWasm = true;
   asrDevice = "wasm";
-  asrPromises.clear();
+  await Promise.all(Object.values(MODELS).map((m) => asrModels.unload(m.id)));
   post({
     type: "progress",
     message: "GPU interrupted — continuing on CPU…",

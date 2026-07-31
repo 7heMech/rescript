@@ -93,8 +93,8 @@ export class Weightlift {
 }
 
 /**
- * Deduplicating loader: concurrent `load()` calls share one promise and one
- * {@link Weightlift} store. Keyed externally by the caller (model id, etc.).
+ * Deduplicating loader for a single model. Prefer {@link ModelManager} when
+ * you manage more than one id (cache labels, unload, manager snapshots).
  */
 export function createModelLoader<T>(loadFn: (wl: Weightlift) => Promise<T>): {
   weightlift: Weightlift;
@@ -132,9 +132,8 @@ export function createModelLoader<T>(loadFn: (wl: Weightlift) => Promise<T>): {
 }
 
 /**
- * Multi-model registry: one {@link createModelLoader} per string key.
- * Useful when Whisper Base / Small (or CLIP variants) should not stomp each
- * other's progress state.
+ * Multi-model registry of {@link createModelLoader}s.
+ * Prefer {@link ModelManager} for the full define/load/unload API.
  */
 export function createModelRegistry<T>() {
   const loaders = new Map<

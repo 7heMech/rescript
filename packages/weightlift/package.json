@@ -1,7 +1,7 @@
 {
   "name": "weightlift",
   "version": "0.1.0",
-  "description": "Framework-agnostic progress state for in-browser ML model loading (Transformers.js, WebLLM, and friends).",
+  "description": "In-browser ML model manager with download progress (Transformers.js, WebLLM, and friends).",
   "license": "MIT",
   "author": {
     "name": "wassgha",
@@ -14,6 +14,7 @@
   },
   "keywords": [
     "ml",
+    "model-manager",
     "transformers.js",
     "webllm",
     "whisper",

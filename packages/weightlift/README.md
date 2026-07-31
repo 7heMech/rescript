@@ -1,29 +1,33 @@
 # weightlift
 
-Framework-agnostic progress state for **in-browser ML model loading**.
+In-browser **ML model manager** with download progress — for Transformers.js,
+WebLLM, whisper.cpp WASM, and friends.
 
-Transformers.js, WebLLM, and whisper.cpp WASM each expose their own progress
-callbacks. Everyone ends up hand-rolling the same ~100 lines: aggregate
-multi-file downloads into one percentage, tolerate missing `Content-Length`,
-dedupe concurrent loads, and shuttle events out of a web worker.
-
-**weightlift** is that thin layer — a zero-dependency TypeScript core plus a
-15-line React adapter.
+The thing every app hand-rolls: singleton loads by model id, cache-hit
+labeling, multi-file progress aggregation, `isLoading` / `isReady`, and
+shuttling state out of a web worker. Zero runtime dependencies; React is an
+optional peer.
 
 ```ts
-import { Weightlift } from "weightlift";
+import { ModelManager } from "weightlift";
 import { transformersAdapter } from "weightlift/adapters/transformers";
 
-const wl = new Weightlift();
-wl.subscribe((s) => {
-  console.log(s.status, s.percent, s.message);
+const models = new ModelManager();
+
+models.define("whisper-base", {
+  isCached: () => isOnnxCached("onnx-community/whisper-base_timestamped"),
+  messages: {
+    download: "Downloading speech model…",
+    cache: "Loading speech model from cache…",
+  },
+  load: async ({ progress }) =>
+    pipeline("automatic-speech-recognition", "onnx-community/whisper-base_timestamped", {
+      progress_callback: transformersAdapter(progress),
+    }),
 });
 
-wl.start("Downloading speech model…");
-await pipeline("automatic-speech-recognition", modelId, {
-  progress_callback: transformersAdapter(wl),
-});
-wl.ready();
+const asr = await models.load("whisper-base");
+// concurrent load("whisper-base") shares the same promise
 ```
 
 ## Install
@@ -32,50 +36,62 @@ wl.ready();
 npm install weightlift
 ```
 
-React is an **optional** peer dependency — only needed for `weightlift/react`.
-
 ## Package exports
 
 | Import | What |
 | --- | --- |
-| `weightlift` | Core store, reducer, loader helpers, adapter re-exports |
-| `weightlift/react` | `useWeightlift` / `useWeightliftStore` (`useSyncExternalStore`) |
+| `weightlift` | **`ModelManager`** (headline API), plus low-level `Weightlift` progress store |
+| `weightlift/react` | `useModel` / `useModelManager` (`useSyncExternalStore`) |
 | `weightlift/adapters/transformers` | `transformersAdapter()` for `progress_callback` |
 | `weightlift/adapters/webllm` | `webllmAdapter()` for `initProgressCallback` |
 | `weightlift/worker` | `createWorkerReporter` / `attachWorker` postMessage bridge |
 
-## State shape
+## ModelManager
+
+| Method | Purpose |
+| --- | --- |
+| `define(id, definition)` | Register how to load (and optionally dispose) a model |
+| `load(id)` / `load(id, definition)` | Load once; dedupe concurrent callers; lazy-define overload |
+| `get(id)` | Sync access to a ready instance |
+| `status(id)` | `{ status, percent, message, fromCache, … }` for UI |
+| `isReady` / `isLoading` / `has` | Quick queries |
+| `unload(id)` | Drop instance (calls `dispose`) so the next `load` re-runs |
+| `preload([ids])` | Warm several models |
+| `subscribe` / `getSnapshot` | Manager-wide snapshot for React / vanilla UI |
+
+### Definition shape
 
 ```ts
-interface WeightliftState {
-  status: "idle" | "loading" | "ready" | "error";
-  message: string;
-  files: Record<string, { loaded: number; total: number | null; status: string }>;
-  loadedBytes: number;
-  totalBytes: number | null;
-  percent: number | null;     // 0..1, or null when indeterminate
-  indeterminate: boolean;
-  error: Error | null;
+interface ModelDefinition<T> {
+  load: (ctx: {
+    id: string;
+    progress: Weightlift;      // pass to transformersAdapter(progress)
+    fromCache: boolean | null;
+  }) => Promise<T>;
+  isCached?: () => boolean | Promise<boolean>;
+  dispose?: (value: T) => void | Promise<void>;
+  messages?: { download?: string; cache?: string; ready?: string };
 }
 ```
-
-Files download in parallel, and totals are sometimes missing — when no usable
-byte total is known, `percent` is `null` and `indeterminate` is `true`.
 
 ## React
 
 ```tsx
-import { useMemo } from "react";
-import { Weightlift } from "weightlift";
-import { useWeightlift } from "weightlift/react";
+import { useModel, useModelManager } from "weightlift/react";
 
-function ModelBar({ weightlift }: { weightlift: Weightlift }) {
-  const { percent, message, indeterminate, isLoading } = useWeightlift(weightlift);
-  if (!isLoading) return null;
+function ModelBar({ manager }: { manager: ModelManager }) {
+  const { percent, message, isLoading, load } = useModel(manager, "whisper-base");
+
   return (
     <div>
-      <p>{message}</p>
-      <progress value={indeterminate ? undefined : percent ?? 0} max={1} />
+      {isLoading ? (
+        <>
+          <p>{message}</p>
+          <progress value={percent ?? undefined} max={1} />
+        </>
+      ) : (
+        <button onClick={() => load()}>Load model</button>
+      )}
     </div>
   );
 }
@@ -83,59 +99,41 @@ function ModelBar({ weightlift }: { weightlift: Weightlift }) {
 
 ## Web worker
 
-Model loads belong in a worker; the UI lives on the main thread. weightlift
-ships the glue:
+Loads belong in a worker; the UI lives on the main thread. Each model’s
+`progress` store can be bridged with `weightlift/worker`:
 
 ```ts
 // worker.ts
-import { Weightlift } from "weightlift";
-import { transformersAdapter } from "weightlift/adapters/transformers";
-import { createWorkerReporter } from "weightlift/worker";
-
-const wl = new Weightlift();
-const reporter = createWorkerReporter(self, wl, { mode: "event" });
-wl.start("Downloading…");
-
-await pipeline("automatic-speech-recognition", id, {
-  progress_callback: transformersAdapter(reporter),
+const models = new ModelManager();
+models.define("whisper-base", {
+  load: async ({ progress }) => {
+    createWorkerReporter(self, progress, { mode: "event" });
+    return pipeline(task, id, {
+      progress_callback: transformersAdapter(progress),
+    });
+  },
 });
-wl.ready();
-```
 
-```ts
 // main.ts
-import { Weightlift } from "weightlift";
-import { attachWorker } from "weightlift/worker";
-import { useWeightlift } from "weightlift/react";
-
-const wl = new Weightlift();
-attachWorker(worker, wl);
+const progress = new Weightlift();
+attachWorker(worker, progress);
 ```
 
-## Deduping loads
+Or subscribe to the manager in the worker and `postMessage` `manager.getSnapshot()` yourself — the snapshot is plain JSON-serializable fields (aside from `error`).
 
-```ts
-import { createModelRegistry } from "weightlift";
+## Low-level progress store
 
-const registry = createModelRegistry<Pipeline>();
-
-export function getAsr(modelId: string) {
-  return registry
-    .get(modelId, async (wl) => {
-      wl.start("Downloading…");
-      return pipeline("automatic-speech-recognition", modelId, {
-        progress_callback: transformersAdapter(wl),
-      });
-    })
-    .load();
-}
-```
+`Weightlift` is the per-model progress engine under the manager (also usable
+standalone if you only need a progress bar). It aggregates parallel file
+downloads into `{ percent, loadedBytes, totalBytes, indeterminate, files }`,
+prefers transformers.js `progress_total` events, and stays indeterminate when
+`Content-Length` is missing.
 
 ## Why not React-first?
 
 Hooks cannot run inside web workers, and that is where model loading happens.
-A vanilla subscription store + `useSyncExternalStore` binding is the same
-pattern Zustand, TanStack Query, and Jotai use — one core, many frameworks.
+Vanilla core + `useSyncExternalStore` bindings is the same pattern as Zustand /
+TanStack Query — one core, many frameworks.
 
 ## License
 
