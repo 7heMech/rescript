@@ -80,6 +80,11 @@ User-facing progress for Rescript. Items are marked done when they shipped to
 
 ## Next
 
+- [ ] **Parakeet TDT v3** as an optional transcription backend (faster / more accurate word timings)
+- [ ] Fix remaining drift / lag and push word timestamps closer to true speech boundaries
+- [ ] In-app transcript editor (richer inline editing beyond the Correct popover)
+- [ ] Export the timeline itself to video editing tools (e.g. project / EDL / FCPXML-style interchange)
+- [ ] **Regenerate** — text-to-speech with accurate voice cloning so rewritten lines can be spoken in the original voice
 - [ ] Native macOS SpeechAnalyzer as an optional transcription backend
 - [ ] More languages beyond English / German; local model import for air-gapped first runs
 - [ ] Faster export (stream-copy for keyframe-aligned segments, WebCodecs rendering)
