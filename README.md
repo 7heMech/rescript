@@ -11,7 +11,7 @@
 
 [![Rescript Demo](./screenshots/rescript.png)](https://wassgha.github.io/rescript/)
 
-Rescript is a source-available, transcript-based media editor. Drop in a video or
+Rescript is an open-source, transcript-based media editor. Drop in a video or
 audio file and it is transcribed locally with per-word timestamps and speaker
 labels. Delete words in the transcript and the corresponding clip is cut from
 the media. Export the final cut — without your file ever leaving your device.
