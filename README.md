@@ -44,6 +44,7 @@ builds auto-update from GitHub Releases. Prefer the browser? Use the
   timestamps; double-click to reset
 - ⚡ **Live preview** — playback skips your cuts in real time
 - 📦 **In-browser / desktop export** — frame-accurate re-encode with ffmpeg.wasm
+- 🎞️ **NLE timeline export** — DaVinci Resolve / Premiere XML, Final Cut FCPXML, Pro Tools/Logic AAF
 - 🎧 **Audio files** — edit podcasts, voice notes, and interviews the same way as video
 - 🖥️ **Desktop app** — macOS, Windows, and Linux via Electron (signed + notarized on Mac)
 

@@ -24,8 +24,9 @@ const nextConfig: NextConfig = {
   // Inlined into the client bundle at build time (both targets are static, so
   // there is no runtime env to read this from).
   env: { NEXT_PUBLIC_APP_VERSION: version },
-  // parakeet.js ships as raw ESM from src/; transpile for the worker bundle.
-  transpilePackages: ["parakeet.js"],
+  // parakeet.js ships as raw ESM from src/; timeline/CFB helpers ship modern
+  // syntax. Transpile all three for the Next bundler.
+  transpilePackages: ["@chatoctopus/timeline", "cfb", "parakeet.js"],
   ...(isExport
     ? {
         output: "export" as const,
