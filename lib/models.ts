@@ -1,6 +1,9 @@
 /** Transcription source choices offered on the upload screen. */
 export type WhisperModel = "base" | "small";
-export type ModelChoice = WhisperModel | "import";
+/** NVIDIA Parakeet TDT 0.6B v3 via parakeet.js (ONNX / WebGPU). */
+export type ParakeetModel = "parakeet";
+export type AsrModel = WhisperModel | ParakeetModel;
+export type ModelChoice = AsrModel | "import";
 
 type DType = "fp32" | "fp16" | "q8" | "int8" | "uint8" | "q4" | "q4f16" | "bnb4";
 
@@ -60,32 +63,54 @@ export const MODELS: Record<WhisperModel, ModelInfo> = {
   },
 };
 
+/**
+ * UI metadata for Parakeet (not a transformers.js Whisper checkpoint).
+ * Download size depends on backend: WASM int8 ~670 MB, WebGPU fp16 ~1.2 GB.
+ */
+export const PARAKEET_INFO = {
+  /** parakeet.js model key → ysdede/parakeet-tdt-0.6b-v3-onnx */
+  id: "parakeet-tdt-0.6b-v3",
+  label: "Parakeet TDT v3",
+  description:
+    "NVIDIA FastConformer — faster on WebGPU, strong EU-language accuracy. Auto-detects language.",
+  size: "~700 MB",
+} as const;
+
 export function isWhisperModel(value: unknown): value is WhisperModel {
   return value === "base" || value === "small";
 }
 
+export function isParakeetModel(value: unknown): value is ParakeetModel {
+  return value === "parakeet";
+}
+
+/** Models that run local ASR in the transcription worker (not import). */
+export function isAsrModel(value: unknown): value is AsrModel {
+  return isWhisperModel(value) || isParakeetModel(value);
+}
+
 export function isModelChoice(value: unknown): value is ModelChoice {
-  return isWhisperModel(value) || value === "import";
+  return isAsrModel(value) || value === "import";
 }
 
 const MODEL_STORAGE_KEY = "rescript.model";
 
-/** Read the last-selected Whisper model from localStorage (defaults to base). */
-export function loadModelPreference(): WhisperModel {
+/** Read the last-selected ASR model from localStorage (defaults to base). */
+export function loadModelPreference(): AsrModel {
   if (typeof window === "undefined") return "base";
   try {
     const raw = window.localStorage.getItem(MODEL_STORAGE_KEY);
     // Ignore a stale "import" preference — that choice is session-only until a
     // transcript file is picked again.
-    if (isWhisperModel(raw)) return raw;
+    if (isAsrModel(raw)) return raw;
   } catch {
     // private mode / disabled storage
   }
   return "base";
 }
 
-/** Persist the selected Whisper model for the next visit. */
-export function saveModelPreference(model: WhisperModel) {
+/** Persist the selected ASR model for the next visit. */
+export function saveModelPreference(model: AsrModel) {
   if (typeof window === "undefined") return;
   try {
     window.localStorage.setItem(MODEL_STORAGE_KEY, model);

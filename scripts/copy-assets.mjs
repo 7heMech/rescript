@@ -3,9 +3,17 @@
  * served fully offline (no CDN requests at runtime):
  *   - @ffmpeg/core-mt  -> public/vendor/ffmpeg/  (audio extraction + export)
  *   - onnxruntime-web  -> public/vendor/ort/     (transformers.js inference)
+ *   - parakeet.js ORT  -> public/vendor/ort-parakeet/ (Parakeet TDT inference)
  * Runs automatically on `npm install` (postinstall).
  */
-import { cpSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -30,14 +38,69 @@ for (const f of readdirSync(ffmpegClassSrc)) {
   }
 }
 
-const ortSrc = join(root, "node_modules/onnxruntime-web/dist");
-const ortDst = join(root, "public/vendor/ort");
-mkdirSync(ortDst, { recursive: true });
-for (const f of readdirSync(ortSrc)) {
-  if (/^ort-wasm-simd-threaded.*\.(wasm|mjs)$/.test(f)) {
-    cpSync(join(ortSrc, f), join(ortDst, f));
+function copyOrtWasm(srcDist, dst) {
+  mkdirSync(dst, { recursive: true });
+  for (const f of readdirSync(srcDist)) {
+    if (/^ort-wasm-simd-threaded.*\.(wasm|mjs)$/.test(f)) {
+      cpSync(join(srcDist, f), join(dst, f));
+    }
   }
 }
+
+const ortSrc = join(root, "node_modules/onnxruntime-web/dist");
+const ortDst = join(root, "public/vendor/ort");
+copyOrtWasm(ortSrc, ortDst);
+
+// Parakeet.js pins onnxruntime-web@1.24.1 (nested). Keep its WASM separate so
+// the JS package and binaries stay version-matched.
+const parakeetOrtSrc = join(
+  root,
+  "node_modules/parakeet.js/node_modules/onnxruntime-web/dist"
+);
+const parakeetOrtDst = join(root, "public/vendor/ort-parakeet");
+if (existsSync(parakeetOrtSrc)) {
+  copyOrtWasm(parakeetOrtSrc, parakeetOrtDst);
+} else {
+  // Hoisted install: fall back to the top-level ORT package.
+  copyOrtWasm(ortSrc, parakeetOrtDst);
+}
+
+/**
+ * parakeet.js@1.4.4 accepts `wasmPaths` in fromUrls/fromHub but initOrt never
+ * applies the argument — it only sets a jsDelivr CDN default. Patch that so
+ * Rescript can serve WASM same-origin (offline after first model download).
+ */
+function patchParakeetWasmPaths() {
+  const backendPath = join(root, "node_modules/parakeet.js/src/backend.js");
+  if (!existsSync(backendPath)) return;
+  let src = readFileSync(backendPath, "utf8");
+  if (src.includes("/* rescript-wasmPaths-patch */")) return;
+
+  // Package may ship CRLF; normalize for matching then restore EOL style.
+  const eol = src.includes("\r\n") ? "\r\n" : "\n";
+  const normalized = src.replace(/\r\n/g, "\n");
+  const needle =
+    "  // Set up WASM paths first (needed for all backends)\n" +
+    "  if (!ort.env.wasm.wasmPaths) {";
+  const replacement =
+    "  // Set up WASM paths first (needed for all backends)\n" +
+    "  /* rescript-wasmPaths-patch */\n" +
+    "  if (wasmPaths) {\n" +
+    "    ort.env.wasm.wasmPaths = wasmPaths;\n" +
+    "  } else if (!ort.env.wasm.wasmPaths) {";
+  if (!normalized.includes(needle)) {
+    console.warn(
+      "[copy-assets] Could not patch parakeet.js wasmPaths (needle not found)"
+    );
+    return;
+  }
+  let patched = normalized.replace(needle, replacement);
+  if (eol === "\r\n") patched = patched.replace(/\n/g, "\r\n");
+  writeFileSync(backendPath, patched);
+  console.log("[copy-assets] Patched parakeet.js initOrt to honor wasmPaths");
+}
+
+patchParakeetWasmPaths();
 
 // coi-serviceworker provides COOP/COEP headers on static hosts (GitHub Pages)
 // that can't send them, keeping cross-origin isolation for SharedArrayBuffer.
@@ -57,4 +120,6 @@ writeFileSync(
   coiPrelude + readFileSync(coiSrc, "utf8")
 );
 
-console.log("[copy-assets] ffmpeg core + onnxruntime wasm + coi-serviceworker copied to public/");
+console.log(
+  "[copy-assets] ffmpeg core + onnxruntime wasm + coi-serviceworker copied to public/"
+);

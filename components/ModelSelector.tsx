@@ -25,7 +25,13 @@ import {
   TRANSCRIPT_LANGUAGES,
   type TranscriptLanguage,
 } from "@/lib/languages";
-import { MODELS, isWhisperModel, type ModelChoice } from "@/lib/models";
+import {
+  MODELS,
+  PARAKEET_INFO,
+  isParakeetModel,
+  isWhisperModel,
+  type ModelChoice,
+} from "@/lib/models";
 import {
   hydrateModelPreference,
   hydrateTranscriptLanguagePreference,
@@ -187,9 +193,11 @@ export default function ModelSelector({
     activeTrigger?.label ??
     (isWhisperModel(model)
       ? MODELS[model].label
-      : model === "import"
-        ? "Import transcript"
-        : String(model));
+      : isParakeetModel(model)
+        ? PARAKEET_INFO.label
+        : model === "import"
+          ? "Import transcript"
+          : String(model));
   const languageInfo = TRANSCRIPT_LANGUAGES[transcriptLanguage];
   const showLanguageInTrigger =
     isWhisperModel(model) &&
@@ -201,6 +209,7 @@ export default function ModelSelector({
     <>
       <ModelOption id="base" />
       <ModelOption id="small" />
+      <ModelOption id="parakeet" />
     </>
   );
 
@@ -317,9 +326,19 @@ export function ModelOption({
   const selected = selector.value === id;
 
   const resolvedLabel =
-    label ?? (isWhisperModel(id) ? MODELS[id].label : id);
+    label ??
+    (isWhisperModel(id)
+      ? MODELS[id].label
+      : isParakeetModel(id)
+        ? PARAKEET_INFO.label
+        : id);
   const resolvedMeta =
-    meta ?? (isWhisperModel(id) ? MODELS[id].size : undefined);
+    meta ??
+    (isWhisperModel(id)
+      ? MODELS[id].size
+      : isParakeetModel(id)
+        ? PARAKEET_INFO.size
+        : undefined);
 
   const optionCtx = useMemo<ModelOptionContextValue>(
     () => ({

@@ -25,6 +25,7 @@ import {
   trimEdgeResult,
 } from "./edits";
 import {
+  isAsrModel,
   isModelChoice,
   isWhisperModel,
   loadModelPreference,
@@ -59,19 +60,19 @@ interface EditorState {
   duration: number;
   /** Mono 16 kHz PCM of the media's audio track (used for waveform + ASR). */
   audio: Float32Array | null;
-  /** Transcript source selected on the upload screen (Whisper or import). */
+  /** Transcript source selected on the upload screen (ASR model or import). */
   model: ModelChoice;
-  /** Language hint sent to Whisper when transcribing. */
+  /** Language hint sent to Whisper when transcribing (Parakeet auto-detects). */
   transcriptLanguage: TranscriptLanguage;
   /**
    * Caption file parsed on the upload screen when source is "import".
-   * Cleared when switching back to a Whisper model or after media loads.
+   * Cleared when switching back to an ASR model or after media loads.
    */
   pendingTranscript: PendingTranscript | null;
   /** IndexedDB project id when this session is persisted; null for a fresh upload mid-pipeline. */
   projectId: string | null;
   /**
-   * When true, Editor extracts audio for the waveform but skips Whisper
+   * When true, Editor extracts audio for the waveform but skips ASR
    * (restored projects / imported transcripts already have words).
    */
   skipTranscription: boolean;
@@ -289,7 +290,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       mediaKind: kind,
       projectId: null,
       skipTranscription: Boolean(imported),
-      model: imported ? "import" : isWhisperModel(current) ? current : "base",
+      model: imported ? "import" : isAsrModel(current) ? current : "base",
       pendingTranscript: null,
       status: "preparing",
       progress: {
@@ -365,7 +366,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   },
 
   setModel: (model) => {
-    if (isWhisperModel(model)) {
+    if (isAsrModel(model)) {
       saveModelPreference(model);
       set({ model, pendingTranscript: null });
     } else {

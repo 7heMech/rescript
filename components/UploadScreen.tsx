@@ -277,6 +277,7 @@ export default function UploadScreen({
                 <ModelSelector groupLabel="Transcript source">
                   <ModelOption id="base" />
                   <ModelOption id="small" />
+                  <ModelOption id="parakeet" />
                   <ModelOptionSeparator />
                   <LanguageSection />
                   <ModelOptionSeparator />
