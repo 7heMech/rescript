@@ -20,10 +20,10 @@ import {
   env,
   type AutomaticSpeechRecognitionPipeline,
 } from "@huggingface/transformers";
-import { ModelManager, type LoadContext } from "weightlift";
+import { ModelManager } from "weightlift";
 import {
-  isTransformersModelCached,
-  transformersProgress,
+  createTransformersDevicePolicy,
+  defineTransformersModel,
 } from "weightlift/transformers";
 import type { Word, WorkerRequest, WorkerResponse } from "@/lib/types";
 import { MODELS, type WhisperModel } from "@/lib/models";
@@ -62,58 +62,10 @@ type AsrChunk = { text: string; timestamp: [number, number | null] };
 const post = (msg: WorkerResponse, transfer: Transferable[] = []) =>
   (self as unknown as Worker).postMessage(msg, transfer);
 
-/** Once set, this worker stays on WASM — a lost WebGPU session cannot be reused. */
-let forceWasm = false;
+/** Shared across Whisper sizes so one WebGPU failure sticks to WASM. */
+const asrDevices = createTransformersDevicePolicy();
 /** Device the current ASR pipeline is running on. */
 let asrDevice: "webgpu" | "wasm" = "wasm";
-
-async function pickDevice(): Promise<"webgpu" | "wasm"> {
-  if (forceWasm) return "wasm";
-  try {
-    const gpu = (globalThis.navigator as Navigator & {
-      gpu?: { requestAdapter: () => Promise<unknown | null> };
-    })?.gpu;
-    if (gpu && (await gpu.requestAdapter())) return "webgpu";
-  } catch {
-    // fall through to wasm
-  }
-  return "wasm";
-}
-
-/** Build a Weightlift definition for one Whisper size (registered once below). */
-function asrDefinition(choice: WhisperModel) {
-  const { id, dtype } = MODELS[choice];
-  return {
-    isCached: () =>
-      isTransformersModelCached(id, {
-        cacheKey: env.cacheKey ?? "transformers-cache",
-      }),
-    load: async ({ progress }: LoadContext) => {
-      const device = await pickDevice();
-      asrDevice = device;
-      const onProgress = transformersProgress(progress);
-      try {
-        return (await pipeline("automatic-speech-recognition", id, {
-          dtype: dtype[device],
-          device,
-          progress_callback: onProgress,
-        })) as AutomaticSpeechRecognitionPipeline;
-      } catch (err) {
-        // WebGPU can fail on some drivers; retry once on plain WASM.
-        if (device === "webgpu") {
-          forceWasm = true;
-          asrDevice = "wasm";
-          return (await pipeline("automatic-speech-recognition", id, {
-            dtype: dtype.wasm,
-            device: "wasm",
-            progress_callback: onProgress,
-          })) as AutomaticSpeechRecognitionPipeline;
-        }
-        throw err;
-      }
-    },
-  };
-}
 
 /**
  * ASR registry keyed by Hugging Face model id. Definitions are registered up
@@ -122,10 +74,23 @@ function asrDefinition(choice: WhisperModel) {
  */
 const asrModels = new ModelManager({
   models: Object.fromEntries(
-    (Object.keys(MODELS) as WhisperModel[]).map((choice) => [
-      MODELS[choice].id,
-      asrDefinition(choice),
-    ])
+    (Object.keys(MODELS) as WhisperModel[]).map((choice) => {
+      const { id, dtype } = MODELS[choice];
+      return [
+        id,
+        defineTransformersModel<AutomaticSpeechRecognitionPipeline>({
+          pipeline,
+          task: "automatic-speech-recognition",
+          modelId: id,
+          dtype,
+          devicePolicy: asrDevices,
+          cacheKey: env.cacheKey ?? "transformers-cache",
+          onDevice: (device) => {
+            asrDevice = device;
+          },
+        }),
+      ];
+    })
   ),
 });
 asrModels.subscribe((snap) => {
@@ -153,7 +118,7 @@ async function getAsr(choice: WhisperModel) {
  * ASR cache (same as the old asrPromises.clear()) — not just `choice`.
  */
 async function fallbackAsrToWasm(choice: WhisperModel) {
-  forceWasm = true;
+  asrDevices.preferWasm();
   asrDevice = "wasm";
   await asrModels.unloadAll();
   post({
