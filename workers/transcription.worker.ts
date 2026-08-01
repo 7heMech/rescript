@@ -22,8 +22,8 @@ import {
 } from "@huggingface/transformers";
 import { ModelManager } from "weightlift";
 import {
-  createTransformersDevicePolicy,
-  defineTransformersModel,
+  fallbackDevicePolicy,
+  transformersModel,
 } from "weightlift/transformers";
 import type { Word, WorkerRequest, WorkerResponse } from "@/lib/types";
 import { MODELS, type WhisperModel } from "@/lib/models";
@@ -62,8 +62,6 @@ type AsrChunk = { text: string; timestamp: [number, number | null] };
 const post = (msg: WorkerResponse, transfer: Transferable[] = []) =>
   (self as unknown as Worker).postMessage(msg, transfer);
 
-/** Shared across Whisper sizes so one WebGPU failure sticks to WASM. */
-const asrDevices = createTransformersDevicePolicy();
 /** Device the current ASR pipeline is running on. */
 let asrDevice: "webgpu" | "wasm" = "wasm";
 
@@ -78,12 +76,11 @@ const asrModels = new ModelManager({
       const { id, dtype } = MODELS[choice];
       return [
         id,
-        defineTransformersModel<AutomaticSpeechRecognitionPipeline>({
+        transformersModel<AutomaticSpeechRecognitionPipeline>({
           pipeline,
           task: "automatic-speech-recognition",
           modelId: id,
           dtype,
-          devicePolicy: asrDevices,
           cacheKey: env.cacheKey ?? "transformers-cache",
           onDevice: (device) => {
             asrDevice = device;
@@ -118,7 +115,7 @@ async function getAsr(choice: WhisperModel) {
  * ASR cache (same as the old asrPromises.clear()) — not just `choice`.
  */
 async function fallbackAsrToWasm(choice: WhisperModel) {
-  asrDevices.preferWasm();
+  fallbackDevicePolicy.preferWasm();
   asrDevice = "wasm";
   await asrModels.unloadAll();
   post({
