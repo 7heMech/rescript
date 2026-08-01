@@ -181,11 +181,17 @@ async function getAsr(choice: WhisperModel) {
   });
 }
 
-/** Drop the dead WebGPU pipeline and reload the same model on WASM. */
+/**
+ * Drop dead WebGPU pipelines and reload the requested model on WASM.
+ * A lost GPU device invalidates every WebGPU session, so clear the whole
+ * ASR cache (same as the old asrPromises.clear()) — not just `choice`.
+ */
 async function fallbackAsrToWasm(choice: WhisperModel) {
   forceWasm = true;
   asrDevice = "wasm";
-  await Promise.all(Object.values(MODELS).map((m) => asrModels.unload(m.id)));
+  await Promise.all(
+    Object.keys(asrModels.getSnapshot().models).map((id) => asrModels.unload(id))
+  );
   post({
     type: "progress",
     message: "GPU interrupted — continuing on CPU…",
