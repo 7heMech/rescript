@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import Script from "next/script";
 import { GoogleAnalytics } from "@next/third-parties/google";
+import { Analytics } from "@vercel/analytics/next";
 import { isElectron } from "@/lib/platform";
 import "./globals.css";
 
@@ -16,6 +17,21 @@ const geistMono = Geist_Mono({
 });
 
 const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+
+// Vercel Web Analytics is collected by the deployment at getrescript.com.
+// Neither GitHub Pages nor the Electron app:// shell can serve the default
+// /_vercel/insights paths, so point the SDK at absolute URLs there. Left unset
+// in development so the SDK loads its debug script and logs to the console
+// instead of reporting local traffic.
+const analyticsHost =
+  process.env.NEXT_PUBLIC_VERCEL_ANALYTICS_HOST ?? "https://getrescript.com";
+const analyticsProps =
+  process.env.NODE_ENV === "production"
+    ? {
+        scriptSrc: `${analyticsHost}/_vercel/insights/script.js`,
+        endpoint: `${analyticsHost}/_vercel/insights`,
+      }
+    : {};
 
 const title = "Rescript — edit videos like you edit text";
 const description =
@@ -80,7 +96,10 @@ export default function RootLayout({
           />
         )}
       </head>
-      <body className="min-h-full">{children}</body>
+      <body className="min-h-full">
+        {children}
+        <Analytics {...analyticsProps} />
+      </body>
       <GoogleAnalytics gaId="G-WZ055S858C" />
     </html>
   );
