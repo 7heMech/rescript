@@ -24,13 +24,13 @@ const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 // in development so the SDK loads its debug script and logs to the console
 // instead of reporting local traffic.
 const analyticsHost =
-  process.env.NEXT_PUBLIC_VERCEL_ANALYTICS_HOST ?? "https://getrescript.com";
+  process.env.NEXT_PUBLIC_VERCEL_ANALYTICS_HOST ?? "https://www.getrescript.com";
 const analyticsProps =
   process.env.NODE_ENV === "production"
     ? {
-        scriptSrc: `${analyticsHost}/_vercel/insights/script.js`,
-        endpoint: `${analyticsHost}/_vercel/insights`,
-      }
+      scriptSrc: `${analyticsHost}/api/va/script.js`,
+      endpoint: `${analyticsHost}/api/va`,
+    }
     : {};
 
 const title = "Rescript — edit videos like you edit text";
