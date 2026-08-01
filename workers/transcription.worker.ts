@@ -20,7 +20,11 @@ import {
   env,
   type AutomaticSpeechRecognitionPipeline,
 } from "@huggingface/transformers";
-import { ModelManager, type LoadContext, type Weightlift } from "weightlift";
+import { ModelManager, type LoadContext } from "weightlift";
+import {
+  isTransformersModelCached,
+  transformersProgress,
+} from "weightlift/transformers";
 import type { Word, WorkerRequest, WorkerResponse } from "@/lib/types";
 import { MODELS, type WhisperModel } from "@/lib/models";
 import { cleanTranscript } from "@/lib/hallucinations";
@@ -58,22 +62,6 @@ type AsrChunk = { text: string; timestamp: [number, number | null] };
 const post = (msg: WorkerResponse, transfer: Transferable[] = []) =>
   (self as unknown as Worker).postMessage(msg, transfer);
 
-/**
- * Whether a model's weights are already in the transformers.js browser cache.
- * Used purely to label the progress UI accurately ("Loading … from cache"
- * instead of "Downloading …"): transformers.js emits identical progress
- * events when reading a cached model from disk as when downloading it.
- */
-async function isModelCached(modelId: string): Promise<boolean> {
-  try {
-    const cache = await caches.open(env.cacheKey ?? "transformers-cache");
-    const keys = await cache.keys();
-    return keys.some((req) => req.url.includes(modelId) && req.url.includes(".onnx"));
-  } catch {
-    return false;
-  }
-}
-
 /** Once set, this worker stays on WASM — a lost WebGPU session cannot be reused. */
 let forceWasm = false;
 /** Device the current ASR pipeline is running on. */
@@ -92,52 +80,18 @@ async function pickDevice(): Promise<"webgpu" | "wasm"> {
   return "wasm";
 }
 
-/**
- * Map transformers.js progress_callback events into a Weightlift store.
- * Kept local — weightlift stays runtime-agnostic.
- */
-function feedTransformersProgress(progress: Weightlift) {
-  return (p: {
-    status?: string;
-    file?: string;
-    loaded?: number;
-    total?: number;
-    progress?: number;
-  }) => {
-    if (p.status === "progress_total") {
-      const total = p.total ?? 0;
-      if (!(total > 0)) return;
-      const loaded =
-        typeof p.progress === "number"
-          ? (p.progress / 100) * total
-          : (p.loaded ?? 0);
-      progress.dispatch({ type: "progress_total", loaded, total });
-      return;
-    }
-    if (p.status === "progress" && p.file) {
-      progress.dispatch({
-        type: "progress",
-        file: p.file,
-        loaded: p.loaded ?? 0,
-        total: p.total,
-      });
-      return;
-    }
-    if (p.status === "done" && p.file) {
-      progress.dispatch({ type: "done", file: p.file });
-    }
-  };
-}
-
 /** Build a Weightlift definition for one Whisper size (registered once below). */
 function asrDefinition(choice: WhisperModel) {
   const { id, dtype } = MODELS[choice];
   return {
-    isCached: () => isModelCached(id),
+    isCached: () =>
+      isTransformersModelCached(id, {
+        cacheKey: env.cacheKey ?? "transformers-cache",
+      }),
     load: async ({ progress }: LoadContext) => {
       const device = await pickDevice();
       asrDevice = device;
-      const onProgress = feedTransformersProgress(progress);
+      const onProgress = transformersProgress(progress);
       try {
         return (await pipeline("automatic-speech-recognition", id, {
           dtype: dtype[device],
