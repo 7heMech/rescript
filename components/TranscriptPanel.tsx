@@ -147,7 +147,11 @@ export default function TranscriptPanel() {
   const importInputRef = useRef<HTMLInputElement>(null);
   // Playhead follow: auto-scroll while true; manual scroll turns it off.
   const followPlayheadRef = useRef(true);
+  /** Set by wheel/touch/rail before the matching scroll event. */
+  const userScrollGestureRef = useRef(false);
   const [followPlayhead, setFollowPlayhead] = useState(true);
+  /** Playhead outside the readable viewport — gates the Follow control. */
+  const [playheadOffscreen, setPlayheadOffscreen] = useState(false);
   /** Which way to jump to the playhead when unfollowed. */
   const [followDirection, setFollowDirection] = useState<"up" | "down">("down");
   const [correcting, setCorrecting] = useState<{
@@ -178,33 +182,57 @@ export default function TranscriptPanel() {
     freezeSelectionRef,
   });
 
-  const updateFollowDirection = useCallback(() => {
+  /** Measure whether the active word sits above/below the readable pane. */
+  const measurePlayheadAnchor = useCallback(() => {
     const scroller = scrollRef.current;
-    if (!scroller) return;
+    if (!scroller) return { offscreen: false as const };
     const { words, currentTime } = useEditorStore.getState();
     const activeId = findActiveWordId(words, currentTime);
-    if (activeId < 0) return;
+    if (activeId < 0) {
+      setPlayheadOffscreen(false);
+      return { offscreen: false as const };
+    }
     const el = containerRef.current?.querySelector(`[data-wid="${activeId}"]`);
-    if (!el) return;
+    if (!el) {
+      setPlayheadOffscreen(false);
+      return { offscreen: false as const };
+    }
     const wordRect = el.getBoundingClientRect();
     const scrollerRect = scroller.getBoundingClientRect();
     // Header overlays the top of the scroller (pt-10 / scroll-pt-10).
     const viewTop = scrollerRect.top + 40;
     const viewBottom = scrollerRect.bottom;
-    if (wordRect.bottom < viewTop) setFollowDirection("up");
-    else if (wordRect.top > viewBottom) setFollowDirection("down");
+    if (wordRect.bottom < viewTop) {
+      setPlayheadOffscreen(true);
+      setFollowDirection("up");
+      return { offscreen: true as const, direction: "up" as const };
+    }
+    if (wordRect.top > viewBottom) {
+      setPlayheadOffscreen(true);
+      setFollowDirection("down");
+      return { offscreen: true as const, direction: "down" as const };
+    }
+    setPlayheadOffscreen(false);
+    return { offscreen: false as const };
   }, []);
 
-  const unfollowPlayhead = useCallback(() => {
-    if (!followPlayheadRef.current) return;
-    followPlayheadRef.current = false;
-    setFollowPlayhead(false);
-    updateFollowDirection();
-  }, [updateFollowDirection]);
+  /** Rail / gesture hint — actual unfollow waits until scroll leaves the word. */
+  const userScrollGestureTimerRef = useRef(0);
+  const markUserScrollGesture = useCallback(() => {
+    const scroller = scrollRef.current;
+    if (!scroller || scroller.scrollHeight <= scroller.clientHeight + 1) return;
+    userScrollGestureRef.current = true;
+    // Keep the gesture armed across momentum / rail-drag scroll bursts.
+    window.clearTimeout(userScrollGestureTimerRef.current);
+    userScrollGestureTimerRef.current = window.setTimeout(() => {
+      userScrollGestureRef.current = false;
+    }, 150);
+  }, []);
 
   const resumeFollowPlayhead = useCallback(() => {
     followPlayheadRef.current = true;
     setFollowPlayhead(true);
+    setPlayheadOffscreen(false);
   }, []);
 
   // Clicking a word seeks — resume following so playback stays in view.
@@ -361,20 +389,33 @@ export default function TranscriptPanel() {
     return () => document.removeEventListener("keydown", handler);
   }, [selection, assigningSpeaker, correcting, openSpeakerAssign]);
 
-  // User scroll gestures pause playhead follow (not programmatic scrollIntoView).
-  // Native scrollbar is hidden — wheel/touch cover trackpads; the custom rail
-  // reports via onUserScroll. Avoid pointerdown here so word clicks don't unfollow.
+  // User scroll pauses follow only once the active word actually leaves view.
+  // Wheel over a non-scrollable pane is ignored (no Follow chip).
   useEffect(() => {
     const scroller = scrollRef.current;
     if (!scroller) return;
-    const onIntent = () => unfollowPlayhead();
-    scroller.addEventListener("wheel", onIntent, { passive: true });
-    scroller.addEventListener("touchmove", onIntent, { passive: true });
-    return () => {
-      scroller.removeEventListener("wheel", onIntent);
-      scroller.removeEventListener("touchmove", onIntent);
+    const onGesture = () => markUserScrollGesture();
+    const onScroll = () => {
+      if (!playing) return;
+      const { offscreen } = measurePlayheadAnchor();
+      if (userScrollGestureRef.current && offscreen) {
+        followPlayheadRef.current = false;
+        setFollowPlayhead(false);
+        return;
+      }
+      // Scrolled back onto the playhead (or programmatic nearest kept it in view).
+      if (!offscreen && !followPlayheadRef.current) resumeFollowPlayhead();
     };
-  }, [unfollowPlayhead]);
+    scroller.addEventListener("wheel", onGesture, { passive: true });
+    scroller.addEventListener("touchmove", onGesture, { passive: true });
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      scroller.removeEventListener("wheel", onGesture);
+      scroller.removeEventListener("touchmove", onGesture);
+      scroller.removeEventListener("scroll", onScroll);
+      window.clearTimeout(userScrollGestureTimerRef.current);
+    };
+  }, [markUserScrollGesture, measurePlayheadAnchor, resumeFollowPlayhead, playing]);
 
   // Keep the active word in view during playback while following.
   useEffect(() => {
@@ -383,16 +424,18 @@ export default function TranscriptPanel() {
     el?.scrollIntoView({ block: "nearest" });
   }, [activeWordId, playing, followPlayhead]);
 
-  // Keep the Follow button arrow pointed toward the active word.
+  // Refresh offscreen/direction as the playhead advances while unfollowed.
   useEffect(() => {
     if (followPlayhead || !playing || activeWordId < 0) return;
-    updateFollowDirection();
-    const scroller = scrollRef.current;
-    if (!scroller) return;
-    const onScroll = () => updateFollowDirection();
-    scroller.addEventListener("scroll", onScroll, { passive: true });
-    return () => scroller.removeEventListener("scroll", onScroll);
-  }, [followPlayhead, playing, activeWordId, updateFollowDirection]);
+    const { offscreen } = measurePlayheadAnchor();
+    if (!offscreen) resumeFollowPlayhead();
+  }, [
+    followPlayhead,
+    playing,
+    activeWordId,
+    measurePlayheadAnchor,
+    resumeFollowPlayhead,
+  ]);
 
   const busy = status === "preparing" || status === "transcribing";
 
@@ -645,7 +688,7 @@ export default function TranscriptPanel() {
       </div>
       {/* Gradient overlay — must match the transcript panel surface */}
       <div className="absolute z-10 pointer-events-none inset-x-0 bottom-0 w-full h-20 bg-gradient-to-t from-white to-transparent dark:from-zinc-900" />
-      {!followPlayhead && playing && activeWordId >= 0 && (
+      {!followPlayhead && playheadOffscreen && playing && activeWordId >= 0 && (
         <button
           type="button"
           onClick={resumeFollowPlayhead}
@@ -659,7 +702,7 @@ export default function TranscriptPanel() {
       <TranscriptScrollIndicator
         scrollRef={scrollRef}
         contentRef={containerRef}
-        onUserScroll={unfollowPlayhead}
+        onUserScroll={markUserScrollGesture}
       />
     </section>
   );

@@ -374,7 +374,6 @@ export default function TranscriptScrollIndicator({
       const thumb = thumbRef.current;
       if (!scroller || !rail || !thumb) return;
       e.preventDefault();
-      onUserScroll?.();
 
       const railRect = rail.getBoundingClientRect();
       const thumbRect = thumb.getBoundingClientRect();
@@ -388,6 +387,7 @@ export default function TranscriptScrollIndicator({
 
       const drag = (clientY: number) => {
         if (travel <= 0) return;
+        onUserScroll?.();
         const y = clamp(clientY - railRect.top - grab, 0, travel);
         scroller.scrollTop = (y / travel) * range;
       };
