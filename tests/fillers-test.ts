@@ -46,4 +46,13 @@ function w(text: string, id: number, deleted = false): Word {
   if (ids.join(",") !== "2,4,5,6") throw new Error(`unexpected filler ids: ${ids.join(",")}`);
 }
 
+{
+  if (!isFillerWord("...")) throw new Error('expected "..." to be a filler');
+  const words = [w("Hello", 1), w("...", 2), w("um", 3), w("...", 4, true)];
+  const ids = findFillerWordIds(words);
+  if (ids.join(",") !== "2,3") {
+    throw new Error(`unexpected filler ids with placeholders: ${ids.join(",")}`);
+  }
+}
+
 console.log("ALL FILLER TESTS PASSED");
