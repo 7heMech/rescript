@@ -22,6 +22,7 @@ import {
   getCutRanges,
   getKeepRanges,
   PLAYHEAD_EPSILON_S,
+  restoreRangesResult,
   shrinkManualCuts,
   trimEdgeResult,
 } from "./edits";
@@ -102,6 +103,11 @@ interface EditorState {
   /** Selected timeline clip index, or null. */
   selectedClipIndex: number | null;
   /**
+   * Selected cut-range index (from `getCutRanges`), or null.
+   * Used to restore a deleted clip / silence section from the timeline.
+   */
+  selectedCutIndex: number | null;
+  /**
    * Words selected in the transcript or the timeline wordbar. Shared so both
    * views highlight the same selection and the same shortcuts apply.
    */
@@ -173,6 +179,12 @@ interface EditorState {
   restoreWords: (ids: number[]) => void;
   /** Cut arbitrary time ranges (e.g. detected silences) as manual cuts. */
   cutRanges: (ranges: TimeRange[]) => void;
+  /** Restore arbitrary cut ranges (manual cuts + covered deleted words). */
+  restoreRanges: (ranges: TimeRange[]) => void;
+  /** Cut the currently selected timeline clip out of the edited media. */
+  deleteSelectedClip: () => boolean;
+  /** Restore the currently selected cut range (deleted clip / silence). */
+  restoreSelectedCut: () => boolean;
   /** Replace the selected (contiguous) words with corrected text. */
   correctWords: (ids: number[], text: string) => void;
   /** Nudge a word's start/end on the timeline (may steal time from neighbors). */
@@ -190,6 +202,7 @@ interface EditorState {
    */
   trimEdge: (edge: "in" | "out", from: number, to: number) => void;
   setSelectedClipIndex: (index: number | null) => void;
+  setSelectedCutIndex: (index: number | null) => void;
   setSelectedWords: (ids: number[]) => void;
   /** Start a drag gesture so subsequent edits share one undo entry. */
   beginGesture: () => void;
@@ -256,6 +269,7 @@ function pushEdit(
       | "manualCuts"
       | "sceneBoundaries"
       | "selectedClipIndex"
+      | "selectedCutIndex"
       | "selectedWordIds"
       | "nextManualCutId"
       | "nextBoundaryId"
@@ -301,6 +315,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   past: [],
   future: [],
   selectedClipIndex: null,
+  selectedCutIndex: null,
   selectedWordIds: [],
   nextManualCutId: 1,
   nextBoundaryId: 1,
@@ -344,6 +359,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       past: [],
       future: [],
       selectedClipIndex: null,
+      selectedCutIndex: null,
       selectedWordIds: [],
       nextManualCutId: 1,
       nextBoundaryId: 1,
@@ -388,6 +404,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       past: [],
       future: [],
       selectedClipIndex: null,
+      selectedCutIndex: null,
       selectedWordIds: [],
       nextManualCutId: maxId(manualCuts, 1),
       nextBoundaryId: maxId(sceneBoundaries, 1),
@@ -442,6 +459,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       past: [],
       future: [],
       selectedClipIndex: null,
+      selectedCutIndex: null,
       selectedWordIds: [],
     });
     if (get().status === "ready") bumpAutosave();
@@ -466,6 +484,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       past: [],
       future: [],
       selectedClipIndex: null,
+      selectedCutIndex: null,
       selectedWordIds: [],
       partialText: "",
       error: null,
@@ -568,6 +587,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       words: words.map((w) =>
         idSet.has(w.id) && !w.deleted ? { ...w, deleted: true } : w
       ),
+      selectedCutIndex: null,
     });
   },
   cutRanges: (ranges) => {
@@ -583,7 +603,54 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       nextManualCutId = added.nextId;
       words = deleteWordsCoveredBy(words, r.start, r.end);
     }
-    pushEdit(get, set, { words, manualCuts, nextManualCutId });
+    pushEdit(get, set, {
+      words,
+      manualCuts,
+      nextManualCutId,
+      selectedClipIndex: null,
+      selectedCutIndex: null,
+      selectedWordIds: [],
+    });
+  },
+  restoreRanges: (ranges) => {
+    const s = get();
+    const result = restoreRangesResult(
+      s.words,
+      s.manualCuts,
+      ranges,
+      s.nextManualCutId
+    );
+    if (!result) return;
+    pushEdit(get, set, {
+      words: result.words,
+      manualCuts: result.manualCuts,
+      nextManualCutId: result.nextCutId,
+      selectedClipIndex: null,
+      selectedCutIndex: null,
+      selectedWordIds: [],
+    });
+  },
+  deleteSelectedClip: () => {
+    const s = get();
+    if (s.selectedClipIndex == null || s.duration <= 0) return false;
+    const cuts = getCutRanges(s.words, s.duration, s.manualCuts);
+    const clips = getClipSegments(
+      getKeepRanges(cuts, s.duration),
+      s.sceneBoundaries
+    );
+    const clip = clips.find((c) => c.index === s.selectedClipIndex);
+    if (!clip || clip.end - clip.start <= 1e-4) return false;
+    get().cutRanges([{ start: clip.start, end: clip.end }]);
+    return true;
+  },
+  restoreSelectedCut: () => {
+    const s = get();
+    if (s.selectedCutIndex == null || s.duration <= 0) return false;
+    const cuts = getCutRanges(s.words, s.duration, s.manualCuts);
+    const cut = cuts[s.selectedCutIndex];
+    if (!cut || cut.end - cut.start <= 1e-4) return false;
+    get().restoreRanges([{ start: cut.start, end: cut.end }]);
+    return true;
   },
   restoreWords: (ids) => {
     if (ids.length === 0) return;
@@ -615,6 +682,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       words,
       manualCuts,
       nextManualCutId,
+      selectedCutIndex: null,
     });
   },
   correctWords: (ids, text) => {
@@ -693,6 +761,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     pushEdit(get, set, {
       sceneBoundaries: sceneBoundaries.filter((b) => b.id !== id),
       selectedClipIndex: null,
+      selectedCutIndex: null,
     });
   },
 
@@ -731,12 +800,29 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       sceneBoundaries,
       nextManualCutId: result.nextCutId,
       selectedClipIndex: owner?.index ?? s.selectedClipIndex,
+      selectedCutIndex: null,
     });
   },
 
-  setSelectedClipIndex: (selectedClipIndex) => set({ selectedClipIndex }),
+  setSelectedClipIndex: (selectedClipIndex) =>
+    set({
+      selectedClipIndex,
+      ...(selectedClipIndex != null ? { selectedCutIndex: null } : {}),
+    }),
 
-  setSelectedWords: (selectedWordIds) => set({ selectedWordIds }),
+  setSelectedCutIndex: (selectedCutIndex) =>
+    set({
+      selectedCutIndex,
+      ...(selectedCutIndex != null ? { selectedClipIndex: null } : {}),
+    }),
+
+  setSelectedWords: (selectedWordIds) =>
+    set({
+      selectedWordIds,
+      // A fresh word selection from the transcript supersedes a prior cut pick.
+      // Timeline cut-word clicks re-select the cut afterward.
+      ...(selectedWordIds.length > 0 ? { selectedCutIndex: null } : {}),
+    }),
 
   beginGesture: () => {
     const s = get();
@@ -776,6 +862,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         ...future,
       ],
       selectedClipIndex: null,
+      selectedCutIndex: null,
       selectedWordIds: [],
       gestureActive: false,
     });
@@ -794,6 +881,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       future: future.slice(1),
       past: [...past, { words, speakers, manualCuts, sceneBoundaries }],
       selectedClipIndex: null,
+      selectedCutIndex: null,
       selectedWordIds: [],
       gestureActive: false,
     });
@@ -855,6 +943,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       past: [],
       future: [],
       selectedClipIndex: null,
+      selectedCutIndex: null,
       selectedWordIds: [],
       nextManualCutId: 1,
       nextBoundaryId: 1,

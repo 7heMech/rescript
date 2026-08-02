@@ -471,6 +471,37 @@ export function carrySceneBoundaries(
 }
 
 /**
+ * Restore media in the given cut ranges: shrink overlapping manual cuts and
+ * undelete words fully covered by each range. Inverse of cutting a clip / silence.
+ */
+export function restoreRangesResult(
+  words: Word[],
+  manualCuts: ManualCut[],
+  ranges: TimeRange[],
+  nextCutId: number
+): { words: Word[]; manualCuts: ManualCut[]; nextCutId: number } | null {
+  const usable = ranges.filter((r) => r.end - r.start > 1e-4);
+  if (usable.length === 0) return null;
+
+  let nextWords = words;
+  let cuts = manualCuts;
+  let id = nextCutId;
+  let changed = false;
+
+  for (const r of usable) {
+    const shrunk = shrinkManualCuts(cuts, r.start, r.end, id);
+    const restored = restoreWordsCoveredBy(nextWords, r.start, r.end);
+    if (shrunk.cuts !== cuts || restored !== nextWords) changed = true;
+    cuts = shrunk.cuts;
+    id = shrunk.nextId;
+    nextWords = restored;
+  }
+
+  if (!changed) return null;
+  return { words: nextWords, manualCuts: cuts, nextCutId: id };
+}
+
+/**
  * Move one kept-region edge from `from` to `to`. `edge` names the side that
  * stays kept ("out" = the clip left of the edge, "in" = the clip right of it),
  * which is what decides whether the move cuts the span away or reclaims it.

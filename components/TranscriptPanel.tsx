@@ -284,22 +284,21 @@ export default function TranscriptPanel() {
     return () => document.removeEventListener("mousedown", handler);
   }, [correcting, closeCorrect]);
 
-  // Delete / Backspace cuts the selected words. Driven by the shared selection so
-  // it works for words picked in the timeline wordbar too.
+  // Escape clears the transcript selection chrome. Delete / Backspace are handled
+  // globally in Editor (cut words restore; kept words / clips delete).
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.key !== "Delete" && e.key !== "Backspace" && e.key !== "Escape") return;
+      if (e.key !== "Escape") return;
       const target = e.target as HTMLElement;
       if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)
         return;
       if (selectedWordIds.length === 0) return;
       e.preventDefault();
-      if (e.key !== "Escape") deleteWords(selectedWordIds);
       clearSelection();
     };
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
-  }, [selectedWordIds, deleteWords, clearSelection]);
+  }, [selectedWordIds, clearSelection]);
 
   // "@" opens the speaker picker for the current selection.
   useEffect(() => {
