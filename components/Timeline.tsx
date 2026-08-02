@@ -115,8 +115,11 @@ export default function Timeline() {
   const pps = fitPps * zoom;
   const totalWidth = Math.max(width, duration * pps);
   const ready = status === "ready" && duration > 0;
+  // Clip delete is for a clip-body click (no word selection). Clicking a word
+  // also selects its clip for trim handles — don't treat that as "delete clip".
   const deleteOk =
     selectedClipIndex != null &&
+    selectedWordIds.length === 0 &&
     clips.some((c) => c.index === selectedClipIndex);
   const selectedWordsAllCutOut = useMemo(() => {
     if (selectedWordIds.length === 0) return false;
