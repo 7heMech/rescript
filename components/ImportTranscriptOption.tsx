@@ -180,11 +180,14 @@ export default function ImportTranscriptOption() {
           }
           // Do not set source to "import" until a file is chosen. Close the menu
           // before the OS dialog so cancel cannot leave it pinned open.
+          // Open the picker in this same user-gesture turn — deferring to rAF
+          // drops Chrome's user activation and the dialog never appears.
           pickGenRef.current += 1;
           setPicking(true);
           setError(null);
+          const input = fileRef.current;
           ctx.closeMenu();
-          requestAnimationFrame(() => fileRef.current?.click());
+          input?.click();
         }}
       >
         <ImportTrigger
