@@ -32,6 +32,7 @@ import {
   MODELS,
   isParakeetModel,
   isWhisperModel,
+  whisperFillerPrompt,
   type ModelId,
   type WhisperModel,
 } from "@/lib/models";
@@ -683,12 +684,14 @@ async function runWhisper(
   const { segments: speechSegments, frames: speechFrames } =
     await detectSpeechSegments(audio, vad);
 
-  const { verbatimPrompt } = MODELS[choice];
-  const promptedIds = verbatimPrompt
-    ? buildPromptedDecoderIds(transcriber, verbatimPrompt, transcriptLanguage)
+  // Short filler-rich <|startofprev|> prompt so um/uh survive for "Remove
+  // fillers". Long prompts truncate multi-speaker clips — see whisperFillerPrompt.
+  const fillerPrompt = whisperFillerPrompt(choice, transcriptLanguage);
+  const promptedIds = fillerPrompt
+    ? buildPromptedDecoderIds(transcriber, fillerPrompt, transcriptLanguage)
     : null;
-  if (verbatimPrompt && !promptedIds) {
-    console.warn("Could not build verbatim prompt tokens; using default decoding.");
+  if (fillerPrompt && !promptedIds) {
+    console.warn("Could not build filler prompt tokens; using default decoding.");
   }
 
   const speechSamples = speechSegments.reduce(
