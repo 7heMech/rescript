@@ -68,8 +68,10 @@ export const MODELS: Record<WhisperModel, ModelInfo> = {
  * Download size depends on backend: WASM int8 ~670 MB, WebGPU fp16 ~1.2 GB.
  */
 export const PARAKEET_INFO = {
-  /** parakeet.js model key → ysdede/parakeet-tdt-0.6b-v3-onnx */
+  /** parakeet.js model key (weightlift registry id). */
   id: "parakeet-tdt-0.6b-v3",
+  /** Hugging Face repo used by parakeet.js hub downloads / IndexedDB cache keys. */
+  repoId: "ysdede/parakeet-tdt-0.6b-v3-onnx",
   label: "Parakeet TDT v3",
   description:
     "NVIDIA FastConformer — faster on WebGPU, strong EU-language accuracy. Auto-detects language.",

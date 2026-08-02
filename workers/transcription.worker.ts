@@ -7,10 +7,10 @@
  *    original timeline.
  * 3. Pyannote segmentation 3.0 assigns a speaker to each word.
  *
- * Models are fetched from the Hugging Face Hub on first use and cached
- * (Cache Storage for Whisper / IndexedDB for Parakeet); every run after that
- * is fully offline. The ONNX runtime WASM binaries are served from
- * /vendor/ort (same origin).
+ * Both ASR backends are registered in a weightlift ModelManager so download
+ * progress, cache labeling, and WebGPU→WASM fallback share one path. Weights
+ * land in Cache Storage (Whisper) or IndexedDB (Parakeet); later runs are
+ * offline. ORT WASM is served same-origin from /vendor/ort* .
  */
 import {
   pipeline,
@@ -22,7 +22,7 @@ import {
   env,
   type AutomaticSpeechRecognitionPipeline,
 } from "@huggingface/transformers";
-import { ModelManager } from "weightlift";
+import { ModelManager, type ModelDefinition } from "weightlift";
 import {
   fallbackDevicePolicy,
   transformersModel,
@@ -77,30 +77,160 @@ const post = (msg: WorkerResponse, transfer: Transferable[] = []) =>
 /** Device the current ASR pipeline is running on. */
 let asrDevice: "webgpu" | "wasm" = "wasm";
 
+type ParakeetInstance = {
+  transcribe: (
+    audio: Float32Array,
+    sampleRate?: number,
+    opts?: {
+      returnTimestamps?: boolean;
+      timeOffset?: number;
+    }
+  ) => Promise<{
+    utterance_text: string;
+    words: Array<{ text: string; start_time: number; end_time: number }>;
+  }>;
+};
+
+const PARAKEET_CACHE_DB = "parakeet-cache-db";
+const PARAKEET_CACHE_STORE = "file-store";
+
+/** Whether Parakeet ONNX weights already sit in parakeet.js IndexedDB. */
+async function isParakeetCached(): Promise<boolean> {
+  if (typeof indexedDB === "undefined") return false;
+  // Avoid opening (and thereby creating) the DB when nothing has been cached.
+  try {
+    if (typeof indexedDB.databases === "function") {
+      const dbs = await indexedDB.databases();
+      if (!dbs.some((d) => d.name === PARAKEET_CACHE_DB)) return false;
+    }
+  } catch {
+    // databases() can throw in private mode; fall through to open().
+  }
+
+  const repoId = PARAKEET_INFO.repoId;
+  // Hub keys: `hf-${repoId}-main--${filename}` (empty subfolder).
+  const candidates = [
+    `hf-${repoId}-main--encoder-model.int8.onnx`,
+    `hf-${repoId}-main--encoder-model.fp16.onnx`,
+  ];
+  try {
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const req = indexedDB.open(PARAKEET_CACHE_DB);
+      req.onerror = () => reject(req.error ?? new Error("IndexedDB open failed"));
+      req.onsuccess = () => resolve(req.result);
+    });
+    if (!db.objectStoreNames.contains(PARAKEET_CACHE_STORE)) {
+      db.close();
+      return false;
+    }
+    const hit = await new Promise<boolean>((resolve, reject) => {
+      const tx = db.transaction([PARAKEET_CACHE_STORE], "readonly");
+      const store = tx.objectStore(PARAKEET_CACHE_STORE);
+      let pending = candidates.length;
+      let found = false;
+      for (const key of candidates) {
+        const req = store.get(key);
+        req.onsuccess = () => {
+          const blob = req.result as Blob | undefined;
+          if (blob && blob.size > 1_000_000) found = true;
+          pending -= 1;
+          if (pending === 0) resolve(found);
+        };
+        req.onerror = () => reject(req.error ?? new Error("IndexedDB get failed"));
+      }
+    });
+    db.close();
+    return hit;
+  } catch {
+    return false;
+  }
+}
+
 /**
- * ASR registry keyed by Hugging Face model id. Definitions are registered up
- * front; getAsr() only loads by id. unloadAll() after a WebGPU loss forces a
- * clean reload on WASM.
+ * Parakeet via parakeet.js — custom weightlift definition (not transformers.js).
+ * WebGPU uses fp16 encoder; WASM int8 is the size / compatibility fallback.
+ */
+function parakeetModel(): ModelDefinition<ParakeetInstance> {
+  return {
+    isCached: isParakeetCached,
+    load: async ({ progress }) => {
+      const { fromHub } = await import("parakeet.js");
+      const onProgress = (p: { loaded: number; total: number; file: string }) => {
+        if (!p.file) return;
+        progress.dispatch({
+          type: "progress",
+          file: p.file,
+          loaded: p.loaded,
+          ...(p.total > 0 ? { total: p.total } : {}),
+        });
+      };
+      const common = {
+        preprocessorBackend: "js" as const,
+        progress: onProgress,
+        wasmPaths: PARAKEET_ORT_WASM_PATHS,
+      };
+
+      // WebGPU cannot run the int8 encoder; fp16 (~1.2 GB) is the practical
+      // WebGPU path. WASM int8 (~670 MB) is the compatibility / size fallback.
+      const device = await fallbackDevicePolicy.pickDevice();
+      if (device === "webgpu") {
+        try {
+          const model = await fromHub(PARAKEET_INFO.id, {
+            ...common,
+            backend: "webgpu",
+            encoderQuant: "fp16",
+            decoderQuant: "int8",
+          });
+          asrDevice = "webgpu";
+          return model as ParakeetInstance;
+        } catch (err) {
+          console.warn(
+            "Parakeet WebGPU/fp16 load failed; falling back to WASM int8.",
+            err
+          );
+          fallbackDevicePolicy.preferWasm();
+        }
+      }
+
+      const model = await fromHub(PARAKEET_INFO.id, {
+        ...common,
+        backend: "wasm",
+        encoderQuant: "int8",
+        decoderQuant: "int8",
+      });
+      asrDevice = "wasm";
+      return model as ParakeetInstance;
+    },
+  };
+}
+
+/**
+ * ASR registry: Whisper ids are Hugging Face model ids; Parakeet uses
+ * PARAKEET_INFO.id. Definitions are registered up front; loaders only take an
+ * id. unloadAll() after a WebGPU loss forces a clean reload on WASM.
  */
 const asrModels = new ModelManager({
-  models: Object.fromEntries(
-    (Object.keys(MODELS) as WhisperModel[]).map((choice) => {
-      const { id, dtype } = MODELS[choice];
-      return [
-        id,
-        transformersModel<AutomaticSpeechRecognitionPipeline>({
-          pipeline,
-          task: "automatic-speech-recognition",
-          modelId: id,
-          dtype,
-          cacheKey: env.cacheKey ?? "transformers-cache",
-          onDevice: (device) => {
-            asrDevice = device;
-          },
-        }),
-      ];
-    })
-  ),
+  models: {
+    ...Object.fromEntries(
+      (Object.keys(MODELS) as WhisperModel[]).map((choice) => {
+        const { id, dtype } = MODELS[choice];
+        return [
+          id,
+          transformersModel<AutomaticSpeechRecognitionPipeline>({
+            pipeline,
+            task: "automatic-speech-recognition",
+            modelId: id,
+            dtype,
+            cacheKey: env.cacheKey ?? "transformers-cache",
+            onDevice: (device) => {
+              asrDevice = device;
+            },
+          }),
+        ];
+      })
+    ),
+    [PARAKEET_INFO.id]: parakeetModel(),
+  },
 });
 asrModels.subscribe((snap) => {
   const id = snap.loading[0];
@@ -121,12 +251,16 @@ async function getAsr(choice: WhisperModel) {
   return asrModels.load<AutomaticSpeechRecognitionPipeline>(MODELS[choice].id);
 }
 
+async function getParakeet() {
+  return asrModels.load<ParakeetInstance>(PARAKEET_INFO.id);
+}
+
 /**
- * Drop dead WebGPU pipelines and reload the requested model on WASM.
+ * Drop dead WebGPU pipelines and reload on WASM.
  * A lost GPU device invalidates every WebGPU session, so clear the whole
- * ASR cache (same as the old asrPromises.clear()) — not just `choice`.
+ * ASR cache — not just the model that was running.
  */
-async function fallbackAsrToWasm(choice: WhisperModel) {
+async function fallbackAsrToWasm() {
   fallbackDevicePolicy.preferWasm();
   asrDevice = "wasm";
   await asrModels.unloadAll();
@@ -135,7 +269,6 @@ async function fallbackAsrToWasm(choice: WhisperModel) {
     message: "GPU interrupted — continuing on CPU…",
     value: null,
   });
-  return getAsr(choice);
 }
 
 /**
@@ -409,106 +542,6 @@ function assignSpeakers(words: Word[], segments: DiarizationSegment[]) {
   }
 }
 
-type ParakeetInstance = {
-  transcribe: (
-    audio: Float32Array,
-    sampleRate?: number,
-    opts?: {
-      returnTimestamps?: boolean;
-      timeOffset?: number;
-    }
-  ) => Promise<{
-    utterance_text: string;
-    words: Array<{ text: string; start_time: number; end_time: number }>;
-  }>;
-};
-
-let parakeetPromise: Promise<ParakeetInstance> | null = null;
-let parakeetBackend: "webgpu" | "wasm" = "wasm";
-
-function makeParakeetHubProgress(label: string) {
-  const files = new Map<string, { loaded: number; total: number }>();
-  let best = 0;
-  return (p: { loaded: number; total: number; file: string }) => {
-    if (!p.file || !(p.total > 0)) return;
-    files.set(p.file, { loaded: p.loaded, total: p.total });
-    let loaded = 0;
-    let total = 0;
-    for (const f of files.values()) {
-      loaded += f.loaded;
-      total += f.total;
-    }
-    if (total <= 0) return;
-    best = Math.max(best, Math.min(1, loaded / total));
-    post({ type: "progress", message: label, value: best });
-  };
-}
-
-/**
- * parakeet.js accepts `wasmPaths` on fromHub/fromUrls. A postinstall patch in
- * scripts/copy-assets.mjs makes initOrt honor that argument (upstream 1.4.4
- * ignored it and defaulted to a jsDelivr CDN).
- */
-async function getParakeet(): Promise<ParakeetInstance> {
-  if (!parakeetPromise) {
-    parakeetPromise = (async () => {
-      const { fromHub } = await import("parakeet.js");
-      const device = await pickDevice();
-      const progress = makeParakeetHubProgress("Downloading speech model…");
-      const common = {
-        preprocessorBackend: "js" as const,
-        progress,
-        wasmPaths: PARAKEET_ORT_WASM_PATHS,
-      };
-
-      // WebGPU cannot run the int8 encoder; fp16 (~1.2 GB) is the practical
-      // WebGPU path. WASM int8 (~670 MB) is the compatibility / size fallback.
-      if (device === "webgpu") {
-        try {
-          post({
-            type: "progress",
-            message: "Downloading speech model…",
-            value: null,
-          });
-          const model = await fromHub(PARAKEET_INFO.id, {
-            ...common,
-            backend: "webgpu",
-            encoderQuant: "fp16",
-            decoderQuant: "int8",
-          });
-          parakeetBackend = "webgpu";
-          asrDevice = "webgpu";
-          return model as ParakeetInstance;
-        } catch (err) {
-          console.warn(
-            "Parakeet WebGPU/fp16 load failed; falling back to WASM int8.",
-            err
-          );
-        }
-      }
-
-      post({
-        type: "progress",
-        message: "Downloading speech model…",
-        value: null,
-      });
-      const model = await fromHub(PARAKEET_INFO.id, {
-        ...common,
-        backend: "wasm",
-        encoderQuant: "int8",
-        decoderQuant: "int8",
-      });
-      parakeetBackend = "wasm";
-      asrDevice = "wasm";
-      return model as ParakeetInstance;
-    })();
-    parakeetPromise.catch(() => {
-      parakeetPromise = null;
-    });
-  }
-  return parakeetPromise;
-}
-
 /** Map Parakeet word timestamps onto the original media timeline. */
 function wordsFromParakeet(
   words: Array<{ text: string; start_time: number; end_time: number }>,
@@ -571,7 +604,8 @@ async function runParakeet(
   duration: number
 ): Promise<Word[]> {
   getDiarizer().catch(() => {});
-  const [model, vad] = await Promise.all([getParakeet(), getVad()]);
+  const [loaded, vad] = await Promise.all([getParakeet(), getVad()]);
+  let model = loaded;
 
   post({ type: "progress", message: "Detecting speech…", value: 0 });
   const { segments: speechSegments } = await detectSpeechSegments(audio, vad);
@@ -604,20 +638,16 @@ async function runParakeet(
     try {
       result = await runSlice();
     } catch (err) {
-      if (parakeetBackend !== "webgpu" || !isWebGpuDeviceLostError(err)) {
+      if (asrDevice !== "webgpu" || !isWebGpuDeviceLostError(err)) {
         throw err;
       }
       console.warn(
         "WebGPU lost during Parakeet transcription; reloading on WASM.",
         err
       );
-      forceWasm = true;
-      parakeetPromise = null;
-      const wasmModel = await getParakeet();
-      result = await wasmModel.transcribe(slice, VAD_SAMPLE_RATE, {
-        returnTimestamps: true,
-        timeOffset: 0,
-      });
+      await fallbackAsrToWasm();
+      model = await getParakeet();
+      result = await runSlice();
     }
 
     rawWords.push(
@@ -800,7 +830,8 @@ async function runWhisper(
       chunkFloor = progressBefore.chunkFloor;
       chunkTokens = progressBefore.chunkTokens;
       post({ type: "partial", text: partial });
-      transcriber = await fallbackAsrToWasm(choice);
+      await fallbackAsrToWasm();
+      transcriber = await getAsr(choice);
       chunks = await runSlice();
     }
 

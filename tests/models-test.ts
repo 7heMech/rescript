@@ -26,6 +26,10 @@ assert(isModelChoice("parakeet"), "parakeet is a model choice");
 assert(!isModelChoice("tiny"), "tiny is not a model choice");
 
 assert(PARAKEET_INFO.id === "parakeet-tdt-0.6b-v3", "parakeet hub id");
+assert(
+  PARAKEET_INFO.repoId === "ysdede/parakeet-tdt-0.6b-v3-onnx",
+  "parakeet HF repo id"
+);
 assert(typeof PARAKEET_INFO.label === "string", "parakeet label");
 assert(typeof MODELS.base.id === "string", "whisper base id");
 assert(typeof MODELS.small.id === "string", "whisper small id");
