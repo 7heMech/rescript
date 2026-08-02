@@ -8,7 +8,7 @@ import {
   TRANSCRIPT_FILE_ERROR,
   TRANSCRIPT_ACCEPT,
 } from "@/lib/parseTranscript";
-import { isAsrModel, type AsrModel } from "@/lib/models";
+import { isModelId, type ModelId } from "@/lib/models";
 import { useEditorStore } from "@/lib/store";
 import {
   ModelOption,
@@ -30,8 +30,8 @@ import {
 export default function ImportTranscriptOption() {
   const pendingTranscript = useEditorStore((s) => s.pendingTranscript);
   const setPendingTranscript = useEditorStore((s) => s.setPendingTranscript);
-  const setModel = useEditorStore((s) => s.setModel);
-  const selected = useEditorStore((s) => s.model === "import");
+  const setSource = useEditorStore((s) => s.setSource);
+  const selected = useEditorStore((s) => s.source === "import");
   const [reading, setReading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [picking, setPicking] = useState(false);
@@ -40,7 +40,7 @@ export default function ImportTranscriptOption() {
     ModelOptionContextValue,
     "keepMenuOpen" | "closeMenu" | "select"
   > | null>(null);
-  const previousModelRef = useRef<AsrModel>("base");
+  const previousModelRef = useRef<ModelId>("base");
   const pickGenRef = useRef(0);
 
   /** Reset import-pick state only — never touch the dropdown open state. */
@@ -49,15 +49,15 @@ export default function ImportTranscriptOption() {
     setReading(false);
     setError(null);
     if (!useEditorStore.getState().pendingTranscript) {
-      setModel(previousModelRef.current);
+      setSource(previousModelRef.current);
     }
-  }, [setModel]);
+  }, [setSource]);
 
-  // If the user switches to an ASR model while a picker/parse is in flight,
-  // invalidate so a late onChange/parse cannot flip model back to import.
+  // If the user switches to a speech model while a picker/parse is in flight,
+  // invalidate so a late onChange/parse cannot flip source back to import.
   useEffect(() => {
     return useEditorStore.subscribe((state, prev) => {
-      if (!isAsrModel(state.model) || state.model === prev.model) return;
+      if (!isModelId(state.source) || state.source === prev.source) return;
       pickGenRef.current += 1;
       queueMicrotask(() => {
         setPicking(false);
@@ -131,19 +131,19 @@ export default function ImportTranscriptOption() {
               setPicking(false);
               setError(TRANSCRIPT_FILE_ERROR);
               setPendingTranscript(null);
-              setModel("import");
+              setSource("import");
               menu?.keepMenuOpen();
               return;
             }
             setReading(true);
             setPicking(false);
             setError(null);
-            setModel("import"); // so the closed trigger can show progress
+            setSource("import"); // so the closed trigger can show progress
             try {
               const words = await parseTranscriptFile(file);
               if (pickGenRef.current !== gen) return;
               setPendingTranscript({ name: file.name, words });
-              setModel("import");
+              setSource("import");
               menu?.closeMenu();
             } catch (err) {
               if (pickGenRef.current !== gen) return;
@@ -154,7 +154,7 @@ export default function ImportTranscriptOption() {
                   ? err.message
                   : "Could not read that transcript."
               );
-              setModel("import");
+              setSource("import");
               menu?.keepMenuOpen();
             } finally {
               if (pickGenRef.current === gen) setReading(false);
@@ -170,11 +170,11 @@ export default function ImportTranscriptOption() {
         autoTrigger={false}
         onSelect={(ctx) => {
           menuRef.current = ctx;
-          const current = useEditorStore.getState().model;
-          if (isAsrModel(current)) {
+          const current = useEditorStore.getState().source;
+          if (isModelId(current)) {
             previousModelRef.current = current;
           }
-          // Do not set model to "import" until a file is chosen. Close the menu
+          // Do not set source to "import" until a file is chosen. Close the menu
           // before the OS dialog so cancel cannot leave it pinned open.
           pickGenRef.current += 1;
           setPicking(true);
@@ -210,8 +210,12 @@ function ImportTrigger({
     "import",
     {
       label,
-      icon: FileText,
-      iconClassName: error ? "text-red-500" : "text-zinc-500 dark:text-zinc-400",
+      icon: busy ? Loader2 : FileText,
+      iconClassName: busy
+        ? "animate-spin text-zinc-500"
+        : error
+          ? "text-red-500"
+          : "text-zinc-500",
       busy,
     },
     enabled
@@ -229,27 +233,24 @@ function ImportStatus({
   picking: boolean;
 }) {
   const { selected } = useModelOption();
-  const pendingTranscript = useEditorStore((s) => s.pendingTranscript);
-  if (!picking && !selected && !reading && !error) return null;
-  if (!reading && !pendingTranscript && !error && !picking) return null;
-  return (
-    <span
-      className={`pl-[1.625rem] text-[11px] leading-snug ${
-        error ? "text-red-500" : "text-zinc-500 dark:text-zinc-400"
-      }`}
-    >
-      {reading ? (
-        <span className="inline-flex items-center gap-1">
-          <Loader2 size={11} className="animate-spin" />
-          Reading file…
-        </span>
-      ) : error ? (
-        error
-      ) : pendingTranscript ? (
-        `${pendingTranscript.name} · ${pendingTranscript.words.length} words`
-      ) : picking ? (
-        "Choose an SRT, VTT, or JSON file…"
-      ) : null}
-    </span>
-  );
+  if (reading) {
+    return (
+      <p className="mt-0.5 text-[11px] text-zinc-500 dark:text-zinc-400">
+        Reading file…
+      </p>
+    );
+  }
+  if (error) {
+    return (
+      <p className="mt-0.5 text-[11px] text-red-600 dark:text-red-400">{error}</p>
+    );
+  }
+  if (picking && !selected) {
+    return (
+      <p className="mt-0.5 text-[11px] text-zinc-500 dark:text-zinc-400">
+        Choose a file…
+      </p>
+    );
+  }
+  return null;
 }

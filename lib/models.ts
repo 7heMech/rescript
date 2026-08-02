@@ -1,13 +1,12 @@
-/** Transcription source choices offered on the upload screen. */
+/** Local speech models offered on the upload screen. */
 export type WhisperModel = "base" | "small";
 /** NVIDIA Parakeet TDT 0.6B v3 via parakeet.js (ONNX / WebGPU). */
 export type ParakeetModel = "parakeet";
-export type AsrModel = WhisperModel | ParakeetModel;
-export type ModelChoice = AsrModel | "import";
+export type ModelId = WhisperModel | ParakeetModel;
 
 type DType = "fp32" | "fp16" | "q8" | "int8" | "uint8" | "q4" | "q4f16" | "bnb4";
 
-/** Shared UI fields for every local ASR backend. */
+/** Shared UI fields for every local speech backend. */
 type ModelDisplay = {
   label: string;
   description: string;
@@ -48,7 +47,7 @@ export type ParakeetModelInfo = ModelDisplay & {
 export type ModelInfo = WhisperModelInfo | ParakeetModelInfo;
 
 /** Display order for model rows in the source dropdown. */
-export const MODEL_ORDER: AsrModel[] = ["base", "small", "parakeet"];
+export const MODEL_ORDER: ModelId[] = ["base", "small", "parakeet"];
 
 const WHISPER_DTYPE = {
   // q4 decoder: q8 fails session creation on onnxruntime-web 1.26
@@ -58,7 +57,7 @@ const WHISPER_DTYPE = {
 } satisfies WhisperModelInfo["dtype"];
 
 /**
- * Local ASR models that can run in the transcription worker.
+ * Local speech models that can run in the transcription worker.
  * Shared display fields live on every entry; backend-specific knobs
  * (`dtype` / `verbatimPrompt` vs `repoId`) are gated by `backend`.
  */
@@ -106,33 +105,27 @@ export function isParakeetModel(value: unknown): value is ParakeetModel {
   return value === "parakeet";
 }
 
-/** Models that run local ASR in the transcription worker (not import). */
-export function isAsrModel(value: unknown): value is AsrModel {
+/** Whether `value` is a key of {@link MODELS}. */
+export function isModelId(value: unknown): value is ModelId {
   return typeof value === "string" && Object.prototype.hasOwnProperty.call(MODELS, value);
-}
-
-export function isModelChoice(value: unknown): value is ModelChoice {
-  return isAsrModel(value) || value === "import";
 }
 
 const MODEL_STORAGE_KEY = "rescript.model";
 
-/** Read the last-selected ASR model from localStorage (defaults to base). */
-export function loadModelPreference(): AsrModel {
+/** Read the last-selected speech model from localStorage (defaults to base). */
+export function loadModelPreference(): ModelId {
   if (typeof window === "undefined") return "base";
   try {
     const raw = window.localStorage.getItem(MODEL_STORAGE_KEY);
-    // Ignore a stale "import" preference — that choice is session-only until a
-    // transcript file is picked again.
-    if (isAsrModel(raw)) return raw;
+    if (isModelId(raw)) return raw;
   } catch {
     // private mode / disabled storage
   }
   return "base";
 }
 
-/** Persist the selected ASR model for the next visit. */
-export function saveModelPreference(model: AsrModel) {
+/** Persist the selected speech model for the next visit. */
+export function saveModelPreference(model: ModelId) {
   if (typeof window === "undefined") return;
   try {
     window.localStorage.setItem(MODEL_STORAGE_KEY, model);

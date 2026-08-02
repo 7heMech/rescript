@@ -1,14 +1,14 @@
 /**
- * Model choice helpers for Whisper / Parakeet / import.
+ * Model + transcript-source helpers.
  */
 import {
   MODEL_ORDER,
   MODELS,
-  isAsrModel,
-  isModelChoice,
+  isModelId,
   isParakeetModel,
   isWhisperModel,
 } from "../lib/models";
+import { isTranscriptSource } from "../lib/source";
 
 function assert(cond: boolean, msg: string) {
   if (!cond) throw new Error(msg);
@@ -18,12 +18,12 @@ assert(isWhisperModel("base"), "base is Whisper");
 assert(isWhisperModel("small"), "small is Whisper");
 assert(!isWhisperModel("parakeet"), "parakeet is not Whisper");
 assert(isParakeetModel("parakeet"), "parakeet is Parakeet");
-assert(isAsrModel("parakeet"), "parakeet is ASR");
-assert(isAsrModel("base"), "base is ASR");
-assert(!isAsrModel("import"), "import is not ASR");
-assert(isModelChoice("import"), "import is a model choice");
-assert(isModelChoice("parakeet"), "parakeet is a model choice");
-assert(!isModelChoice("tiny"), "tiny is not a model choice");
+assert(isModelId("parakeet"), "parakeet is a model id");
+assert(isModelId("base"), "base is a model id");
+assert(!isModelId("import"), "import is not a model id");
+assert(isTranscriptSource("import"), "import is a transcript source");
+assert(isTranscriptSource("parakeet"), "parakeet is a transcript source");
+assert(!isTranscriptSource("tiny"), "tiny is not a transcript source");
 
 assert(MODELS.parakeet.backend === "parakeet", "parakeet backend");
 assert(MODELS.parakeet.id === "parakeet-tdt-0.6b-v3", "parakeet hub id");
@@ -42,7 +42,7 @@ assert(
   "MODEL_ORDER lists whisper + parakeet"
 );
 for (const id of MODEL_ORDER) {
-  assert(isAsrModel(id), `${id} in MODEL_ORDER is an ASR model`);
+  assert(isModelId(id), `${id} in MODEL_ORDER is a model id`);
   assert(typeof MODELS[id].label === "string", `${id} has label`);
   assert(typeof MODELS[id].size === "string", `${id} has size`);
 }

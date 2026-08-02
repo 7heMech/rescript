@@ -65,7 +65,7 @@ async function writeSnapshot() {
       name: s.videoFile.name,
       mediaKind: s.mediaKind,
       duration: s.duration,
-      model: s.model,
+      source: s.source,
       transcriptLanguage: s.transcriptLanguage,
       words: s.words,
       showDeleted: s.showDeleted,

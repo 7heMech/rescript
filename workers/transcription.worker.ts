@@ -32,7 +32,7 @@ import {
   MODELS,
   isParakeetModel,
   isWhisperModel,
-  type AsrModel,
+  type ModelId,
   type WhisperModel,
 } from "@/lib/models";
 import { cleanTranscript } from "@/lib/hallucinations";
@@ -210,7 +210,7 @@ function parakeetModel(): ModelDefinition<ParakeetInstance> {
  */
 const models = new ModelManager({
   models: Object.fromEntries(
-    (Object.keys(MODELS) as AsrModel[]).map((choice) => {
+    (Object.keys(MODELS) as ModelId[]).map((choice) => {
       const info = MODELS[choice];
       if (info.backend === "parakeet") {
         return [info.id, parakeetModel()];
@@ -854,7 +854,7 @@ async function runWhisper(
 self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
   const { audio, duration, model, language } = event.data;
   try {
-    const choice: AsrModel = model ?? "base";
+    const choice: ModelId = model ?? "base";
     const transcriptLanguage = language ?? "en";
 
     let words: Word[];

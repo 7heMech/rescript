@@ -86,8 +86,8 @@ export interface WorkerRequest {
   audio: Float32Array;
   /** Total media duration in seconds (used for progress estimation). */
   duration: number;
-  /** Which local ASR model to use (see lib/models.ts). */
-  model: import("./models").AsrModel;
+  /** Which local speech model to use (see lib/models.ts). */
+  model: import("./models").ModelId;
   /** Whisper language code for the transcript (ignored by Parakeet auto-detect). */
   language: import("./languages").TranscriptLanguage;
 }

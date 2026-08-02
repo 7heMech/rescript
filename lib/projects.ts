@@ -6,8 +6,7 @@
  * (oldest by updatedAt are pruned).
  */
 
-import type { ModelChoice } from "./models";
-import { isModelChoice } from "./models";
+import { isTranscriptSource, type TranscriptSource } from "./source";
 import type { TranscriptLanguage } from "./languages";
 import {
   DEFAULT_TRANSCRIPT_LANGUAGE,
@@ -26,10 +25,19 @@ export interface ProjectMeta {
   name: string;
   mediaKind: MediaKind;
   duration: number;
-  model: ModelChoice;
+  source: TranscriptSource;
   transcriptLanguage: TranscriptLanguage;
   updatedAt: number;
   createdAt: number;
+}
+
+/** Read source from a stored row; older saves used `model`. */
+function projectSource(row: {
+  source?: unknown;
+  model?: unknown;
+}): TranscriptSource {
+  const raw = row.source ?? row.model;
+  return isTranscriptSource(raw) ? raw : "base";
 }
 
 export interface ProjectRecord extends ProjectMeta {
@@ -126,7 +134,7 @@ export async function listProjects(): Promise<ProjectMeta[]> {
       name: r.name,
       mediaKind: r.mediaKind,
       duration: r.duration,
-      model: r.model,
+      source: projectSource(r),
       transcriptLanguage: isTranscriptLanguage(r.transcriptLanguage)
         ? r.transcriptLanguage
         : DEFAULT_TRANSCRIPT_LANGUAGE,
@@ -140,10 +148,13 @@ export async function getProject(id: string): Promise<ProjectRecord | null> {
   const db = await openDb();
   const tx = db.transaction(STORE, "readonly");
   const row = await idbReq(
-    tx.objectStore(STORE).get(id) as IDBRequest<ProjectRecord | undefined>
+    tx.objectStore(STORE).get(id) as IDBRequest<
+      (ProjectRecord & { model?: unknown }) | undefined
+    >
   );
   await txDone(tx);
-  return row ?? null;
+  if (!row) return null;
+  return { ...row, source: projectSource(row) };
 }
 
 /** Insert or replace a project, then prune to MAX_PROJECTS. Returns the id. */
@@ -167,7 +178,7 @@ export async function putProject(input: ProjectWrite): Promise<string> {
     name: input.name,
     mediaKind: input.mediaKind,
     duration: input.duration,
-    model: isModelChoice(input.model) ? input.model : "base",
+    source: isTranscriptSource(input.source) ? input.source : "base",
     transcriptLanguage: isTranscriptLanguage(input.transcriptLanguage)
       ? input.transcriptLanguage
       : DEFAULT_TRANSCRIPT_LANGUAGE,

@@ -167,7 +167,7 @@ export default function UploadScreen({
   // would fail immediately and lose the file to that reload.
   const isolation = useCrossOriginIsolated();
   const ready = isolation === "ready";
-  const model = useEditorStore((s) => s.model);
+  const source = useEditorStore((s) => s.source);
   const pendingTranscript = useEditorStore((s) => s.pendingTranscript);
   const openProject = useEditorStore((s) => s.openProject);
   const removeProject = useEditorStore((s) => s.removeProject);
@@ -206,8 +206,7 @@ export default function UploadScreen({
         alert("Please choose a video or audio file.");
         return;
       }
-      const { model: source, pendingTranscript: pending } =
-        useEditorStore.getState();
+      const { source, pendingTranscript: pending } = useEditorStore.getState();
       if (source === "import") {
         if (!pending) {
           alert("Choose a transcript file from the source menu first.");
@@ -343,7 +342,7 @@ export default function UploadScreen({
                   <span className="text-neutral-600 dark:text-neutral-300">browse</span>
                 </p>
                 <p className="mt-1 text-[13px] text-zinc-400 dark:text-zinc-500">
-                  {model === "import"
+                  {source === "import"
                     ? pendingTranscript
                       ? `Will use ${pendingTranscript.name} · MP4, WebM, MOV, MP3, WAV, …`
                       : "Pick a transcript in the menu above, then drop your media"

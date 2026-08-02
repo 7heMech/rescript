@@ -28,10 +28,10 @@ import {
 import {
   MODEL_ORDER,
   MODELS,
-  isAsrModel,
+  isModelId,
   isWhisperModel,
-  type ModelChoice,
 } from "@/lib/models";
+import type { TranscriptSource } from "@/lib/source";
 import {
   hydrateModelPreference,
   hydrateTranscriptLanguagePreference,
@@ -41,7 +41,7 @@ import Popover, { PopoverContent, PopoverTrigger } from "./Popover";
 
 export type ModelOptionContextValue = {
   /** Currently selected source id. */
-  value: ModelChoice;
+  value: TranscriptSource;
   selected: boolean;
   select: () => void;
   /** Close the dropdown after a normal selection. */
@@ -59,8 +59,8 @@ export type OptionTrigger = {
 };
 
 type SelectorContextValue = {
-  value: ModelChoice;
-  setValue: (id: ModelChoice) => void;
+  value: TranscriptSource;
+  setValue: (id: TranscriptSource) => void;
   closeMenu: () => void;
   keepMenuOpen: () => void;
   registerTrigger: (id: string, trigger: OptionTrigger) => void;
@@ -88,7 +88,7 @@ export function useModelOption(): ModelOptionContextValue {
 
 /** Let a custom option drive the closed trigger while it is selected. */
 export function useOptionTrigger(
-  id: ModelChoice,
+  id: TranscriptSource,
   trigger: OptionTrigger,
   enabled = true
 ) {
@@ -126,8 +126,8 @@ export default function ModelSelector({
   /** Called when an option needs the parent panel to stay open (embedded). */
   onKeepOpen?: () => void;
 }) {
-  const model = useEditorStore((s) => s.model);
-  const setModel = useEditorStore((s) => s.setModel);
+  const source = useEditorStore((s) => s.source);
+  const setSource = useEditorStore((s) => s.setSource);
   const transcriptLanguage = useEditorStore((s) => s.transcriptLanguage);
   const [open, setOpen] = useState(false);
   const [triggers, setTriggers] = useState<Record<string, OptionTrigger>>({});
@@ -174,31 +174,31 @@ export default function ModelSelector({
 
   const ctx = useMemo(
     () => ({
-      value: model,
-      setValue: setModel,
+      value: source,
+      setValue: setSource,
       closeMenu,
       keepMenuOpen,
       registerTrigger,
       unregisterTrigger,
     }),
-    [model, setModel, closeMenu, keepMenuOpen, registerTrigger, unregisterTrigger]
+    [source, setSource, closeMenu, keepMenuOpen, registerTrigger, unregisterTrigger]
   );
 
-  const activeTrigger = triggers[model];
+  const activeTrigger = triggers[source];
   // Prefer the option's registered trigger. Fall back carefully so an unmounted
   // custom option (e.g. import) never shows the raw id + default wave icon.
   const TriggerIcon =
-    activeTrigger?.icon ?? (model === "import" ? FileText : AudioLines);
+    activeTrigger?.icon ?? (source === "import" ? FileText : AudioLines);
   const baseTriggerLabel =
     activeTrigger?.label ??
-    (isAsrModel(model)
-      ? MODELS[model].label
-      : model === "import"
+    (isModelId(source)
+      ? MODELS[source].label
+      : source === "import"
         ? "Import transcript"
-        : String(model));
+        : String(source));
   const languageInfo = TRANSCRIPT_LANGUAGES[transcriptLanguage];
   const showLanguageInTrigger =
-    isWhisperModel(model) &&
+    isWhisperModel(source) &&
     !activeTrigger?.busy &&
     transcriptLanguage !== "en";
 
@@ -312,7 +312,7 @@ export function ModelOption({
   /** When false, a child owns the closed trigger via `useOptionTrigger`. */
   autoTrigger = true,
 }: {
-  id: ModelChoice;
+  id: TranscriptSource;
   label?: string;
   meta?: string;
   icon?: LucideIcon;
@@ -323,8 +323,8 @@ export function ModelOption({
   const selector = useSelectorCtx();
   const selected = selector.value === id;
 
-  const resolvedLabel = label ?? (isAsrModel(id) ? MODELS[id].label : id);
-  const resolvedMeta = meta ?? (isAsrModel(id) ? MODELS[id].size : undefined);
+  const resolvedLabel = label ?? (isModelId(id) ? MODELS[id].label : id);
+  const resolvedMeta = meta ?? (isModelId(id) ? MODELS[id].size : undefined);
 
   const optionCtx = useMemo<ModelOptionContextValue>(
     () => ({

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef } from "react";
-import { isAsrModel } from "@/lib/models";
+import { isModelId } from "@/lib/models";
 import { useEditorStore } from "@/lib/store";
 import type { WorkerResponse } from "@/lib/types";
 
@@ -26,11 +26,11 @@ export function useTranscriber() {
 
   const transcribe = useCallback((audio: Float32Array, duration: number) => {
     const store = useEditorStore.getState();
-    if (!isAsrModel(store.model)) {
+    if (!isModelId(store.source)) {
       store.setError("Select a speech model to transcribe.");
       return;
     }
-    const asrModel = store.model;
+    const model = store.source;
     const transcriptLanguage = store.transcriptLanguage;
     store.setStatus("transcribing");
     store.setProgress({ message: "Loading speech model…", value: null });
@@ -73,7 +73,7 @@ export function useTranscriber() {
     // Transfer a copy so the original stays available for the waveform.
     const copy = audio.slice();
     workerRef.current.postMessage(
-      { audio: copy, duration, model: asrModel, language: transcriptLanguage },
+      { audio: copy, duration, model, language: transcriptLanguage },
       [copy.buffer]
     );
   }, []);
