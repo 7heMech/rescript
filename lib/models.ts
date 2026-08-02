@@ -1,3 +1,5 @@
+import type { TranscriptLanguage } from "./languages";
+
 /** Local speech models offered on the upload screen. */
 export type WhisperModel = "base" | "small";
 /** NVIDIA Parakeet TDT 0.6B v3 via parakeet.js (ONNX / WebGPU). */
@@ -24,16 +26,14 @@ export type WhisperModelInfo = ModelDisplay & {
     wasm: Record<string, DType>;
   };
   /**
-   * Whisper is trained to produce "clean" transcripts and usually drops
-   * disfluencies. Conditioning the decoder on a prompt that itself contains
-   * fillers biases it toward verbatim output. The prompt is injected as
-   * `<|startofprev|> …prompt… <|startoftranscript|>` decoder tokens.
+   * When true, condition Whisper on a short filler-rich initial prompt so
+   * "Remove fillers" has tokens to act on. See {@link whisperFillerPrompt}.
    *
    * (A dedicated verbatim model — CrisperWhisper — was evaluated, but its
    * only browser-runnable ONNX export lacks the cross-attention outputs
    * required for word-level timestamps, which this editor depends on.)
    */
-  verbatimPrompt?: string;
+  keepFillers?: boolean;
 };
 
 export type ParakeetModelInfo = ModelDisplay & {
@@ -49,6 +49,39 @@ export type ModelInfo = WhisperModelInfo | ParakeetModelInfo;
 /** Display order for model rows in the source dropdown. */
 export const MODEL_ORDER: ModelId[] = ["base", "small", "parakeet"];
 
+/**
+ * Hard cap for Whisper filler prompts. Longer `<|startofprev|>` strings
+ * forced via `decoder_input_ids` have truncated multi-speaker / long-form
+ * transcripts (second speaker dropped). Keep prompts to a short filler list.
+ */
+export const MAX_VERBATIM_PROMPT_LENGTH = 32;
+
+/**
+ * Short, language-specific filler prompts for Whisper. Deliberately tiny and
+ * free of "I'm …" openers (those seeded "I'm sorry" hallucination loops).
+ * The classic OpenAI example prompt is too long for our chunked decoder path.
+ */
+const WHISPER_FILLER_PROMPTS: Record<TranscriptLanguage, string> = {
+  en: "Um, uh, hmm, er, ah.",
+  es: "Em, emm, eee.",
+  fr: "Euh, heu, euhm.",
+  de: "Äh, ähm, öhm, mhh.",
+  zh: "嗯, 呃, 额, 唔.",
+};
+
+/**
+ * Filler-bias prompt for Whisper when the selected model opts into
+ * {@link WhisperModelInfo.keepFillers}. Returns null when prompting is off.
+ */
+export function whisperFillerPrompt(
+  model: ModelId,
+  language: TranscriptLanguage
+): string | null {
+  const info = MODELS[model];
+  if (info.backend !== "whisper" || !info.keepFillers) return null;
+  return WHISPER_FILLER_PROMPTS[language];
+}
+
 const WHISPER_DTYPE = {
   // q4 decoder: q8 fails session creation on onnxruntime-web 1.26
   // (Missing required scale … MatMulNBits).
@@ -59,7 +92,7 @@ const WHISPER_DTYPE = {
 /**
  * Local speech models that can run in the transcription worker.
  * Shared display fields live on every entry; backend-specific knobs
- * (`dtype` / `verbatimPrompt` vs `repoId`) are gated by `backend`.
+ * (`dtype` / `keepFillers` vs `repoId`) are gated by `backend`.
  */
 export const MODELS: {
   base: WhisperModelInfo;
@@ -73,9 +106,8 @@ export const MODELS: {
     description: "Faster download and transcription. Good for most clips.",
     size: "~200 MB",
     dtype: WHISPER_DTYPE,
-    // Do not set verbatimPrompt: forcing a long <|startofprev|> prompt via
-    // decoder_input_ids truncates long-form transcripts (e.g. drops the second
-    // speaker on mixed clips). Prefer post-process / filler tools instead.
+    // Short filler prompt only — long prompts truncate long-form ASR.
+    keepFillers: true,
   },
   small: {
     backend: "whisper",
@@ -84,6 +116,7 @@ export const MODELS: {
     description: "More accurate on longer or noisier audio. Larger download.",
     size: "~600 MB",
     dtype: WHISPER_DTYPE,
+    keepFillers: true,
   },
   parakeet: {
     backend: "parakeet",

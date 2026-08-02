@@ -23,6 +23,7 @@ User-facing progress for Rescript. Items are marked done when they shipped to
 - [x] One-click **Remove silences** (pauses / dead air ≥ 0.3s)
 - [x] Import your own transcript (SRT / VTT / JSON) instead of running Whisper
 - [x] Import cancel UX (no stuck selector / blocked media drop)
+- [x] Manual speaker controls (rename, change, add, move label, merge, remove)
 
 ### Transcription quality & models
 - [x] Whisper Base and Whisper Small selectable on upload

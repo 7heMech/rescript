@@ -34,7 +34,7 @@ import {
 } from "@/lib/projects";
 import { isElectron } from "@/lib/platform";
 import { useEditorStore } from "@/lib/store";
-import type { Word } from "@/lib/types";
+import type { SpeakerInfo, Word } from "@/lib/types";
 
 // The three media cards that stand in for the upload icon. Each carries its
 // resting transform plus the fanned-out one, applied either on hover (via the
@@ -156,7 +156,10 @@ function RecentProjects({
 export default function UploadScreen({
   onFile,
 }: {
-  onFile: (file: File, options?: { words?: Word[] }) => void;
+  onFile: (
+    file: File,
+    options?: { words?: Word[]; speakers?: SpeakerInfo[] }
+  ) => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
@@ -212,7 +215,7 @@ export default function UploadScreen({
           alert("Choose a transcript file from the source menu first.");
           return;
         }
-        onFile(file, { words: pending.words });
+        onFile(file, { words: pending.words, speakers: pending.speakers });
         return;
       }
       onFile(file);

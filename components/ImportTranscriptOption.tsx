@@ -140,9 +140,13 @@ export default function ImportTranscriptOption() {
             setError(null);
             setSource("import"); // so the closed trigger can show progress
             try {
-              const words = await parseTranscriptFile(file);
+              const parsed = await parseTranscriptFile(file);
               if (pickGenRef.current !== gen) return;
-              setPendingTranscript({ name: file.name, words });
+              setPendingTranscript({
+                name: file.name,
+                words: parsed.words,
+                speakers: parsed.speakers,
+              });
               setSource("import");
               menu?.closeMenu();
             } catch (err) {

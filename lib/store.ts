@@ -7,6 +7,7 @@ import type {
   ManualCut,
   ProgressInfo,
   SceneBoundary,
+  SpeakerInfo,
   TimeRange,
   Word,
 } from "./types";
@@ -40,10 +41,21 @@ import {
   fileFromProject,
   getProject,
 } from "./projects";
+import {
+  addSpeaker as addSpeakerEntry,
+  findSpeakerByName,
+  moveSpeakerBoundary,
+  reassignWords,
+  removeSpeaker as removeSpeakerEntry,
+  renameSpeaker as renameSpeakerEntry,
+  replaceSpeaker as replaceSpeakerEntry,
+  speakersFromWords,
+} from "./speakers";
 
 interface PendingTranscript {
   name: string;
   words: Word[];
+  speakers?: SpeakerInfo[];
 }
 
 interface EditorState {
@@ -81,6 +93,8 @@ interface EditorState {
 
   // Transcript / edits
   words: Word[];
+  /** Named speakers in the project (ids match Word.speaker). */
+  speakers: SpeakerInfo[];
   manualCuts: ManualCut[];
   sceneBoundaries: SceneBoundary[];
   showDeleted: boolean;
@@ -117,7 +131,10 @@ interface EditorState {
 
   // Actions
   /** Load media for editing. Pass `words` to skip Whisper and use that transcript. */
-  loadVideo: (file: File, options?: { words?: Word[] }) => void;
+  loadVideo: (
+    file: File,
+    options?: { words?: Word[]; speakers?: SpeakerInfo[] }
+  ) => void;
   /** Restore a saved project from IndexedDB (no re-transcription). */
   openProject: (id: string) => Promise<void>;
   /** Delete a saved project; if it is the active one, resets to the home screen. */
@@ -131,12 +148,33 @@ interface EditorState {
   setProgress: (p: ProgressInfo) => void;
   setPartialText: (t: string) => void;
   setError: (message: string) => void;
-  setWords: (words: Word[]) => void;
+  setWords: (words: Word[], speakers?: SpeakerInfo[]) => void;
   /**
    * Replace the current transcript with an imported one (keeps media).
    * Used when the user brings their own SRT/VTT/JSON instead of Whisper.
    */
-  importWords: (words: Word[]) => void;
+  importWords: (words: Word[], speakers?: SpeakerInfo[]) => void;
+  /** Rename a speaker everywhere it appears. */
+  renameSpeaker: (id: number, name: string) => void;
+  /** Create a new speaker; returns its id (or -1 if unchanged). */
+  addSpeaker: (name?: string) => number;
+  /** Reassign selected / listed words to a speaker (creating the speaker if needed). */
+  reassignWordsToSpeaker: (ids: number[], toSpeaker: number) => void;
+  /**
+   * Change who speaks a turn. Pass `toSpeaker: "new"` to create a speaker.
+   * Optional `name` renames/creates with that label.
+   */
+  changeTurnSpeaker: (
+    wordIds: number[],
+    toSpeaker: number | "new",
+    name?: string
+  ) => void;
+  /** Move a turn's start to `targetWordId` (boundary with the previous turn). */
+  moveSpeakerLabel: (turnStartWordId: number, targetWordId: number) => void;
+  /** Merge all of `fromId` into `toId` across the project. */
+  replaceSpeakerInProject: (fromId: number, toId: number) => void;
+  /** Remove a speaker; their turns join the speaker above in the script. */
+  removeSpeakerFromProject: (id: number) => void;
   deleteWords: (ids: number[]) => void;
   restoreWords: (ids: number[]) => void;
   /** Cut arbitrary time ranges (e.g. detected silences) as manual cuts. */
@@ -191,11 +229,13 @@ function bumpAutosave() {
 
 function snapshotOf(s: {
   words: Word[];
+  speakers: SpeakerInfo[];
   manualCuts: ManualCut[];
   sceneBoundaries: SceneBoundary[];
 }): EditSnapshot {
   return {
     words: s.words,
+    speakers: s.speakers,
     manualCuts: s.manualCuts,
     sceneBoundaries: s.sceneBoundaries,
   };
@@ -204,6 +244,7 @@ function snapshotOf(s: {
 function snapshotsEqual(a: EditSnapshot, b: EditSnapshot): boolean {
   return (
     a.words === b.words &&
+    a.speakers === b.speakers &&
     a.manualCuts === b.manualCuts &&
     a.sceneBoundaries === b.sceneBoundaries
   );
@@ -224,6 +265,7 @@ function pushEdit(
     Pick<
       EditorState,
       | "words"
+      | "speakers"
       | "manualCuts"
       | "sceneBoundaries"
       | "selectedClipIndex"
@@ -266,6 +308,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   error: null,
 
   words: [],
+  speakers: [],
   manualCuts: [],
   sceneBoundaries: [],
   showDeleted: true,
@@ -293,6 +336,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     const prev = get().mediaUrl;
     if (prev) URL.revokeObjectURL(prev);
     const current = get().source;
+    const speakers = imported
+      ? speakersFromWords(imported, options?.speakers ?? [])
+      : [];
     set({
       videoFile: file,
       mediaUrl: URL.createObjectURL(file),
@@ -307,9 +353,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         value: null,
       },
       words: imported ? imported : [],
+      speakers,
       manualCuts: [],
       sceneBoundaries: [],
-          past: [],
+      past: [],
       future: [],
       selectedClipIndex: null,
       selectedCutIndex: null,
@@ -334,6 +381,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     if (prev) URL.revokeObjectURL(prev);
     const manualCuts = record.manualCuts ?? [];
     const sceneBoundaries = record.sceneBoundaries ?? [];
+    const speakers = speakersFromWords(record.words, record.speakers ?? []);
     set({
       videoFile: file,
       mediaUrl: URL.createObjectURL(file),
@@ -349,6 +397,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       status: "preparing",
       progress: { message: "Loading media engine…", value: null },
       words: record.words,
+      speakers,
       manualCuts,
       sceneBoundaries,
       showDeleted: record.showDeleted,
@@ -401,12 +450,13 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   setProgress: (progress) => set({ progress }),
   setPartialText: (partialText) => set({ partialText }),
   setError: (message) => set({ status: "error", error: message }),
-  setWords: (words) => {
+  setWords: (words, speakers) => {
     set({
       words,
+      speakers: speakersFromWords(words, speakers ?? []),
       manualCuts: [],
       sceneBoundaries: [],
-          past: [],
+      past: [],
       future: [],
       selectedClipIndex: null,
       selectedCutIndex: null,
@@ -414,7 +464,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     });
     if (get().status === "ready") bumpAutosave();
   },
-  importWords: (words) => {
+  importWords: (words, speakers) => {
     if (words.length === 0) return;
     const { status } = get();
     if (
@@ -428,9 +478,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     void import("@/hooks/useTranscriber").then((m) => m.cancelTranscription());
     set({
       words,
+      speakers: speakersFromWords(words, speakers ?? []),
       manualCuts: [],
       sceneBoundaries: [],
-          past: [],
+      past: [],
       future: [],
       selectedClipIndex: null,
       selectedCutIndex: null,
@@ -443,6 +494,89 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       source: "import",
     });
     bumpAutosave();
+  },
+
+  renameSpeaker: (id, name) => {
+    const { speakers } = get();
+    const next = renameSpeakerEntry(speakers, id, name);
+    if (next === speakers) return;
+    pushEdit(get, set, { speakers: next });
+  },
+
+  addSpeaker: (name) => {
+    const { speakers } = get();
+    const trimmed = name?.trim();
+    if (trimmed) {
+      const existing = findSpeakerByName(speakers, trimmed);
+      if (existing) return existing.id;
+    }
+    const { speakers: next, id } = addSpeakerEntry(speakers, name);
+    pushEdit(get, set, { speakers: next });
+    return id;
+  },
+
+  reassignWordsToSpeaker: (ids, toSpeaker) => {
+    if (ids.length === 0) return;
+    const s = get();
+    const words = reassignWords(s.words, ids, toSpeaker);
+    if (words === s.words) return;
+    const speakers = speakersFromWords(words, s.speakers);
+    pushEdit(get, set, { words, speakers });
+  },
+
+  changeTurnSpeaker: (wordIds, toSpeaker, name) => {
+    if (wordIds.length === 0) return;
+    const s = get();
+    let speakers = s.speakers;
+    let targetId: number;
+    if (toSpeaker === "new") {
+      const added = addSpeakerEntry(speakers, name);
+      speakers = added.speakers;
+      targetId = added.id;
+    } else {
+      targetId = toSpeaker;
+      if (name && name.trim()) {
+        speakers = renameSpeakerEntry(speakers, targetId, name);
+      } else if (!speakers.some((sp) => sp.id === targetId)) {
+        speakers = speakersFromWords(
+          s.words,
+          [...speakers, { id: targetId, name: `Speaker ${targetId + 1}` }]
+        );
+      }
+    }
+    const words = reassignWords(s.words, wordIds, targetId);
+    if (words === s.words && speakers === s.speakers) return;
+    pushEdit(get, set, {
+      words,
+      speakers: speakersFromWords(words, speakers),
+    });
+  },
+
+  moveSpeakerLabel: (turnStartWordId, targetWordId) => {
+    const { words } = get();
+    const next = moveSpeakerBoundary(words, turnStartWordId, targetWordId);
+    if (!next) return;
+    pushEdit(get, set, { words: next });
+  },
+
+  replaceSpeakerInProject: (fromId, toId) => {
+    const s = get();
+    const result = replaceSpeakerEntry(s.words, s.speakers, fromId, toId);
+    if (!result) return;
+    pushEdit(get, set, {
+      words: result.words,
+      speakers: result.speakers,
+    });
+  },
+
+  removeSpeakerFromProject: (id) => {
+    const s = get();
+    const result = removeSpeakerEntry(s.words, s.speakers, id);
+    if (!result) return;
+    pushEdit(get, set, {
+      words: result.words,
+      speakers: result.speakers,
+    });
   },
 
   deleteWords: (ids) => {
@@ -713,17 +847,18 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   },
 
   undo: () => {
-    const { past, future, words, manualCuts, sceneBoundaries } =
+    const { past, future, words, speakers, manualCuts, sceneBoundaries } =
       get();
     if (past.length === 0) return;
     const prev = past[past.length - 1];
     set({
       words: prev.words,
+      speakers: prev.speakers,
       manualCuts: prev.manualCuts,
       sceneBoundaries: prev.sceneBoundaries,
       past: past.slice(0, -1),
       future: [
-        { words, manualCuts, sceneBoundaries },
+        { words, speakers, manualCuts, sceneBoundaries },
         ...future,
       ],
       selectedClipIndex: null,
@@ -734,16 +869,17 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     bumpAutosave();
   },
   redo: () => {
-    const { past, future, words, manualCuts, sceneBoundaries } =
+    const { past, future, words, speakers, manualCuts, sceneBoundaries } =
       get();
     if (future.length === 0) return;
     const next = future[0];
     set({
       words: next.words,
+      speakers: next.speakers,
       manualCuts: next.manualCuts,
       sceneBoundaries: next.sceneBoundaries,
       future: future.slice(1),
-      past: [...past, { words, manualCuts, sceneBoundaries }],
+      past: [...past, { words, speakers, manualCuts, sceneBoundaries }],
       selectedClipIndex: null,
       selectedCutIndex: null,
       selectedWordIds: [],
@@ -801,9 +937,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       partialText: "",
       error: null,
       words: [],
+      speakers: [],
       manualCuts: [],
       sceneBoundaries: [],
-          past: [],
+      past: [],
       future: [],
       selectedClipIndex: null,
       selectedCutIndex: null,
@@ -834,4 +971,10 @@ export function hydrateTranscriptLanguagePreference() {
   if (stored !== useEditorStore.getState().transcriptLanguage) {
     useEditorStore.setState({ transcriptLanguage: stored });
   }
+}
+
+// DevTools / Playwright: inspect and drive the editor store from the console.
+if (typeof window !== "undefined" && process.env.NODE_ENV === "development") {
+  (window as unknown as { __rescriptStore?: typeof useEditorStore }).__rescriptStore =
+    useEditorStore;
 }

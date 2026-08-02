@@ -71,6 +71,7 @@ async function writeSnapshot() {
       showDeleted: s.showDeleted,
       manualCuts: s.manualCuts,
       sceneBoundaries: s.sceneBoundaries,
+      speakers: s.speakers,
       media: s.videoFile,
       mediaType: s.videoFile.type,
     });

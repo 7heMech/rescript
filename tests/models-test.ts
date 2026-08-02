@@ -2,11 +2,13 @@
  * Model + transcript-source helpers.
  */
 import {
+  MAX_VERBATIM_PROMPT_LENGTH,
   MODEL_ORDER,
   MODELS,
   isModelId,
   isParakeetModel,
   isWhisperModel,
+  whisperFillerPrompt,
 } from "../lib/models";
 import { isTranscriptSource } from "../lib/source";
 
@@ -36,6 +38,8 @@ assert(MODELS.base.backend === "whisper", "base backend");
 assert(typeof MODELS.base.id === "string", "whisper base id");
 assert(typeof MODELS.small.id === "string", "whisper small id");
 assert(MODELS.base.dtype.webgpu.encoder_model === "fp32", "whisper dtype");
+assert(MODELS.base.keepFillers === true, "base keeps fillers");
+assert(MODELS.small.keepFillers === true, "small keeps fillers");
 
 assert(
   MODEL_ORDER.includes("parakeet") && MODEL_ORDER.includes("base"),
@@ -46,5 +50,13 @@ for (const id of MODEL_ORDER) {
   assert(typeof MODELS[id].label === "string", `${id} has label`);
   assert(typeof MODELS[id].size === "string", `${id} has size`);
 }
+
+assert(whisperFillerPrompt("base", "en") === "Um, uh, hmm, er, ah.", "en prompt");
+assert(whisperFillerPrompt("small", "de") === "Äh, ähm, öhm, mhh.", "de prompt");
+assert(whisperFillerPrompt("parakeet", "en") === null, "parakeet has no prompt");
+assert(
+  (whisperFillerPrompt("base", "en")?.length ?? 0) <= MAX_VERBATIM_PROMPT_LENGTH,
+  "en prompt within length cap"
+);
 
 console.log("models-test: ok");

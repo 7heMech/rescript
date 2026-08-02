@@ -38,11 +38,18 @@ export interface SceneBoundary {
   time: number;
 }
 
+/** Named speaker in the project (id matches Word.speaker). */
+export interface SpeakerInfo {
+  id: number;
+  name: string;
+}
+
 /** Snapshot of all edit state for undo/redo. */
 export interface EditSnapshot {
   words: Word[];
   manualCuts: ManualCut[];
   sceneBoundaries: SceneBoundary[];
+  speakers: SpeakerInfo[];
 }
 
 /** A contiguous kept segment of media, optionally subdivided by scene boundaries. */

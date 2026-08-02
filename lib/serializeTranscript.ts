@@ -1,6 +1,7 @@
 import { getCutRanges, originalToEdited } from "./edits";
+import { speakerLabel, speakersFromWords } from "./speakers";
 import { groupWordsBySpeaker } from "./transcript";
-import type { TimeRange, Word } from "./types";
+import type { SpeakerInfo, TimeRange, Word } from "./types";
 
 /** Timed caption / subtitle formats (importable). */
 export type SubtitleFormat = "srt" | "vtt" | "json";
@@ -24,6 +25,8 @@ export interface SerializeOptions {
    * times match the media export. Falls back to word-derived cuts when omitted.
    */
   cuts?: TimeRange[];
+  /** Named speakers for labels in captions / documents / JSON. */
+  speakers?: SpeakerInfo[];
 }
 
 interface Cue {
@@ -63,9 +66,10 @@ export function serializeTranscript(
   format: TranscriptFormat,
   options: SerializeOptions = {}
 ): string {
-  if (format === "json") return serializeJson(words);
+  const speakers = options.speakers ?? speakersFromWords(words);
+  if (format === "json") return serializeJson(words, speakers);
   if (format === "txt" || format === "md") {
-    return serializeDocument(words, format, options);
+    return serializeDocument(words, format, { ...options, speakers });
   }
 
   const editedTimeline = options.editedTimeline !== false;
@@ -74,7 +78,9 @@ export function serializeTranscript(
     throw new Error("No words to export.");
   }
   const cues = wordsToCues(prepared);
-  return format === "vtt" ? serializeVtt(cues) : serializeSrt(cues);
+  return format === "vtt"
+    ? serializeVtt(cues, speakers)
+    : serializeSrt(cues, speakers);
 }
 
 /** Trigger a browser download of the serialized transcript / subtitles. */
@@ -96,9 +102,10 @@ export function downloadTranscript(
   URL.revokeObjectURL(url);
 }
 
-function serializeJson(words: Word[]): string {
+function serializeJson(words: Word[], speakers: SpeakerInfo[]): string {
   return JSON.stringify(
     {
+      speakers: speakers.map((s) => ({ id: s.id, name: s.name })),
       words: words.map((w) => ({
         text: w.text,
         start: roundTime(w.start),
@@ -123,13 +130,13 @@ function serializeDocument(
     throw new Error("No words to export.");
   }
 
+  const speakers = options.speakers ?? speakersFromWords(prepared);
   const turns = groupWordsBySpeaker(prepared);
   if (format === "txt") {
     return (
       turns
         .map((turn) => {
-          const label =
-            turn.speaker >= 0 ? `Speaker ${turn.speaker + 1}` : "Speaker";
+          const label = speakerLabel(speakers, turn.speaker);
           const text = turn.words.map((w) => w.text).join(" ");
           return `${label}: ${text}`;
         })
@@ -140,8 +147,7 @@ function serializeDocument(
   return (
     turns
       .map((turn) => {
-        const label =
-          turn.speaker >= 0 ? `Speaker ${turn.speaker + 1}` : "Speaker";
+        const label = speakerLabel(speakers, turn.speaker);
         const text = turn.words.map((w) => w.text).join(" ");
         return `**${label}**\n\n${text}`;
       })
@@ -205,7 +211,7 @@ function wordsToCues(words: Word[]): Cue[] {
   return cues;
 }
 
-function serializeSrt(cues: Cue[]): string {
+function serializeSrt(cues: Cue[], speakers: SpeakerInfo[]): string {
   return (
     cues
       .map((cue, i) => {
@@ -214,7 +220,7 @@ function serializeSrt(cues: Cue[]): string {
           `${formatSrtTimestamp(cue.start)} --> ${formatSrtTimestamp(cue.end)}`,
         ];
         if (cue.speaker >= 0) {
-          lines.push(`Speaker ${cue.speaker + 1}: ${cue.text}`);
+          lines.push(`${speakerLabel(speakers, cue.speaker)}: ${cue.text}`);
         } else {
           lines.push(cue.text);
         }
@@ -224,13 +230,13 @@ function serializeSrt(cues: Cue[]): string {
   );
 }
 
-function serializeVtt(cues: Cue[]): string {
+function serializeVtt(cues: Cue[], speakers: SpeakerInfo[]): string {
   const body = cues
     .map((cue) => {
       const timing = `${formatVttTimestamp(cue.start)} --> ${formatVttTimestamp(cue.end)}`;
       const text =
         cue.speaker >= 0
-          ? `<v Speaker ${cue.speaker + 1}>${cue.text}`
+          ? `<v ${speakerLabel(speakers, cue.speaker)}>${cue.text}`
           : cue.text;
       return `${timing}\n${text}`;
     })
