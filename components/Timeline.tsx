@@ -247,12 +247,12 @@ export default function Timeline() {
       const hovered = clip.index === hoveredClipIndex && !selected;
       if (selected) {
         ctx.fillStyle = dark ? "rgba(99, 102, 241, 0.20)" : "rgba(99, 102, 241, 0.10)";
-        // Inset + round to sit inside the selection ring (same as cuts).
+        // Match the selection ring box (vertically inset, rounded).
         roundRectPath(
           ctx,
-          x0 + SELECTION_INSET,
+          x0,
           trackTop + SELECTION_INSET,
-          x1 - x0 - SELECTION_INSET * 2,
+          x1 - x0,
           trackH - SELECTION_INSET * 2,
           SELECTION_RADIUS
         );
@@ -270,11 +270,10 @@ export default function Timeline() {
       if (x1 < 0 || x0 > width) return;
       const selected = cutIndex === selectedCutIndex;
       const hovered = cutIndex === hoveredCutIndex && !selected;
-      const fillX = selected ? x0 + SELECTION_INSET : x0;
+      // Selected fills share the ring's box so the hatch can't spill past the radius.
+      const fillX = x0;
       const fillY = selected ? trackTop + SELECTION_INSET : trackTop;
-      const fillW = selected
-        ? x1 - x0 - SELECTION_INSET * 2
-        : x1 - x0;
+      const fillW = x1 - x0;
       const fillH = selected ? trackH - SELECTION_INSET * 2 : trackH;
       ctx.fillStyle = selected
         ? dark
