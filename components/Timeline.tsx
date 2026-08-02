@@ -55,6 +55,32 @@ const MAX_ZOOM = 256;
 const ZOOM_SPEED = 0.0028;
 /** How close (px) the pointer must be to a split marker to reveal its join button. */
 const SPLIT_HOVER_PX = 10;
+/** Inset + radius for selected clip/cut outlines (`rounded-sm` ≈ 2px). */
+const SELECTION_INSET = 2;
+const SELECTION_RADIUS = 2;
+
+/** Canvas path for a rounded rect (used to keep cut fills inside the selection ring). */
+function roundRectPath(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number
+) {
+  const radius = Math.max(0, Math.min(r, w / 2, h / 2));
+  ctx.beginPath();
+  if (radius <= 0 || w <= 0 || h <= 0) {
+    ctx.rect(x, y, Math.max(0, w), Math.max(0, h));
+    return;
+  }
+  ctx.moveTo(x + radius, y);
+  ctx.arcTo(x + w, y, x + w, y + h, radius);
+  ctx.arcTo(x + w, y + h, x, y + h, radius);
+  ctx.arcTo(x, y + h, x, y, radius);
+  ctx.arcTo(x, y, x + w, y, radius);
+  ctx.closePath();
+}
 
 type DragKind =
   | { type: "seek" }
@@ -221,7 +247,16 @@ export default function Timeline() {
       const hovered = clip.index === hoveredClipIndex && !selected;
       if (selected) {
         ctx.fillStyle = dark ? "rgba(99, 102, 241, 0.20)" : "rgba(99, 102, 241, 0.10)";
-        ctx.fillRect(x0, trackTop, x1 - x0, trackH);
+        // Inset + round to sit inside the selection ring (same as cuts).
+        roundRectPath(
+          ctx,
+          x0 + SELECTION_INSET,
+          trackTop + SELECTION_INSET,
+          x1 - x0 - SELECTION_INSET * 2,
+          trackH - SELECTION_INSET * 2,
+          SELECTION_RADIUS
+        );
+        ctx.fill();
       } else if (hovered) {
         ctx.fillStyle = dark ? "rgba(99, 102, 241, 0.10)" : "rgba(99, 102, 241, 0.05)";
         ctx.fillRect(x0, trackTop, x1 - x0, trackH);
@@ -235,6 +270,12 @@ export default function Timeline() {
       if (x1 < 0 || x0 > width) return;
       const selected = cutIndex === selectedCutIndex;
       const hovered = cutIndex === hoveredCutIndex && !selected;
+      const fillX = selected ? x0 + SELECTION_INSET : x0;
+      const fillY = selected ? trackTop + SELECTION_INSET : trackTop;
+      const fillW = selected
+        ? x1 - x0 - SELECTION_INSET * 2
+        : x1 - x0;
+      const fillH = selected ? trackH - SELECTION_INSET * 2 : trackH;
       ctx.fillStyle = selected
         ? dark
           ? "rgba(185, 28, 28, 0.62)"
@@ -246,11 +287,20 @@ export default function Timeline() {
           : dark
             ? "rgba(127, 29, 29, 0.45)"
             : "rgba(254, 226, 226, 0.78)";
-      ctx.fillRect(x0, trackTop, x1 - x0, trackH);
-      // subtle hatch
+      if (selected) {
+        roundRectPath(ctx, fillX, fillY, fillW, fillH, SELECTION_RADIUS);
+        ctx.fill();
+      } else {
+        ctx.fillRect(fillX, fillY, fillW, fillH);
+      }
+      // subtle hatch — clipped to the same (rounded) shape as the fill
       ctx.save();
-      ctx.beginPath();
-      ctx.rect(x0, trackTop, x1 - x0, trackH);
+      if (selected) {
+        roundRectPath(ctx, fillX, fillY, fillW, fillH, SELECTION_RADIUS);
+      } else {
+        ctx.beginPath();
+        ctx.rect(fillX, fillY, fillW, fillH);
+      }
       ctx.clip();
       ctx.strokeStyle = selected
         ? dark
@@ -260,10 +310,10 @@ export default function Timeline() {
           ? "rgba(248, 113, 113, 0.35)"
           : "rgba(252, 165, 165, 0.45)";
       ctx.lineWidth = 1;
-      for (let x = x0 - trackH; x < x1 + trackH; x += 6) {
+      for (let x = fillX - fillH; x < fillX + fillW + fillH; x += 6) {
         ctx.beginPath();
-        ctx.moveTo(x, trackTop);
-        ctx.lineTo(x + trackH, trackTop + trackH);
+        ctx.moveTo(x, fillY);
+        ctx.lineTo(x + fillH, fillY + fillH);
         ctx.stroke();
       }
       ctx.restore();
@@ -778,18 +828,18 @@ export default function Timeline() {
               );
             })}
 
-            {/* Selected cut/silence outline — same rounded ring as selected clips */}
+            {/* Selected cut/silence outline */}
             {selectedCutIndex != null && cuts[selectedCutIndex] && (
               <div
-                className="pointer-events-none absolute z-[4] rounded-sm ring-1 ring-neutral-400/40"
+                className="pointer-events-none absolute z-[4] rounded-sm ring-1 ring-red-400/55 dark:ring-red-300/50"
                 style={{
                   left: cuts[selectedCutIndex].start * pps,
                   width: Math.max(
                     2,
                     (cuts[selectedCutIndex].end - cuts[selectedCutIndex].start) * pps
                   ),
-                  top: RULER_H + WORDBAR_H + 2,
-                  bottom: 2,
+                  top: RULER_H + WORDBAR_H + SELECTION_INSET,
+                  bottom: SELECTION_INSET,
                 }}
               />
             )}
@@ -844,12 +894,12 @@ export default function Timeline() {
                   </div>
                   {selected && (
                     <div
-                      className="pointer-events-none absolute z-[4] rounded-sm ring-1 ring-neutral-400/40"
+                      className="pointer-events-none absolute z-[4] rounded-sm ring-1 ring-indigo-400/55 dark:ring-indigo-300/50"
                       style={{
                         left: clip.start * pps,
                         width: Math.max(2, (clip.end - clip.start) * pps),
-                        top: RULER_H + WORDBAR_H + 2,
-                        bottom: 2,
+                        top: RULER_H + WORDBAR_H + SELECTION_INSET,
+                        bottom: SELECTION_INSET,
                       }}
                     />
                   )}
