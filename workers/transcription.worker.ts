@@ -37,6 +37,7 @@ import {
 } from "@/lib/models";
 import { cleanTranscript } from "@/lib/hallucinations";
 import { alignWordsToSpeech } from "@/lib/align";
+import { insertDisfluencyPlaceholders } from "@/lib/disfluencies";
 import {
   VAD_FRAME_SIZE,
   VAD_SAMPLE_RATE,
@@ -607,7 +608,8 @@ async function runParakeet(
   let model = loaded;
 
   post({ type: "progress", message: "Detecting speech…", value: 0 });
-  const { segments: speechSegments } = await detectSpeechSegments(audio, vad);
+  const { segments: speechSegments, frames: speechFrames } =
+    await detectSpeechSegments(audio, vad);
 
   post({ type: "progress", message: "Transcribing…", value: 0 });
   const speechSamples = speechSegments.reduce(
@@ -665,7 +667,9 @@ async function runParakeet(
   }
 
   const cleaned = cleanTranscript(rawWords);
-  return finishWithDiarization(cleaned, audio);
+  // Same [*] filled-pause recovery as Whisper (no timestamp align for Parakeet).
+  const words = insertDisfluencyPlaceholders(cleaned, speechFrames, { duration });
+  return finishWithDiarization(words, audio);
 }
 
 async function runWhisper(
@@ -846,7 +850,10 @@ async function runWhisper(
   // Whisper's DTW word timestamps run consistently late (~0.2 s on the test
   // clips). Realign them against the VAD flags before diarization, so speakers
   // are assigned from corrected times too.
-  const words = alignWordsToSpeech(cleaned, speechFrames, { duration });
+  const aligned = alignWordsToSpeech(cleaned, speechFrames, { duration });
+
+  // Recover filled pauses Whisper omitted as [*] so Remove fillers can cut them.
+  const words = insertDisfluencyPlaceholders(aligned, speechFrames, { duration });
 
   return finishWithDiarization(words, audio);
 }

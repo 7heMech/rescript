@@ -33,6 +33,7 @@ import {
   trimEdgeBounds,
 } from "@/lib/edits";
 import type { ClipSegment, Word } from "@/lib/types";
+import { isDisfluencyPlaceholder } from "@/lib/disfluencies";
 import { VAD_SAMPLE_RATE } from "@/lib/vad";
 import { useCutRanges } from "@/hooks/useCutRanges";
 import { useIsDark } from "@/hooks/useIsDark";
@@ -726,6 +727,7 @@ export default function Timeline() {
               const hovered = hoveredWordId === w.id;
               const cutOut = isWordCutOut(w, cuts);
               const wordSelected = selectedWordIds.includes(w.id);
+              const placeholder = isDisfluencyPlaceholder(w.text);
               const showWordHandles = showHandles && (hovered || wWidth > 28);
               return (
                 <div
@@ -736,9 +738,13 @@ export default function Timeline() {
                       ? "border-red-200/90 bg-red-50/95 text-red-400 line-through dark:border-red-900/90 dark:bg-red-950/60 dark:text-red-400"
                       : wordSelected
                         ? "border-indigo-300 bg-indigo-100/70 text-zinc-800 dark:border-indigo-500/60 dark:bg-indigo-950/50 dark:text-zinc-100"
-                        : hovered
-                          ? "border-neutral-300 bg-white text-zinc-700 shadow-sm shadow-neutral-500/10 dark:border-neutral-600 dark:bg-zinc-800 dark:text-zinc-200 dark:shadow-black/20"
-                          : "border-zinc-200/90 bg-white/95 text-zinc-600 dark:border-zinc-700/90 dark:bg-zinc-800/95 dark:text-zinc-300"
+                        : placeholder
+                          ? hovered
+                            ? "border-amber-300/90 bg-amber-50 text-amber-800 shadow-sm shadow-amber-500/10 dark:border-amber-700/80 dark:bg-amber-950/50 dark:text-amber-300"
+                            : "border-amber-200/90 bg-amber-50/90 text-amber-700/90 dark:border-amber-800/80 dark:bg-amber-950/40 dark:text-amber-400/90"
+                          : hovered
+                            ? "border-neutral-300 bg-white text-zinc-700 shadow-sm shadow-neutral-500/10 dark:border-neutral-600 dark:bg-zinc-800 dark:text-zinc-200 dark:shadow-black/20"
+                            : "border-zinc-200/90 bg-white/95 text-zinc-600 dark:border-zinc-700/90 dark:bg-zinc-800/95 dark:text-zinc-300"
                   } ${wordSelected ? "ring-1 ring-indigo-400/80" : ""}`}
                   style={{
                     left: w.start * pps,
@@ -747,9 +753,13 @@ export default function Timeline() {
                     height: WORDBAR_H - 10,
                   }}
                   title={
-                    showHandles
-                      ? `${w.text} — drag edges to adjust timing`
-                      : w.text
+                    placeholder
+                      ? showHandles
+                        ? "[*] detected hesitation — drag edges to adjust, or Remove filler words to cut"
+                        : "[*] detected hesitation — cut with Remove filler words"
+                      : showHandles
+                        ? `${w.text} — drag edges to adjust timing`
+                        : w.text
                   }
                   onPointerEnter={() => setHoveredWordId(w.id)}
                   onPointerLeave={() =>

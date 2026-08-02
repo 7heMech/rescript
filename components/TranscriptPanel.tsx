@@ -16,6 +16,7 @@ import {
   X,
 } from "lucide-react";
 import { useEditorStore } from "@/lib/store";
+import { isDisfluencyPlaceholder } from "@/lib/disfluencies";
 import { findFillerWordIds } from "@/lib/fillers";
 import { findSilenceRanges } from "@/lib/silences";
 import {
@@ -60,18 +61,23 @@ const WordSpan = memo(function WordSpan({
   active: boolean;
   onClick: (word: Word, el: HTMLElement) => void;
 }) {
+  const placeholder = isDisfluencyPlaceholder(word.text);
   // The trailing space lives inside the span so that selection and deletion
   // highlights are continuous across words instead of breaking at each gap.
   return (
     <span
       data-wid={word.id}
       data-cut={cutOut ? "" : undefined}
+      data-placeholder={placeholder ? "" : undefined}
+      title={placeholder ? "Detected hesitation (not transcribed) — cut with Remove filler words" : undefined}
       onClick={(e) => onClick(word, e.currentTarget)}
       className={`py-0.5 cursor-pointer transition-colors duration-75 ${cutOut
         ? "word-deleted bg-red-50 text-red-600 line-through decoration-red-300 dark:bg-red-950/40 dark:text-red-400 dark:decoration-red-800"
         : active
           ? "bg-neutral-200/80 text-zinc-900 dark:bg-neutral-700/80 dark:text-zinc-50"
-          : "text-zinc-800 hover:bg-neutral-50 dark:text-zinc-200 dark:hover:bg-neutral-800/60"
+          : placeholder
+            ? "font-medium text-amber-700/90 hover:bg-amber-50 dark:text-amber-400/90 dark:hover:bg-amber-950/40"
+            : "text-zinc-800 hover:bg-neutral-50 dark:text-zinc-200 dark:hover:bg-neutral-800/60"
         }`}
     >
       {word.text}{" "}
@@ -315,7 +321,7 @@ export default function TranscriptPanel() {
           {status === "ready" && fillerIds.length > 0 && (
             <button
               onClick={removeFillers}
-              title='Cut filler words ("um", "uh", …) from the video'
+              title='Cut filler words ("um", "uh", [*], …) from the video'
               className="flex cursor-pointer h-7 items-center gap-1.5 rounded-lg px-2 text-xs text-zinc-500 transition hover:bg-zinc-100 line-clamp-1 dark:text-zinc-400 dark:hover:bg-zinc-800"
             >
               <WandSparkles size={14} />
