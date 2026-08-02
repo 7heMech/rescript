@@ -13,7 +13,7 @@ import {
   isTranscriptLanguage,
 } from "./languages";
 import type { MediaKind } from "./media";
-import type { ManualCut, SceneBoundary, Word } from "./types";
+import type { ManualCut, SceneBoundary, SpeakerInfo, Word } from "./types";
 
 const DB_NAME = "rescript-projects";
 const DB_VERSION = 1;
@@ -47,6 +47,8 @@ export interface ProjectRecord extends ProjectMeta {
   manualCuts?: ManualCut[];
   /** Scene split points in original media time (optional for older saves). */
   sceneBoundaries?: SceneBoundary[];
+  /** Named speakers (optional for older saves — derived from words when missing). */
+  speakers?: SpeakerInfo[];
   /** Original media bytes. */
   media: Blob;
   /** MIME type used when reconstructing a File. */
@@ -186,6 +188,7 @@ export async function putProject(input: ProjectWrite): Promise<string> {
     showDeleted: input.showDeleted,
     manualCuts: input.manualCuts ?? [],
     sceneBoundaries: input.sceneBoundaries ?? [],
+    speakers: input.speakers ?? [],
     media: input.media,
     mediaType: input.mediaType,
     createdAt: createdAt ?? now,

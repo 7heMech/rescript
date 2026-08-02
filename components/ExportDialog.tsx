@@ -63,6 +63,7 @@ export default function ExportDialog() {
   const mediaKind = useEditorStore((s) => s.mediaKind);
   const duration = useEditorStore((s) => s.duration);
   const words = useEditorStore((s) => s.words);
+  const speakers = useEditorStore((s) => s.speakers);
   const hasAudioTrack = useEditorStore((s) => s.audio !== null);
   const status = useEditorStore((s) => s.status);
   const setStatus = useEditorStore((s) => s.setStatus);
@@ -217,6 +218,7 @@ export default function ExportDialog() {
         downloadTranscript(words, format, baseName, {
           duration,
           cuts,
+          speakers,
         });
         setError(null);
       } catch (err) {
@@ -226,6 +228,7 @@ export default function ExportDialog() {
     [
       hasWords,
       words,
+      speakers,
       transcriptFormat,
       subtitleFormat,
       baseName,
