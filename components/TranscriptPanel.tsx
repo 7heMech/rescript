@@ -5,7 +5,6 @@ import {
   ArrowUpFromLine,
   Eye,
   EyeOff,
-  FileText,
   Merge,
   Pencil,
   RotateCcw,
@@ -26,6 +25,10 @@ import {
 } from "@/lib/parseTranscript";
 import type { Word } from "@/lib/types";
 import TranscriptScrollIndicator from "./TranscriptScrollIndicator";
+import SpeakerLabel, {
+  SelectionSpeakerButton,
+  SelectionSpeakerPopover,
+} from "./SpeakerLabel";
 import {
   getActiveSceneBoundaries,
   getKeepRanges,
@@ -35,18 +38,6 @@ import {
 import { useTranscriptSelection } from "@/hooks/useTranscriptSelection";
 import { useCutRanges } from "@/hooks/useCutRanges";
 import { findActiveWordId, groupWordsBySpeaker } from "@/lib/transcript";
-
-const SPEAKER_COLORS = [
-  "#16a34a", // green
-  "#2563eb", // blue
-  "#9333ea", // purple
-  "#ea580c", // orange
-  "#0d9488", // teal
-  "#db2777", // pink
-];
-
-const speakerColor = (i: number) =>
-  SPEAKER_COLORS[Math.max(0, i) % SPEAKER_COLORS.length];
 
 const WordSpan = memo(function WordSpan({
   word,
@@ -159,8 +150,13 @@ export default function TranscriptPanel() {
     containerWidth: number;
   } | null>(null);
   const [correctText, setCorrectText] = useState("");
-  // Mirrors `correcting` so selection handlers can freeze highlights while open.
-  const correctingRef = useRef(false);
+  const [assigningSpeaker, setAssigningSpeaker] = useState<{
+    ids: number[];
+    top: number;
+    left: number;
+  } | null>(null);
+  // Mirrors Correct / Speaker pickers so selection handlers freeze highlights.
+  const freezeSelectionRef = useRef(false);
 
   const {
     selection,
@@ -172,7 +168,7 @@ export default function TranscriptPanel() {
     containerRef,
     scrollRef,
     cutOutIds,
-    correctingRef,
+    freezeSelectionRef,
   });
 
   const turns = useMemo(() => groupWordsBySpeaker(words), [words]);
@@ -208,7 +204,7 @@ export default function TranscriptPanel() {
       }
       try {
         const imported = await parseTranscriptFile(file);
-        importWords(imported);
+        importWords(imported.words, imported.speakers);
       } catch (err) {
         console.error(err);
         alert(err instanceof Error ? err.message : "Could not read that transcript.");
@@ -236,7 +232,7 @@ export default function TranscriptPanel() {
       .filter((w) => idSet.has(w.id))
       .map((w) => w.text)
       .join(" ");
-    correctingRef.current = true;
+    freezeSelectionRef.current = true;
     setCorrectText(text);
     setCorrecting({
       ids: selection.ids,
@@ -248,10 +244,28 @@ export default function TranscriptPanel() {
   }, [selection, words, releaseToolbar]);
 
   const closeCorrect = useCallback(() => {
-    correctingRef.current = false;
+    freezeSelectionRef.current = false;
     clearMarks();
     setCorrecting(null);
   }, [clearMarks]);
+
+  const openSpeakerAssign = useCallback(() => {
+    if (!selection) return;
+    freezeSelectionRef.current = true;
+    setAssigningSpeaker({
+      ids: selection.ids,
+      top: selection.top,
+      left: selection.left,
+    });
+    releaseToolbar();
+  }, [selection, releaseToolbar]);
+
+  const closeSpeakerAssign = useCallback(() => {
+    freezeSelectionRef.current = false;
+    clearMarks();
+    setAssigningSpeaker(null);
+    clearSelection();
+  }, [clearMarks, clearSelection]);
 
   const applyCorrection = useCallback(() => {
     if (!correcting) return;
@@ -286,6 +300,21 @@ export default function TranscriptPanel() {
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
   }, [selectedWordIds, deleteWords, clearSelection]);
+
+  // "@" opens the speaker picker for the current selection.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key !== "@" || e.metaKey || e.ctrlKey || e.altKey) return;
+      const target = e.target as HTMLElement;
+      if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)
+        return;
+      if (!selection || assigningSpeaker || correcting) return;
+      e.preventDefault();
+      openSpeakerAssign();
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [selection, assigningSpeaker, correcting, openSpeakerAssign]);
 
   // Keep the active word in view during playback.
   useEffect(() => {
@@ -414,19 +443,21 @@ export default function TranscriptPanel() {
 
           {status === "ready" && (
             <div className="transcript-words selection:bg-transparent">
-              {turns.map((turn, i) => {
+              {turns.map((turn) => {
                 const visible = showDeleted
                   ? turn.words
                   : turn.words.filter((w) => !cutOutIds.has(w.id));
                 if (visible.length === 0) return null;
+                // First turn in the full word list has no previous speaker to borrow from.
+                const canMove = turn.words[0].id !== words[0]?.id;
                 return (
-                  <div key={i} className="mb-7">
-                    <div
-                      className="mb-1.5 text-[13px] font-semibold"
-                      style={{ color: speakerColor(turn.speaker) }}
-                    >
-                      Speaker {turn.speaker + 1}
-                    </div>
+                  <div key={`${turn.speaker}-${turn.words[0].id}`} className="mb-7">
+                    <SpeakerLabel
+                      speakerId={turn.speaker}
+                      turnWordIds={turn.words.map((w) => w.id)}
+                      turnStartWordId={turn.words[0].id}
+                      canMove={canMove}
+                    />
                     <p className="select-text text-[15px] leading-8">
                       {visible.map((w) => {
                         const split = splitBeforeWordId.get(w.id);
@@ -451,7 +482,7 @@ export default function TranscriptPanel() {
             </div>
           )}
 
-          {selection && !correcting && (
+          {selection && !correcting && !assigningSpeaker && (
             <div
               data-transcript-toolbar
               className="absolute z-20 flex -translate-x-1/2 items-center gap-0.5 rounded-xl border border-zinc-200 bg-white p-1 shadow-lg shadow-zinc-900/10 dark:border-zinc-700 dark:bg-zinc-800 dark:shadow-black/30"
@@ -483,7 +514,17 @@ export default function TranscriptPanel() {
                 <Pencil size={13} />
                 Correct
               </button>
+              <SelectionSpeakerButton onClick={openSpeakerAssign} />
             </div>
+          )}
+
+          {assigningSpeaker && (
+            <SelectionSpeakerPopover
+              wordIds={assigningSpeaker.ids}
+              top={assigningSpeaker.top}
+              left={assigningSpeaker.left}
+              onClose={closeSpeakerAssign}
+            />
           )}
 
           {correcting && (

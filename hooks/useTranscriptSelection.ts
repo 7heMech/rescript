@@ -116,12 +116,16 @@ export function useTranscriptSelection({
   containerRef,
   scrollRef,
   cutOutIds,
-  correctingRef,
+  /**
+   * When true, native selectioncollapse (e.g. focusing a popover input) must
+   * not clear the transcript selection — used by Correct / Speaker pickers.
+   */
+  freezeSelectionRef,
 }: {
   containerRef: RefObject<HTMLElement | null>;
   scrollRef: RefObject<HTMLElement | null>;
   cutOutIds: Set<number>;
-  correctingRef: RefObject<boolean>;
+  freezeSelectionRef: RefObject<boolean>;
 }) {
   const selectedWordIds = useEditorStore((s) => s.selectedWordIds);
   const setSelectedWords = useEditorStore((s) => s.setSelectedWords);
@@ -225,7 +229,7 @@ export function useTranscriptSelection({
     };
 
     const updateFromNativeSelection = (mode: SelectionSyncMode) => {
-      if (correctingRef.current) return;
+      if (freezeSelectionRef.current) return;
       const container = containerRef.current;
       const sel = window.getSelection();
 
@@ -293,12 +297,12 @@ export function useTranscriptSelection({
       document.removeEventListener("mousedown", onMouseDown);
       document.removeEventListener("mouseup", onMouseUp);
     };
-  }, [clearMarks, applyMarks, syncToReact, containerRef, correctingRef]);
+  }, [clearMarks, applyMarks, syncToReact, containerRef, freezeSelectionRef]);
 
   // Clear a click-selection when mousedown lands outside words/toolbar (in-panel only).
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (!clickSelectionRef.current || correctingRef.current) return;
+      if (!clickSelectionRef.current || freezeSelectionRef.current) return;
       const target = e.target as HTMLElement | null;
       if (!target || !scrollRef.current?.contains(target)) return;
       if (target.closest("[data-wid], [data-transcript-toolbar]")) return;
@@ -306,11 +310,11 @@ export function useTranscriptSelection({
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
-  }, [clearSelection, scrollRef, correctingRef]);
+  }, [clearSelection, scrollRef, freezeSelectionRef]);
 
   // Mirror a selection made elsewhere (timeline wordbar) into this panel.
   useEffect(() => {
-    if (correctingRef.current) return;
+    if (freezeSelectionRef.current) return;
     const container = containerRef.current;
     if (!container) return;
     const shown = selection?.ids ?? [];
@@ -344,7 +348,7 @@ export function useTranscriptSelection({
     clearMarks,
     applyMarks,
     containerRef,
-    correctingRef,
+    freezeSelectionRef,
   ]);
 
   return {

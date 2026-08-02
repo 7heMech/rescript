@@ -46,6 +46,19 @@ const sample: Word[] = [
 }
 
 {
+  const srt = serializeTranscript(sample, "srt", {
+    duration: 10,
+    speakers: [
+      { id: 0, name: "Alice" },
+      { id: 1, name: "Bob" },
+    ],
+  });
+  assert(srt.includes("Alice: Hello world"), `named srt\n${srt}`);
+  assert(srt.includes("Bob: How are you"), `named srt 2\n${srt}`);
+  console.log("srt named speakers: ok");
+}
+
+{
   const vtt = serializeTranscript(sample, "vtt", { duration: 10 });
   assert(vtt.startsWith("WEBVTT"), "vtt header");
   assert(vtt.includes("<v Speaker 1>Hello world"), `vtt voice\n${vtt}`);
@@ -61,6 +74,8 @@ const sample: Word[] = [
   assert(data.words.length === 6, "json keeps deleted words");
   assert(data.words[2].deleted === true && data.words[2].text === "um", "json deleted flag");
   assert(data.words[0].speaker === 0, "json speaker");
+  assert(Array.isArray(data.speakers), "json speakers list");
+  assert(data.speakers[0].name === "Speaker 1", "json default speaker name");
   console.log("json export: ok");
 }
 
@@ -85,7 +100,7 @@ const sample: Word[] = [
 {
   // JSON round-trip preserves text, times, speakers, deleted.
   const json = serializeTranscript(sample, "json");
-  const back = parseTranscript(json, "roundtrip.json");
+  const { words: back } = parseTranscript(json, "roundtrip.json");
   assert(back.length === sample.length, "json round-trip length");
   for (let i = 0; i < sample.length; i++) {
     assert(back[i].text === sample[i].text, `json rt text ${i}`);
@@ -106,7 +121,7 @@ const sample: Word[] = [
     editedTimeline: false,
     duration: 10,
   });
-  const back = parseTranscript(srt, "roundtrip.srt");
+  const { words: back } = parseTranscript(srt, "roundtrip.srt");
   assert(back.map((w) => w.text).join(" ") === "Hello world How are you", "srt rt text");
   assert(back[0].speaker === 0 && back[2].speaker === 1, "srt rt speakers");
   assert(near(back[0].start, 1), `srt rt start ${back[0].start}`);
@@ -122,7 +137,7 @@ const sample: Word[] = [
     editedTimeline: false,
     duration: 10,
   });
-  const back = parseTranscript(vtt, "roundtrip.vtt");
+  const { words: back } = parseTranscript(vtt, "roundtrip.vtt");
   assert(back.map((w) => w.text).join(" ") === "Hello world How are you", "vtt rt text");
   assert(back[0].speaker === 0 && back[2].speaker === 1, "vtt rt speakers");
   console.log("vtt round-trip: ok");
