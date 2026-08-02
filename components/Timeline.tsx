@@ -267,11 +267,6 @@ export default function Timeline() {
         ctx.stroke();
       }
       ctx.restore();
-      if (selected) {
-        ctx.strokeStyle = dark ? "rgba(252, 165, 165, 0.7)" : "rgba(239, 68, 68, 0.55)";
-        ctx.lineWidth = 1.5;
-        ctx.strokeRect(x0 + 0.75, trackTop + 0.75, Math.max(0, x1 - x0 - 1.5), trackH - 1.5);
-      }
     });
 
     // Waveform
@@ -782,6 +777,22 @@ export default function Timeline() {
                 </div>
               );
             })}
+
+            {/* Selected cut/silence outline — same rounded ring as selected clips */}
+            {selectedCutIndex != null && cuts[selectedCutIndex] && (
+              <div
+                className="pointer-events-none absolute z-[4] rounded-sm ring-1 ring-red-400/50 dark:ring-red-300/40"
+                style={{
+                  left: cuts[selectedCutIndex].start * pps,
+                  width: Math.max(
+                    2,
+                    (cuts[selectedCutIndex].end - cuts[selectedCutIndex].start) * pps
+                  ),
+                  top: RULER_H + WORDBAR_H + 2,
+                  bottom: 2,
+                }}
+              />
+            )}
 
             {/* Clip trim handles (selected or hovered) */}
             {clips.map((clip) => {
