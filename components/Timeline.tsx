@@ -781,7 +781,7 @@ export default function Timeline() {
             {/* Selected cut/silence outline — same rounded ring as selected clips */}
             {selectedCutIndex != null && cuts[selectedCutIndex] && (
               <div
-                className="pointer-events-none absolute z-[4] rounded-sm ring-1 ring-red-400/50 dark:ring-red-300/40"
+                className="pointer-events-none absolute z-[4] rounded-sm ring-1 ring-neutral-400/40"
                 style={{
                   left: cuts[selectedCutIndex].start * pps,
                   width: Math.max(
