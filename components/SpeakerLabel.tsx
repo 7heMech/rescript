@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
   type PointerEvent as ReactPointerEvent,
+  type RefObject,
 } from "react";
 import {
   Check,
@@ -19,6 +20,7 @@ import {
   Trash2,
   UserRoundPen,
 } from "lucide-react";
+import { FloatingPortal } from "@floating-ui/react";
 import { useEditorStore } from "@/lib/store";
 import {
   findSpeakerByName,
@@ -26,6 +28,7 @@ import {
   speakerLabel,
 } from "@/lib/speakers";
 import type { SpeakerInfo } from "@/lib/types";
+import { useWordAnchorFloating } from "@/hooks/useWordAnchorFloating";
 import Popover, { PopoverContent, PopoverTrigger } from "./Popover";
 
 type PickerMode = "change" | "rename" | "replace";
@@ -387,13 +390,11 @@ export function SelectionSpeakerButton({ onClick }: { onClick: () => void }) {
 /** Anchored picker for reassigning the current word selection. */
 export function SelectionSpeakerPopover({
   wordIds,
-  top,
-  left,
+  containerRef,
   onClose,
 }: {
   wordIds: number[];
-  top: number;
-  left: number;
+  containerRef: RefObject<HTMLElement | null>;
   onClose: () => void;
 }) {
   const speakers = useEditorStore((s) => s.speakers);
@@ -402,6 +403,13 @@ export function SelectionSpeakerPopover({
   const [query, setQuery] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const { setFloating, floatingStyles } = useWordAnchorFloating({
+    open: true,
+    wordIds,
+    containerRef,
+    placement: "top",
+    offsetMain: 8,
+  });
 
   const currentSpeaker = useMemo(() => {
     const idSet = new Set(wordIds);
@@ -449,52 +457,57 @@ export function SelectionSpeakerPopover({
   );
 
   return (
-    <div
-      ref={panelRef}
-      data-speaker-toolbar
-      className="absolute z-20 w-60 max-w-[calc(100%-16px)] -translate-x-1/2 overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-xl shadow-zinc-900/10 dark:border-zinc-700 dark:bg-zinc-800 dark:shadow-black/40"
-      style={{ top: Math.max(4, top - 8), left }}
-      role="dialog"
-      aria-label="Change speaker"
-    >
-      <div className="border-b border-zinc-100 px-2.5 py-2 dark:border-zinc-700">
-        <input
-          ref={inputRef}
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key !== "Enter") return;
-            e.preventDefault();
-            if (exact) apply(exact.id);
-            else if (canCreate) apply("new", trimmedQuery);
-          }}
-          placeholder="Search or create…"
-          className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-2 py-1.5 text-[13px] text-zinc-800 outline-none focus:border-zinc-400 focus:bg-white dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100 dark:focus:border-zinc-400"
-        />
-      </div>
-      <div className="max-h-56 overflow-y-auto py-1">
-        {canCreate && (
-          <button
-            type="button"
-            onClick={() => apply("new", trimmedQuery)}
-            className="flex w-full cursor-pointer items-center gap-2 px-2.5 py-1.5 text-left text-[13px] text-zinc-700 transition hover:bg-zinc-50 dark:text-zinc-200 dark:hover:bg-zinc-800/80"
-          >
-            <Plus size={13} className="shrink-0 text-zinc-400" />
-            <span>
-              Create <span className="font-medium">“{trimmedQuery}”</span>
-            </span>
-          </button>
-        )}
-        {filtered.map((s) => (
-          <SpeakerOption
-            key={s.id}
-            speaker={s}
-            active={s.id === currentSpeaker}
-            onSelect={() => apply(s.id)}
+    <FloatingPortal>
+      <div
+        ref={(node: HTMLDivElement | null) => {
+          panelRef.current = node;
+          setFloating(node);
+        }}
+        data-speaker-toolbar
+        className="z-40 w-60 max-w-[calc(100vw-16px)] overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-xl shadow-zinc-900/10 dark:border-zinc-700 dark:bg-zinc-800 dark:shadow-black/40"
+        style={floatingStyles}
+        role="dialog"
+        aria-label="Change speaker"
+      >
+        <div className="border-b border-zinc-100 px-2.5 py-2 dark:border-zinc-700">
+          <input
+            ref={inputRef}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key !== "Enter") return;
+              e.preventDefault();
+              if (exact) apply(exact.id);
+              else if (canCreate) apply("new", trimmedQuery);
+            }}
+            placeholder="Search or create…"
+            className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-2 py-1.5 text-[13px] text-zinc-800 outline-none focus:border-zinc-400 focus:bg-white dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100 dark:focus:border-zinc-400"
           />
-        ))}
+        </div>
+        <div className="max-h-56 overflow-y-auto py-1">
+          {canCreate && (
+            <button
+              type="button"
+              onClick={() => apply("new", trimmedQuery)}
+              className="flex w-full cursor-pointer items-center gap-2 px-2.5 py-1.5 text-left text-[13px] text-zinc-700 transition hover:bg-zinc-50 dark:text-zinc-200 dark:hover:bg-zinc-800/80"
+            >
+              <Plus size={13} className="shrink-0 text-zinc-400" />
+              <span>
+                Create <span className="font-medium">“{trimmedQuery}”</span>
+              </span>
+            </button>
+          )}
+          {filtered.map((s) => (
+            <SpeakerOption
+              key={s.id}
+              speaker={s}
+              active={s.id === currentSpeaker}
+              onSelect={() => apply(s.id)}
+            />
+          ))}
+        </div>
       </div>
-    </div>
+    </FloatingPortal>
   );
 }
 

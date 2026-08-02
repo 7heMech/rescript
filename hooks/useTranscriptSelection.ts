@@ -15,8 +15,6 @@ export interface TranscriptSelectionInfo {
   ids: number[];
   anyDeleted: boolean;
   anyKept: boolean;
-  top: number;
-  left: number;
 }
 
 /** While dragging: paint marks only. On mouseup / keyboard: sync to React. */
@@ -24,16 +22,6 @@ type SelectionSyncMode = "paint" | "commit";
 
 function sameIds(a: number[], b: number[]): boolean {
   return a.length === b.length && a.every((id, i) => id === b[i]);
-}
-
-function toolbarPosition(
-  rangeRect: DOMRect,
-  containerRect: DOMRect
-): Pick<TranscriptSelectionInfo, "top" | "left"> {
-  return {
-    top: rangeRect.top - containerRect.top - 44,
-    left: Math.max(8, rangeRect.left - containerRect.left + rangeRect.width / 2),
-  };
 }
 
 /** Walk up from a Range boundary to the nearest word span inside `container`. */
@@ -84,8 +72,6 @@ function wordElsInRange(
 
 function selectionInfoFromWordEls(
   els: HTMLElement[],
-  range: Range,
-  container: HTMLElement,
   cutOutIds: Set<number>
 ): TranscriptSelectionInfo | null {
   if (els.length === 0) return null;
@@ -104,7 +90,6 @@ function selectionInfoFromWordEls(
     ids,
     anyDeleted,
     anyKept,
-    ...toolbarPosition(range.getBoundingClientRect(), container.getBoundingClientRect()),
   };
 }
 
@@ -209,10 +194,6 @@ export function useTranscriptSelection({
         ids: [word.id],
         anyDeleted: cutOut,
         anyKept: !cutOut,
-        ...toolbarPosition(
-          el.getBoundingClientRect(),
-          container.getBoundingClientRect()
-        ),
       });
       setSelectedWords([word.id]);
     },
@@ -247,12 +228,7 @@ export function useTranscriptSelection({
       clickSelectionRef.current = false;
       const els = wordElsInRange(container, range);
       applyMarks(els);
-      const info = selectionInfoFromWordEls(
-        els,
-        range,
-        container,
-        cutOutIdsRef.current
-      );
+      const info = selectionInfoFromWordEls(els, cutOutIdsRef.current);
 
       if (mode === "paint") {
         // Hide a stale toolbar while dragging; marks stay imperative.
@@ -336,10 +312,6 @@ export function useTranscriptSelection({
       ids: selectedWordIds,
       anyDeleted: selectedWordIds.some((id) => cutOutIds.has(id)),
       anyKept: selectedWordIds.some((id) => !cutOutIds.has(id)),
-      ...toolbarPosition(
-        els[0].getBoundingClientRect(),
-        container.getBoundingClientRect()
-      ),
     });
   }, [
     selectedWordIds,
