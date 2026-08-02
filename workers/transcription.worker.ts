@@ -15,6 +15,8 @@ import {
   AutoProcessor,
   AutoModel,
   AutoModelForAudioFrameClassification,
+  AutoModelForCTC,
+  AutoTokenizer,
   WhisperTextStreamer,
   Tensor,
   env,
@@ -23,7 +25,14 @@ import {
 import type { Word, WorkerRequest, WorkerResponse } from "@/lib/types";
 import { MODELS, type WhisperModel } from "@/lib/models";
 import { cleanTranscript } from "@/lib/hallucinations";
-import { alignWordsToSpeech } from "@/lib/align";
+import { alignWordsToSpeech, speechEnvelope } from "@/lib/align";
+import {
+  alignBatch,
+  expandToAcoustics,
+  groupWordsForAlignment,
+  type CtcEmission,
+  type CtcVocab,
+} from "@/lib/forcedAlign";
 import {
   VAD_FRAME_SIZE,
   VAD_SAMPLE_RATE,
@@ -41,6 +50,18 @@ if (env.backends?.onnx?.wasm) {
 
 const DIARIZATION_MODEL = "onnx-community/pyannote-segmentation-3.0";
 const VAD_MODEL = "onnx-community/silero-vad";
+/**
+ * Character-level CTC model used to place word boundaries against the audio.
+ * Whisper's own timestamps are a by-product of decoding and only roughly right;
+ * this measures them.
+ */
+const ALIGN_MODEL = "Xenova/wav2vec2-base-960h";
+/** `|` in the wav2vec2 vocabulary — the between-words symbol. */
+const ALIGN_DELIMITER_ID = 4;
+/** Viterbi needs a frames x tokens lattice, so alignment runs in bounded batches. */
+const ALIGN_BATCH_MAX_S = 20;
+/** Context either side of a batch, so edge words are not clipped. */
+const ALIGN_BATCH_PAD_S = 0.2;
 /** Gaps longer than this split speech into separate Whisper jobs. */
 const SPEECH_MAX_GAP_S = 1.5;
 /** Pad each speech region so phoneme edges are not clipped. */
@@ -241,6 +262,12 @@ interface DiarizationSegment {
   confidence: number;
 }
 
+type Aligner = {
+  processor: Awaited<ReturnType<typeof AutoProcessor.from_pretrained>>;
+  model: Awaited<ReturnType<typeof AutoModelForCTC.from_pretrained>>;
+  vocab: CtcVocab;
+};
+
 type Diarizer = {
   processor: Awaited<ReturnType<typeof AutoProcessor.from_pretrained>>;
   model: Awaited<ReturnType<typeof AutoModelForAudioFrameClassification.from_pretrained>>;
@@ -421,6 +448,107 @@ function getDiarizer(): Promise<Diarizer> {
   return diarizerPromise;
 }
 
+/**
+ * Load the CTC acoustic model used to place word boundaries. Warmed in the
+ * background alongside the diarizer, so it is cached by the time Whisper is done.
+ *
+ * q4 is 86 MB against fp32's 360 MB and scored identically on the test clip
+ * (0.033 s mean boundary error). q8 is no smaller and markedly worse — it moved
+ * one word 0.22 s — and fp16 fails to load on onnxruntime-web.
+ */
+let alignerPromise: Promise<Aligner> | null = null;
+function getAligner(): Promise<Aligner> {
+  if (!alignerPromise) {
+    alignerPromise = (async () => {
+      const [processor, model, tokenizer] = await Promise.all([
+        AutoProcessor.from_pretrained(ALIGN_MODEL, {}),
+        AutoModelForCTC.from_pretrained(ALIGN_MODEL, { dtype: "q4" }),
+        AutoTokenizer.from_pretrained(ALIGN_MODEL),
+      ]);
+      /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+      const tok = tokenizer as any;
+      const vocab: CtcVocab = {
+        blankId: tok.pad_token_id ?? 0,
+        delimiterId: ALIGN_DELIMITER_ID,
+        encode: (text) =>
+          text ? (tok.encode(text, { add_special_tokens: false }) as number[]) : [],
+      };
+      return { processor, model, vocab };
+    })();
+    alignerPromise.catch(() => {
+      alignerPromise = null;
+    });
+  }
+  return alignerPromise;
+}
+
+/** Per-frame log-probabilities for one slice of audio. */
+async function ctcEmission(aligner: Aligner, slice: Float32Array): Promise<CtcEmission> {
+  const inputs = await aligner.processor(slice);
+  /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+  const { logits } = await (aligner.model as any)(inputs);
+  const [, frames, vocab] = logits.dims as number[];
+  const data = logits.data as Float32Array;
+  // The model emits raw scores; Viterbi needs log-probabilities.
+  const logProbs = new Float32Array(frames * vocab);
+  for (let t = 0; t < frames; t++) {
+    const row = t * vocab;
+    let max = -Infinity;
+    for (let v = 0; v < vocab; v++) if (data[row + v] > max) max = data[row + v];
+    let sum = 0;
+    for (let v = 0; v < vocab; v++) sum += Math.exp(data[row + v] - max);
+    const logSumExp = max + Math.log(sum);
+    for (let v = 0; v < vocab; v++) logProbs[row + v] = data[row + v] - logSumExp;
+  }
+  return { logProbs, frames, vocab };
+}
+
+/**
+ * Replace Whisper's word timings with boundaries measured against the audio.
+ *
+ * Whisper's own timestamps come from DTW over cross-attention and are only
+ * roughly right; they are used here just to decide which words go in which
+ * batch. Any batch that fails to align keeps the timings it came in with, so a
+ * bad slice costs accuracy on those words rather than losing them.
+ */
+async function forceAlign(
+  words: Word[],
+  audio: Float32Array,
+  duration: number
+): Promise<Word[]> {
+  const aligner = await getAligner();
+  const batches = groupWordsForAlignment(words, ALIGN_BATCH_MAX_S);
+  const out: Word[] = [];
+  let done = 0;
+
+  for (const batch of batches) {
+    const from = Math.max(0, batch[0].start - ALIGN_BATCH_PAD_S);
+    const to = Math.min(duration, batch[batch.length - 1].end + ALIGN_BATCH_PAD_S);
+    const startSample = Math.floor(from * VAD_SAMPLE_RATE);
+    const endSample = Math.min(audio.length, Math.ceil(to * VAD_SAMPLE_RATE));
+    const slice = audio.slice(startSample, endSample);
+    let aligned: Word[] | null = null;
+    if (slice.length > VAD_SAMPLE_RATE / 10) {
+      try {
+        const emission = await ctcEmission(aligner, slice);
+        aligned = alignBatch(
+          batch,
+          emission,
+          startSample / VAD_SAMPLE_RATE,
+          slice.length / VAD_SAMPLE_RATE,
+          aligner.vocab
+        );
+      } catch (err) {
+        console.warn("Forced alignment failed for one batch; keeping decoded times.", err);
+      }
+    }
+    out.push(...(aligned ?? batch));
+    done++;
+    post({ type: "progress", message: "Aligning words…", value: done / batches.length });
+  }
+  return out;
+}
+
 async function diarize(audio: Float32Array): Promise<DiarizationSegment[]> {
   const { processor, model } = await getDiarizer();
   const inputs = await processor(audio);
@@ -474,6 +602,7 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
 
     // Overlap Whisper + Silero downloads; diarizer warms in the background.
     getDiarizer().catch(() => {});
+    getAligner().catch(() => {});
     const [asr, vad] = await Promise.all([getAsr(choice), getVad()]);
     let transcriber = asr;
 
@@ -640,10 +769,26 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
     // phrases ("I'm sorry", "thanks for watching", …) that slip past decoding.
     const cleaned = cleanTranscript(rawWords);
 
-    // Whisper's DTW word timestamps run consistently late (~0.2 s on the test
-    // clips). Realign them against the VAD flags before diarization, so speakers
-    // are assigned from corrected times too.
-    const words = alignWordsToSpeech(cleaned, speechFrames, { duration });
+    // Whisper's DTW word timestamps run late by an amount that drifts across the
+    // clip. Correct them against the VAD as a first pass: forced alignment only
+    // needs them accurate enough to batch by, and this is what we fall back to if
+    // the acoustic model is unavailable.
+    let words = alignWordsToSpeech(cleaned, speechFrames, {
+      duration,
+      audio,
+      sampleRate: VAD_SAMPLE_RATE,
+    });
+
+    // Then measure the boundaries properly. CTC forced alignment decides which
+    // audio each word occupies; the envelope sharpens the edges, which CTC leaves
+    // narrow because its emissions spike on each character and go blank around it.
+    try {
+      post({ type: "progress", message: "Aligning words…", value: 0 });
+      const measured = await forceAlign(words, audio, duration);
+      words = expandToAcoustics(measured, speechEnvelope(audio, VAD_SAMPLE_RATE));
+    } catch (err) {
+      console.warn("Forced alignment unavailable; using VAD-corrected times.", err);
+    }
 
     // Best-effort speaker diarization; a failure should not lose the transcript.
     try {
