@@ -79,12 +79,30 @@ function utf16le(s: string): Uint8Array {
   return out;
 }
 
-/** Pad / truncate to the scaffold placeholder width so we can patch in place. */
+/**
+ * Pad / truncate to the scaffold placeholder width so we can patch in place.
+ * When truncating, keep the file extension so NLE relink-by-name still works.
+ */
 export function fitAafMediaName(fileName: string): string {
   const base = fileName || "media";
-  if (base.length === MARKER_NAME.length) return base;
-  if (base.length < MARKER_NAME.length) return base.padEnd(MARKER_NAME.length, " ");
-  return base.slice(0, MARKER_NAME.length);
+  const width = MARKER_NAME.length;
+  if (base.length === width) return base;
+  if (base.length < width) return base.padEnd(width, " ");
+
+  const lastDot = base.lastIndexOf(".");
+  const ext = lastDot > 0 ? base.slice(lastDot) : "";
+  const stem = lastDot > 0 ? base.slice(0, lastDot) : base;
+  if (!ext || ext.length >= width) return base.slice(0, width);
+  return (stem.slice(0, width - ext.length) + ext).padEnd(width, " ");
+}
+
+/** file:// URL for AAF NetworkLocator (percent-encoded; variable-length rewrite). */
+export function aafMediaFileUrl(fileName: string): string {
+  const encoded = (fileName || "media")
+    .split("/")
+    .map((p) => encodeURIComponent(p))
+    .join("/");
+  return `file:///${encoded}`;
 }
 
 export function secondsToFrames(seconds: number, frameRate: AafFrameRate): number {
@@ -191,6 +209,9 @@ function patchEditRate(slotProps: Uint8Array, num: number, den: number): void {
       return;
     }
   }
+  throw new Error(
+    `AAF scaffold edit rate ${oldNum}/${oldDen} not found; cannot retarget to ${num}/${den}.`
+  );
 }
 
 function writeLocatorProperties(url: string): Uint8Array {
@@ -242,7 +263,7 @@ export async function writeAafComposition(input: AafExportInput): Promise<Blob> 
   const cfb = CFB.parse(new Uint8Array(scaffold));
 
   const fittedName = fitAafMediaName(mediaFileName);
-  const realUrl = `file:///${mediaFileName}`;
+  const realUrl = aafMediaFileUrl(mediaFileName);
 
   for (let i = 0; i < cfb.FileIndex.length; i++) {
     const entry = cfb.FileIndex[i];

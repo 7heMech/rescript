@@ -31,7 +31,7 @@ builds auto-update from GitHub Releases. Prefer the browser? Use the
 - 🔒 **Private by design** — no auth, no uploads; all media processing happens on-device
 - 📝 **Word-level editing** — select words, press ⌫, the cut follows the text
 - 📥 **Import your own transcript** — skip Whisper and edit with an SRT, VTT, or JSON caption file
-- 📤 **Export hub** — video (MP4/WebM, 720p–4K), audio (M4A/MP3/WAV), transcript (TXT/MD), or subtitles (SRT/VTT/JSON)
+- 📤 **Export hub** — video (MP4/WebM, 720p–4K), audio (M4A/MP3/WAV), transcript (TXT/MD), subtitles (SRT/VTT/JSON), or NLE timeline (Resolve/Premiere/FCP/AAF)
 - 🧹 **Filler removal** — one-click cut of "um", "uh", and similar fillers
 - 🔇 **Silence removal** — one-click cut of pauses and dead air (≥0.3s)
 - 🗣️ **Speaker diarization** — the transcript is grouped by speaker

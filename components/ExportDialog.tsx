@@ -32,6 +32,7 @@ import {
   type TimelineExportFormat,
   type TimelineFrameRate,
 } from "@/lib/serializeTimeline";
+import { AAF_MAX_CLIPS } from "@/lib/aaf/patchAaf";
 import { useCutRanges } from "@/hooks/useCutRanges";
 import { useI18n } from "./I18nProvider";
 import { localizeRuntimeMessage } from "@/lib/i18n";
@@ -104,6 +105,12 @@ export default function ExportDialog() {
     () => getEditedDuration(cuts, duration),
     [cuts, duration]
   );
+  const keepRangeCount = useMemo(
+    () => getKeepRanges(cuts, duration).length,
+    [cuts, duration]
+  );
+  const aafOverCap =
+    timelineFormat === "aaf" && keepRangeCount > AAF_MAX_CLIPS;
   const exporting = status === "exporting";
   const hasWords = words.length > 0;
 
@@ -536,6 +543,12 @@ export default function ExportDialog() {
                     ? "Adobe Premiere Pro XML (xmeml)."
                     : "DaVinci Resolve XML (xmeml)."}
             </p>
+            {aafOverCap && (
+              <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+                This edit has {keepRangeCount} clips; AAF supports up to{" "}
+                {AAF_MAX_CLIPS}. Use Resolve, Premiere, or Final Cut instead.
+              </p>
+            )}
           </div>
         )}
 
@@ -623,7 +636,7 @@ export default function ExportDialog() {
         {activeTab === "timeline" && (
           <button
             onClick={exportTimeline}
-            disabled={timelineBusy || !videoFile}
+            disabled={timelineBusy || !videoFile || aafOverCap}
             className="flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-zinc-900 text-sm font-medium text-white transition hover:bg-zinc-700 disabled:opacity-40 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
           >
             <Download size={15} />
