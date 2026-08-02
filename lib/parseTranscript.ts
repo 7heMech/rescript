@@ -1,4 +1,5 @@
-import type { Word } from "./types";
+import { defaultSpeakerName, speakersFromWords } from "./speakers";
+import type { SpeakerInfo, Word } from "./types";
 
 /** Caption / transcript files we can turn into timed words. */
 export const TRANSCRIPT_ACCEPT =
@@ -15,6 +16,11 @@ export function isTranscriptFile(file: File): boolean {
   );
 }
 
+export interface ParsedTranscript {
+  words: Word[];
+  speakers: SpeakerInfo[];
+}
+
 interface Cue {
   start: number;
   end: number;
@@ -23,42 +29,48 @@ interface Cue {
 }
 
 /**
- * Parse an SRT, WebVTT, or JSON transcript into editor `Word`s.
+ * Parse an SRT, WebVTT, or JSON transcript into timed words + named speakers.
  * Cue text is split on whitespace; each cue's time span is distributed
  * across its tokens by character length (same idea as word correction).
  */
-export function parseTranscript(text: string, filename = ""): Word[] {
+export function parseTranscript(
+  text: string,
+  filename = ""
+): ParsedTranscript {
   const trimmed = text.replace(/^\uFEFF/, "").trim();
   if (!trimmed) throw new Error("That transcript file is empty.");
 
   const lower = filename.toLowerCase();
-  let words: Word[];
+  let parsed: ParsedTranscript;
   if (lower.endsWith(".json") || looksLikeJson(trimmed)) {
-    words = wordsFromJson(trimmed);
+    parsed = wordsFromJson(trimmed);
   } else if (lower.endsWith(".vtt") || /^WEBVTT/i.test(trimmed)) {
-    words = wordsFromCues(parseVtt(trimmed));
+    parsed = wordsFromCues(parseVtt(trimmed));
   } else if (lower.endsWith(".srt") || looksLikeSrt(trimmed)) {
-    words = wordsFromCues(parseSrt(trimmed));
+    parsed = wordsFromCues(parseSrt(trimmed));
   } else {
     // Fallbacks when the extension is missing or wrong.
     try {
-      words = wordsFromJson(trimmed);
+      parsed = wordsFromJson(trimmed);
     } catch {
       try {
-        words = wordsFromCues(parseVtt(trimmed));
+        parsed = wordsFromCues(parseVtt(trimmed));
       } catch {
-        words = wordsFromCues(parseSrt(trimmed));
+        parsed = wordsFromCues(parseSrt(trimmed));
       }
     }
   }
 
-  if (words.length === 0) {
+  if (parsed.words.length === 0) {
     throw new Error("No timed words found in that transcript.");
   }
-  return words;
+  return {
+    words: parsed.words,
+    speakers: speakersFromWords(parsed.words, parsed.speakers),
+  };
 }
 
-export async function parseTranscriptFile(file: File): Promise<Word[]> {
+export async function parseTranscriptFile(file: File): Promise<ParsedTranscript> {
   const text = await file.text();
   return parseTranscript(text, file.name);
 }
@@ -74,7 +86,7 @@ function looksLikeSrt(text: string): boolean {
   );
 }
 
-function wordsFromJson(text: string): Word[] {
+function wordsFromJson(text: string): ParsedTranscript {
   let data: unknown;
   try {
     data = JSON.parse(text);
@@ -93,8 +105,14 @@ function wordsFromJson(text: string): Word[] {
     throw new Error('JSON must be a word array or { "words": [...] }.');
   }
 
+  const namedSpeakers = readSpeakerInfos(data);
   const nameToIdx = new Map<string, number>();
   let nextSpeaker = 0;
+  for (const s of namedSpeakers) {
+    nameToIdx.set(s.name.trim().toLowerCase(), s.id);
+    nextSpeaker = Math.max(nextSpeaker, s.id + 1);
+  }
+
   const words: Word[] = [];
 
   for (const row of rows) {
@@ -110,8 +128,13 @@ function wordsFromJson(text: string): Word[] {
       speaker = Math.max(0, Math.floor(r.speaker));
     } else if (typeof r.speaker === "string" && r.speaker.trim()) {
       const name = r.speaker.trim();
-      if (!nameToIdx.has(name)) nameToIdx.set(name, nextSpeaker++);
-      speaker = nameToIdx.get(name)!;
+      const key = name.toLowerCase();
+      if (!nameToIdx.has(key)) {
+        nameToIdx.set(key, nextSpeaker);
+        namedSpeakers.push({ id: nextSpeaker, name });
+        nextSpeaker++;
+      }
+      speaker = nameToIdx.get(key)!;
     }
 
     const s = Math.max(0, start);
@@ -125,7 +148,28 @@ function wordsFromJson(text: string): Word[] {
     });
   }
 
-  return words;
+  return { words, speakers: speakersFromWords(words, namedSpeakers) };
+}
+
+function readSpeakerInfos(data: unknown): SpeakerInfo[] {
+  if (!data || typeof data !== "object" || Array.isArray(data)) return [];
+  const raw = (data as { speakers?: unknown }).speakers;
+  if (!Array.isArray(raw)) return [];
+  const out: SpeakerInfo[] = [];
+  const seen = new Set<number>();
+  for (const row of raw) {
+    if (!row || typeof row !== "object") continue;
+    const r = row as Record<string, unknown>;
+    const id = Number(r.id ?? r.index);
+    if (!Number.isFinite(id) || id < 0 || seen.has(id)) continue;
+    const name =
+      typeof r.name === "string" && r.name.trim()
+        ? r.name.trim()
+        : defaultSpeakerName(id);
+    seen.add(id);
+    out.push({ id: Math.floor(id), name });
+  }
+  return out.sort((a, b) => a.id - b.id);
 }
 
 function parseSrt(text: string): Cue[] {
@@ -238,8 +282,9 @@ function stripCueMeta(raw: string): { text: string; speaker?: string } {
   return { text, speaker };
 }
 
-function wordsFromCues(cues: Cue[]): Word[] {
+function wordsFromCues(cues: Cue[]): ParsedTranscript {
   const speakerIds = new Map<string, number>();
+  const speakers: SpeakerInfo[] = [];
   let nextSpeaker = 0;
   const words: Word[] = [];
   let id = 0;
@@ -250,8 +295,13 @@ function wordsFromCues(cues: Cue[]): Word[] {
 
     let speaker = 0;
     if (cue.speaker) {
-      if (!speakerIds.has(cue.speaker)) speakerIds.set(cue.speaker, nextSpeaker++);
-      speaker = speakerIds.get(cue.speaker)!;
+      const key = cue.speaker.toLowerCase();
+      if (!speakerIds.has(key)) {
+        speakerIds.set(key, nextSpeaker);
+        speakers.push({ id: nextSpeaker, name: cue.speaker });
+        nextSpeaker++;
+      }
+      speaker = speakerIds.get(key)!;
     }
 
     const span = Math.max(0.02, cue.end - cue.start);
@@ -273,5 +323,5 @@ function wordsFromCues(cues: Cue[]): Word[] {
       cursor = end;
     }
   }
-  return words;
+  return { words, speakers: speakersFromWords(words, speakers) };
 }

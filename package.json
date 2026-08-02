@@ -1,12 +1,14 @@
 {
   "name": "rescript",
-  "version": "1.0.9",
+  "version": "1.1.0",
   "description": "Rescript — edit video and audio like you edit text, fully offline.",
   "private": true,
   "author": {
-    "name": "wassgha",
-    "email": "wassgha@gmail.com"
+    "name": "Wassim Gharbi",
+    "email": "wassgha@gmail.com",
+    "url": "https://github.com/wassgha"
   },
+  "license": "PolyForm-Noncommercial-1.0.0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/wassgha/rescript.git"
@@ -36,12 +38,15 @@
     "@floating-ui/react": "^0.27.20",
     "@huggingface/transformers": "^4.2.0",
     "@next/third-parties": "^16.2.12",
+    "@vercel/analytics": "^2.0.1",
     "coi-serviceworker": "^0.1.7",
     "lucide-react": "^1.27.0",
     "next": "16.2.12",
+    "parakeet.js": "^1.4.4",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "react-resizable-panels": "^4.12.2",
+    "weightlift": "^0.2.1",
     "zustand": "^5.0.14"
   },
   "devDependencies": {

@@ -2,13 +2,15 @@
  * Transcription worker: runs entirely in the browser.
  *
  * 1. Silero VAD (energy fallback) finds speech segments; silence is skipped.
- * 2. A Whisper-family model (see lib/models.ts) transcribes each segment with
- *    per-word timestamps, remapped onto the original timeline.
+ * 2. ASR (Whisper via transformers.js, or Parakeet TDT v3 via parakeet.js)
+ *    transcribes each segment with per-word timestamps, remapped onto the
+ *    original timeline.
  * 3. Pyannote segmentation 3.0 assigns a speaker to each word.
  *
- * Models are fetched from the Hugging Face Hub on first use and cached in the
- * browser Cache Storage; every run after that is fully offline. The ONNX
- * runtime WASM binaries are served from /vendor/ort (same origin).
+ * Both ASR backends are registered in a weightlift ModelManager so download
+ * progress, cache labeling, and WebGPU→WASM fallback share one path. Weights
+ * land in Cache Storage (Whisper) or IndexedDB (Parakeet); later runs are
+ * offline. ORT WASM is served same-origin from /vendor/ort* .
  */
 import {
   pipeline,
@@ -22,8 +24,20 @@ import {
   env,
   type AutomaticSpeechRecognitionPipeline,
 } from "@huggingface/transformers";
+import { ModelManager, type ModelDefinition } from "weightlift";
+import {
+  fallbackDevicePolicy,
+  transformersModel,
+} from "weightlift/transformers";
 import type { Word, WorkerRequest, WorkerResponse } from "@/lib/types";
-import { MODELS, type WhisperModel } from "@/lib/models";
+import {
+  MODELS,
+  isParakeetModel,
+  isWhisperModel,
+  whisperFillerPrompt,
+  type ModelId,
+  type WhisperModel,
+} from "@/lib/models";
 import { cleanTranscript } from "@/lib/hallucinations";
 import { alignWordsToSpeech, speechEnvelope } from "@/lib/align";
 import {
@@ -43,9 +57,12 @@ import {
 import { isWebGpuDeviceLostError } from "@/lib/webgpu";
 
 env.allowLocalModels = false;
+const ORT_WASM_PATHS = `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/vendor/ort/`;
+/** Parakeet.js pins onnxruntime-web@1.24.1 — keep its WASM on a separate path. */
+const PARAKEET_ORT_WASM_PATHS = `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/vendor/ort-parakeet/`;
 // Serve onnxruntime-web WASM from our own origin (offline friendly).
 if (env.backends?.onnx?.wasm) {
-  env.backends.onnx.wasm.wasmPaths = `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/vendor/ort/`;
+  env.backends.onnx.wasm.wasmPaths = ORT_WASM_PATHS;
 }
 
 const DIARIZATION_MODEL = "onnx-community/pyannote-segmentation-3.0";
@@ -78,142 +95,201 @@ type AsrChunk = { text: string; timestamp: [number, number | null] };
 const post = (msg: WorkerResponse, transfer: Transferable[] = []) =>
   (self as unknown as Worker).postMessage(msg, transfer);
 
-/**
- * Aggregate model download progress into a single 0..1 value.
- *
- * Prefer transformers.js `progress_total` events: those are pre-seeded with
- * every expected file's size, so the bar does not jump to 100% after the first
- * ONNX file finishes while larger siblings are still downloading. Fall back to
- * per-file `progress` only when totals are unavailable, and rescale `best`
- * whenever the known byte total grows so the bar can move backwards honestly.
- */
-function makeDownloadTracker(label: string) {
-  const files = new Map<string, { loaded: number; total: number }>();
-  let best = 0;
-  let lastTotal = 0;
-  let useTotalEvents = false;
+/** Device the current ASR pipeline is running on. */
+let asrDevice: "webgpu" | "wasm" = "wasm";
 
-  const report = (loaded: number, total: number) => {
-    if (total <= 0) return;
-    if (total > lastTotal && lastTotal > 0 && best > 0) {
-      best *= lastTotal / total;
+type ParakeetInstance = {
+  transcribe: (
+    audio: Float32Array,
+    sampleRate?: number,
+    opts?: {
+      returnTimestamps?: boolean;
+      timeOffset?: number;
     }
-    lastTotal = total;
-    best = Math.max(best, Math.min(1, loaded / total));
-    post({ type: "progress", message: label, value: best });
-  };
+  ) => Promise<{
+    utterance_text: string;
+    words: Array<{ text: string; start_time: number; end_time: number }>;
+  }>;
+};
 
-  return (p: {
-    status?: string;
-    file?: string;
-    loaded?: number;
-    total?: number;
-    progress?: number;
-  }) => {
-    if (p.status === "progress_total") {
-      useTotalEvents = true;
-      const total = p.total ?? 0;
-      const loaded =
-        total > 0 && typeof p.progress === "number"
-          ? (p.progress / 100) * total
-          : (p.loaded ?? 0);
-      report(loaded, total);
-      return;
-    }
+const PARAKEET_CACHE_DB = "parakeet-cache-db";
+const PARAKEET_CACHE_STORE = "file-store";
 
-    // Per-file fallback when the library could not pre-seed expected files.
-    if (useTotalEvents) return;
-    if (p.status !== "progress" || !p.file || !p.total) return;
-    files.set(p.file, { loaded: p.loaded ?? 0, total: p.total });
-    let loaded = 0;
-    let total = 0;
-    for (const f of files.values()) {
-      loaded += f.loaded;
-      total += f.total;
-    }
-    report(loaded, total);
-  };
-}
-
-/**
- * Whether a model's weights are already in the transformers.js browser cache.
- * Used purely to label the progress UI accurately ("Loading … from cache"
- * instead of "Downloading …"): transformers.js emits identical progress
- * events when reading a cached model from disk as when downloading it.
- */
-async function isModelCached(modelId: string): Promise<boolean> {
+/** Whether Parakeet ONNX weights already sit in parakeet.js IndexedDB. */
+async function isParakeetCached(): Promise<boolean> {
+  if (typeof indexedDB === "undefined") return false;
+  // Avoid opening (and thereby creating) the DB when nothing has been cached.
   try {
-    const cache = await caches.open(env.cacheKey ?? "transformers-cache");
-    const keys = await cache.keys();
-    return keys.some((req) => req.url.includes(modelId) && req.url.includes(".onnx"));
+    if (typeof indexedDB.databases === "function") {
+      const dbs = await indexedDB.databases();
+      if (!dbs.some((d) => d.name === PARAKEET_CACHE_DB)) return false;
+    }
+  } catch {
+    // databases() can throw in private mode; fall through to open().
+  }
+
+  const repoId = MODELS.parakeet.repoId;
+  // Hub keys: `hf-${repoId}-main--${filename}` (empty subfolder).
+  const candidates = [
+    `hf-${repoId}-main--encoder-model.int8.onnx`,
+    `hf-${repoId}-main--encoder-model.fp16.onnx`,
+  ];
+  try {
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const req = indexedDB.open(PARAKEET_CACHE_DB);
+      req.onerror = () => reject(req.error ?? new Error("IndexedDB open failed"));
+      req.onsuccess = () => resolve(req.result);
+    });
+    if (!db.objectStoreNames.contains(PARAKEET_CACHE_STORE)) {
+      db.close();
+      return false;
+    }
+    const hit = await new Promise<boolean>((resolve, reject) => {
+      const tx = db.transaction([PARAKEET_CACHE_STORE], "readonly");
+      const store = tx.objectStore(PARAKEET_CACHE_STORE);
+      let pending = candidates.length;
+      let found = false;
+      for (const key of candidates) {
+        const req = store.get(key);
+        req.onsuccess = () => {
+          const blob = req.result as Blob | undefined;
+          if (blob && blob.size > 1_000_000) found = true;
+          pending -= 1;
+          if (pending === 0) resolve(found);
+        };
+        req.onerror = () => reject(req.error ?? new Error("IndexedDB get failed"));
+      }
+    });
+    db.close();
+    return hit;
   } catch {
     return false;
   }
 }
 
-/** Once set, this worker stays on WASM — a lost WebGPU session cannot be reused. */
-let forceWasm = false;
-/** Device the current ASR pipeline is running on. */
-let asrDevice: "webgpu" | "wasm" = "wasm";
-
-async function pickDevice(): Promise<"webgpu" | "wasm"> {
-  if (forceWasm) return "wasm";
-  try {
-    const gpu = (globalThis.navigator as Navigator & {
-      gpu?: { requestAdapter: () => Promise<unknown | null> };
-    })?.gpu;
-    if (gpu && (await gpu.requestAdapter())) return "webgpu";
-  } catch {
-    // fall through to wasm
-  }
-  return "wasm";
-}
-
-// Keyed by model id so choices that share weights reuse one pipeline.
-const asrPromises = new Map<string, Promise<AutomaticSpeechRecognitionPipeline>>();
-async function getAsr(choice: WhisperModel) {
-  const { id, dtype } = MODELS[choice];
-  let promise = asrPromises.get(id);
-  if (!promise) {
-    const device = await pickDevice();
-    asrDevice = device;
-    const label = (await isModelCached(id))
-      ? "Loading speech model from cache…"
-      : "Downloading speech model…";
-    promise = pipeline("automatic-speech-recognition", id, {
-      dtype: dtype[device],
-      device,
-      progress_callback: makeDownloadTracker(label),
-    }).catch((err) => {
-      // WebGPU can fail on some drivers; retry once on plain WASM.
-      if (device === "webgpu") {
-        forceWasm = true;
-        asrDevice = "wasm";
-        return pipeline("automatic-speech-recognition", id, {
-          dtype: dtype.wasm,
-          device: "wasm",
-          progress_callback: makeDownloadTracker(label),
+/**
+ * Parakeet via parakeet.js — custom weightlift definition (not transformers.js).
+ * WebGPU uses fp16 encoder; WASM int8 is the size / compatibility fallback.
+ */
+function parakeetModel(): ModelDefinition<ParakeetInstance> {
+  return {
+    isCached: isParakeetCached,
+    load: async ({ progress }) => {
+      const { fromHub } = await import("parakeet.js");
+      const onProgress = (p: { loaded: number; total: number; file: string }) => {
+        if (!p.file) return;
+        progress.dispatch({
+          type: "progress",
+          file: p.file,
+          loaded: p.loaded,
+          ...(p.total > 0 ? { total: p.total } : {}),
         });
+      };
+      const common = {
+        preprocessorBackend: "js" as const,
+        progress: onProgress,
+        wasmPaths: PARAKEET_ORT_WASM_PATHS,
+      };
+
+      // WebGPU cannot run the int8 encoder; fp16 (~1.2 GB) is the practical
+      // WebGPU path. WASM int8 (~670 MB) is the compatibility / size fallback.
+      const device = await fallbackDevicePolicy.pickDevice();
+      if (device === "webgpu") {
+        try {
+          const model = await fromHub(MODELS.parakeet.id, {
+            ...common,
+            backend: "webgpu",
+            encoderQuant: "fp16",
+            decoderQuant: "int8",
+          });
+          asrDevice = "webgpu";
+          return model as ParakeetInstance;
+        } catch (err) {
+          console.warn(
+            "Parakeet WebGPU/fp16 load failed; falling back to WASM int8.",
+            err
+          );
+          fallbackDevicePolicy.preferWasm();
+        }
       }
-      throw err;
-    }) as Promise<AutomaticSpeechRecognitionPipeline>;
-    asrPromises.set(id, promise);
-    promise.catch(() => asrPromises.delete(id));
-  }
-  return promise;
+
+      const model = await fromHub(MODELS.parakeet.id, {
+        ...common,
+        backend: "wasm",
+        encoderQuant: "int8",
+        decoderQuant: "int8",
+      });
+      asrDevice = "wasm";
+      return model as ParakeetInstance;
+    },
+  };
 }
 
-/** Drop the dead WebGPU pipeline and reload the same model on WASM. */
-async function fallbackAsrToWasm(choice: WhisperModel) {
-  forceWasm = true;
+/**
+ * ASR registry keyed by each model's `id` from MODELS. Definitions are
+ * registered up front; loaders only take an id. unloadAll() after a WebGPU
+ * loss forces a clean reload on WASM.
+ */
+const models = new ModelManager({
+  models: Object.fromEntries(
+    (Object.keys(MODELS) as ModelId[]).map((choice) => {
+      const info = MODELS[choice];
+      if (info.backend === "parakeet") {
+        return [info.id, parakeetModel()];
+      }
+      return [
+        info.id,
+        transformersModel<AutomaticSpeechRecognitionPipeline>({
+          pipeline,
+          task: "automatic-speech-recognition",
+          modelId: info.id,
+          dtype: info.dtype,
+          cacheKey: env.cacheKey ?? "transformers-cache",
+          onDevice: (device) => {
+            asrDevice = device;
+          },
+        }),
+      ];
+    })
+  ),
+});
+models.subscribe((snap) => {
+  const id = snap.loading[0];
+  if (!id) return;
+  const rec = snap.models[id];
+  if (!rec) return;
+  post({
+    type: "progress",
+    message:
+      rec.fromCache === true
+        ? "Loading speech model from cache…"
+        : "Downloading speech model…",
+    value: rec.indeterminate ? null : rec.percent,
+  });
+});
+
+async function getAsr(choice: WhisperModel) {
+  return models.load<AutomaticSpeechRecognitionPipeline>(MODELS[choice].id);
+}
+
+async function getParakeet() {
+  return models.load<ParakeetInstance>(MODELS.parakeet.id);
+}
+
+/**
+ * Drop dead WebGPU pipelines and reload on WASM.
+ * A lost GPU device invalidates every WebGPU session, so clear the whole
+ * ASR cache — not just the model that was running.
+ */
+async function fallbackAsrToWasm() {
+  fallbackDevicePolicy.preferWasm();
   asrDevice = "wasm";
-  asrPromises.clear();
+  await models.unloadAll();
   post({
     type: "progress",
     message: "GPU interrupted — continuing on CPU…",
     value: null,
   });
-  return getAsr(choice);
 }
 
 /**
@@ -594,209 +670,348 @@ function assignSpeakers(words: Word[], segments: DiarizationSegment[]) {
   }
 }
 
+/** Map Parakeet word timestamps onto the original media timeline. */
+function wordsFromParakeet(
+  words: Array<{ text: string; start_time: number; end_time: number }>,
+  offsetS: number,
+  segmentDuration: number,
+  mediaDuration: number
+): Word[] {
+  const clampLocal = (t: number) => Math.min(Math.max(t, 0), segmentDuration);
+  const usable = words
+    .map((w) => ({
+      text: w.text.trim(),
+      start: w.start_time,
+      end: w.end_time,
+    }))
+    .filter((w) => w.text.length > 0);
+
+  return usable.map((w, i) => {
+    const localStart = clampLocal(w.start);
+    const next = usable[i + 1];
+    const nextStart = next ? clampLocal(next.start) : segmentDuration;
+    const localEnd =
+      Number.isFinite(w.end) && w.end <= segmentDuration + 0.05
+        ? clampLocal(w.end)
+        : Math.min(localStart + FALLBACK_WORD_S, Math.max(localStart, nextStart));
+
+    let start = offsetS + localStart;
+    let end = offsetS + Math.max(localEnd, localStart);
+    if (mediaDuration > 0) {
+      start = Math.min(start, mediaDuration);
+      end = Math.min(end, mediaDuration);
+    }
+    start = Math.max(0, start);
+    return {
+      id: i,
+      text: w.text,
+      start,
+      end: Math.max(end, start + 0.02),
+      speaker: 0,
+      deleted: false,
+    };
+  });
+}
+
+async function finishWithDiarization(
+  words: Word[],
+  audio: Float32Array
+): Promise<Word[]> {
+  try {
+    post({ type: "progress", message: "Identifying speakers…", value: null });
+    const segments = await diarize(audio);
+    assignSpeakers(words, segments);
+  } catch (err) {
+    console.warn("Speaker diarization failed; using a single speaker.", err);
+  }
+  return words;
+}
+
+async function runParakeet(
+  audio: Float32Array,
+  duration: number
+): Promise<Word[]> {
+  getDiarizer().catch(() => {});
+  const [loaded, vad] = await Promise.all([getParakeet(), getVad()]);
+  let model = loaded;
+
+  post({ type: "progress", message: "Detecting speech…", value: 0 });
+  const { segments: speechSegments } = await detectSpeechSegments(audio, vad);
+
+  post({ type: "progress", message: "Transcribing…", value: 0 });
+  const speechSamples = speechSegments.reduce(
+    (n, s) => n + (s.endSample - s.startSample),
+    0
+  );
+
+  const rawWords: Word[] = [];
+  let partial = "";
+  let speechDone = 0;
+
+  for (const seg of speechSegments) {
+    const segmentSamples = seg.endSample - seg.startSample;
+    // Fresh buffer: non-zero byteOffset views have caused incomplete ASR with
+    // onnxruntime-web in the Whisper path; keep the same hygiene here.
+    const slice = audio.slice(seg.startSample, seg.endSample);
+    const sliceDuration = slice.length / VAD_SAMPLE_RATE;
+    const offsetS = seg.startSample / VAD_SAMPLE_RATE;
+
+    const runSlice = () =>
+      model.transcribe(slice, VAD_SAMPLE_RATE, {
+        returnTimestamps: true,
+        timeOffset: 0,
+      });
+
+    let result: Awaited<ReturnType<ParakeetInstance["transcribe"]>>;
+    try {
+      result = await runSlice();
+    } catch (err) {
+      if (asrDevice !== "webgpu" || !isWebGpuDeviceLostError(err)) {
+        throw err;
+      }
+      console.warn(
+        "WebGPU lost during Parakeet transcription; reloading on WASM.",
+        err
+      );
+      await fallbackAsrToWasm();
+      model = await getParakeet();
+      result = await runSlice();
+    }
+
+    rawWords.push(
+      ...wordsFromParakeet(result.words ?? [], offsetS, sliceDuration, duration)
+    );
+    const piece = (result.utterance_text ?? "").trim();
+    if (piece) {
+      partial = partial ? `${partial} ${piece}` : piece;
+      post({ type: "partial", text: partial });
+    }
+
+    speechDone += segmentSamples;
+    const value =
+      speechSamples > 0 ? Math.min(1, speechDone / speechSamples) : 1;
+    post({ type: "progress", message: "Transcribing…", value });
+  }
+
+  const cleaned = cleanTranscript(rawWords);
+  return finishWithDiarization(cleaned, audio);
+}
+
+async function runWhisper(
+  audio: Float32Array,
+  duration: number,
+  choice: WhisperModel,
+  transcriptLanguage: WorkerRequest["language"]
+): Promise<Word[]> {
+  // Overlap Whisper + Silero downloads; diarizer and aligner warm in the
+  // background so both are cached by the time the transcript lands.
+  getDiarizer().catch(() => {});
+  getAligner().catch(() => {});
+  const [asr, vad] = await Promise.all([getAsr(choice), getVad()]);
+  let transcriber = asr;
+
+  post({ type: "progress", message: "Detecting speech…", value: 0 });
+  const { segments: speechSegments, frames: speechFrames } =
+    await detectSpeechSegments(audio, vad);
+
+  // Short filler-rich <|startofprev|> prompt so um/uh survive for "Remove
+  // fillers". Long prompts truncate multi-speaker clips — see whisperFillerPrompt.
+  const fillerPrompt = whisperFillerPrompt(choice, transcriptLanguage);
+  const promptedIds = fillerPrompt
+    ? buildPromptedDecoderIds(transcriber, fillerPrompt, transcriptLanguage)
+    : null;
+  if (fillerPrompt && !promptedIds) {
+    console.warn("Could not build filler prompt tokens; using default decoding.");
+  }
+
+  const speechSamples = speechSegments.reduce(
+    (n, s) => n + (s.endSample - s.startSample),
+    0
+  );
+
+  post({ type: "progress", message: "Transcribing…", value: 0 });
+
+  let partial = "";
+  // Use 29s instead of 30: transformers.js has a known word-timestamp bug
+  // at exactly chunk_length_s=30 (#1357 / #1358); 29 is the common workaround.
+  const chunkLength = 29;
+  const stride = 5;
+  const timePrecision =
+    // @ts-expect-error feature_extractor config is untyped
+    (transcriber.processor.feature_extractor.config.chunk_length ?? 30) /
+    // @ts-expect-error model config is untyped
+    (transcriber.model.config.max_source_positions ?? 1500);
+
+  let speechDone = 0;
+  let transcribed = 0;
+  let chunkFloor = 0;
+  let chunkTokens = 0;
+  let avgChunkDelta =
+    speechSamples > 0
+      ? Math.min(0.15, ((chunkLength - stride) * VAD_SAMPLE_RATE) / speechSamples)
+      : 0.05;
+
+  const reportProgress = (segmentLocalT: number, segmentSamples: number) => {
+    const local = Math.min(
+      segmentSamples,
+      Math.max(0, segmentLocalT * VAD_SAMPLE_RATE)
+    );
+    const next = Math.max(
+      transcribed,
+      Math.min(1, speechSamples > 0 ? (speechDone + local) / speechSamples : 1)
+    );
+    const realDelta = next - chunkFloor;
+    if (realDelta > 0) avgChunkDelta = avgChunkDelta * 0.5 + realDelta * 0.5;
+    chunkFloor = next;
+    chunkTokens = 0;
+    transcribed = next;
+    post({ type: "progress", message: "Transcribing…", value: transcribed });
+  };
+
+  /** Nudge the bar forward between chunk boundaries as tokens stream in. */
+  const interpolateProgress = () => {
+    chunkTokens++;
+    // n/(n+8): 0.11 at token 1, 0.5 at token 8, 0.9 at token 72 — strictly
+    // increasing, so it can never get stuck as long as tokens keep coming.
+    const frac = chunkTokens / (chunkTokens + 8);
+    const interpolated = Math.min(0.999, chunkFloor + frac * avgChunkDelta);
+    if (interpolated > transcribed) {
+      transcribed = interpolated;
+      post({ type: "progress", message: "Transcribing…", value: transcribed });
+    }
+  };
+
+  const asrOptions = {
+    chunk_length_s: chunkLength,
+    stride_length_s: stride,
+    return_timestamps: "word" as const,
+    // Anti-repetition: Whisper-base on multi-minute audio often falls into
+    // loops like "little bit of a little bit of a…" near chunk boundaries
+    // or silence. Keep penalty mild — 1.15 truncates multi-speaker clips
+    // mid-utterance (second speaker dropped on continuous speech).
+    no_repeat_ngram_size: 4,
+    repetition_penalty: 1.05,
+    ...(promptedIds
+      ? { decoder_input_ids: promptedIds }
+      : { language: transcriptLanguage }),
+  };
+
+  const rawWords: Word[] = [];
+  const leadPadSamples = Math.floor(WHISPER_LEAD_PAD_S * VAD_SAMPLE_RATE);
+  for (const seg of speechSegments) {
+    const segmentSamples = seg.endSample - seg.startSample;
+    // Copy into a fresh buffer with leading silence. Views with a non-zero
+    // byteOffset have caused incomplete ASR with onnxruntime-web; starting
+    // mid-speech with no lead-in also drops later speakers on mixed clips.
+    const slice = new Float32Array(leadPadSamples + segmentSamples);
+    slice.set(audio.subarray(seg.startSample, seg.endSample), leadPadSamples);
+    const sliceDuration = slice.length / VAD_SAMPLE_RATE;
+    const offsetS = seg.startSample / VAD_SAMPLE_RATE - WHISPER_LEAD_PAD_S;
+
+    // Snapshot progress so a failed WebGPU attempt can be rolled back before
+    // the WASM retry of this same segment.
+    const partialBefore = partial;
+    const progressBefore = { transcribed, chunkFloor, chunkTokens };
+
+    const runSlice = async () => {
+      // Each generate() window consumes `chunkLength - 2 * stride` seconds of
+      // new audio, and the streamer's timestamps rewind to ~0 when the next
+      // window starts. A timestamp lower than the last one seen marks that
+      // boundary; accumulate the offset to recover segment-local time.
+      const windowJumpS = chunkLength - 2 * stride;
+      let windowOffsetS = 0;
+      let lastChunkStartT = 0;
+      const tokenizer = transcriber.tokenizer as ConstructorParameters<
+        typeof WhisperTextStreamer
+      >[0];
+      const streamer = new WhisperTextStreamer(tokenizer, {
+        skip_prompt: true,
+        time_precision: timePrecision,
+        on_chunk_start: (t: number) => {
+          if (t < lastChunkStartT) windowOffsetS += windowJumpS;
+          lastChunkStartT = t;
+          reportProgress(
+            Math.max(0, windowOffsetS + t - WHISPER_LEAD_PAD_S),
+            segmentSamples
+          );
+        },
+        callback_function: (text: string) => {
+          partial += text;
+          post({ type: "partial", text: partial });
+          interpolateProgress();
+        },
+      });
+      const output = await transcriber(slice, { ...asrOptions, streamer });
+      const result = Array.isArray(output) ? output[0] : output;
+      return (result.chunks ?? []) as AsrChunk[];
+    };
+
+    let chunks: AsrChunk[];
+    try {
+      chunks = await runSlice();
+    } catch (err) {
+      // Windows screen lock tears down WebGPU mid-OrtRun. Fall back to WASM
+      // and retry this segment once so the job can finish.
+      if (asrDevice !== "webgpu" || !isWebGpuDeviceLostError(err)) throw err;
+      console.warn(
+        "WebGPU lost during transcription (often after screen lock); falling back to WASM.",
+        err
+      );
+      partial = partialBefore;
+      transcribed = progressBefore.transcribed;
+      chunkFloor = progressBefore.chunkFloor;
+      chunkTokens = progressBefore.chunkTokens;
+      post({ type: "partial", text: partial });
+      await fallbackAsrToWasm();
+      transcriber = await getAsr(choice);
+      chunks = await runSlice();
+    }
+
+    rawWords.push(...wordsFromChunks(chunks, offsetS, sliceDuration, duration));
+    speechDone += segmentSamples;
+    reportProgress(0, 0);
+  }
+
+  // Post-process: collapse leftover n-gram loops and drop known hallucination
+  // phrases ("I'm sorry", "thanks for watching", …) that slip past decoding.
+  const cleaned = cleanTranscript(rawWords);
+
+  // Whisper's DTW word timestamps run late by an amount that drifts across the
+  // clip. Correct them against the VAD as a first pass: forced alignment only
+  // needs them accurate enough to batch by, and this is what we fall back to if
+  // the acoustic model is unavailable.
+  let words = alignWordsToSpeech(cleaned, speechFrames, {
+    duration,
+    audio,
+    sampleRate: VAD_SAMPLE_RATE,
+  });
+
+  // Then measure the boundaries properly. CTC forced alignment decides which
+  // audio each word occupies; the envelope sharpens the edges, which CTC leaves
+  // narrow because its emissions spike on each character and go blank around it.
+  try {
+    const measured = await forceAlign(words, audio, duration);
+    words = expandToAcoustics(measured, speechEnvelope(audio, VAD_SAMPLE_RATE));
+  } catch (err) {
+    console.warn("Forced alignment unavailable; using VAD-corrected times.", err);
+  }
+
+  return finishWithDiarization(words, audio);
+}
+
 self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
   const { audio, duration, model, language } = event.data;
   try {
-    const choice: WhisperModel = model ?? "base";
+    const choice: ModelId = model ?? "base";
     const transcriptLanguage = language ?? "en";
 
-    // Overlap Whisper + Silero downloads; diarizer warms in the background.
-    getDiarizer().catch(() => {});
-    getAligner().catch(() => {});
-    const [asr, vad] = await Promise.all([getAsr(choice), getVad()]);
-    let transcriber = asr;
-
-    post({ type: "progress", message: "Detecting speech…", value: 0 });
-    const { segments: speechSegments, frames: speechFrames } =
-      await detectSpeechSegments(audio, vad);
-
-    const { verbatimPrompt } = MODELS[choice];
-    const promptedIds = verbatimPrompt
-      ? buildPromptedDecoderIds(transcriber, verbatimPrompt, transcriptLanguage)
-      : null;
-    if (verbatimPrompt && !promptedIds) {
-      console.warn("Could not build verbatim prompt tokens; using default decoding.");
-    }
-
-    const speechSamples = speechSegments.reduce(
-      (n, s) => n + (s.endSample - s.startSample),
-      0
-    );
-
-    post({ type: "progress", message: "Transcribing…", value: 0 });
-
-    let partial = "";
-    // Use 29s instead of 30: transformers.js has a known word-timestamp bug
-    // at exactly chunk_length_s=30 (#1357 / #1358); 29 is the common workaround.
-    const chunkLength = 29;
-    const stride = 5;
-    const timePrecision =
-      // @ts-expect-error feature_extractor config is untyped
-      (transcriber.processor.feature_extractor.config.chunk_length ?? 30) /
-      // @ts-expect-error model config is untyped
-      (transcriber.model.config.max_source_positions ?? 1500);
-
-    let speechDone = 0;
-    let transcribed = 0;
-    let chunkFloor = 0;
-    let chunkTokens = 0;
-    let avgChunkDelta =
-      speechSamples > 0
-        ? Math.min(0.15, ((chunkLength - stride) * VAD_SAMPLE_RATE) / speechSamples)
-        : 0.05;
-
-    const reportProgress = (segmentLocalT: number, segmentSamples: number) => {
-      const local = Math.min(
-        segmentSamples,
-        Math.max(0, segmentLocalT * VAD_SAMPLE_RATE)
-      );
-      const next = Math.max(
-        transcribed,
-        Math.min(1, speechSamples > 0 ? (speechDone + local) / speechSamples : 1)
-      );
-      const realDelta = next - chunkFloor;
-      if (realDelta > 0) avgChunkDelta = avgChunkDelta * 0.5 + realDelta * 0.5;
-      chunkFloor = next;
-      chunkTokens = 0;
-      transcribed = next;
-      post({ type: "progress", message: "Transcribing…", value: transcribed });
-    };
-
-    /** Nudge the bar forward between chunk boundaries as tokens stream in. */
-    const interpolateProgress = () => {
-      chunkTokens++;
-      // n/(n+8): 0.11 at token 1, 0.5 at token 8, 0.9 at token 72 — strictly
-      // increasing, so it can never get stuck as long as tokens keep coming.
-      const frac = chunkTokens / (chunkTokens + 8);
-      const interpolated = Math.min(0.999, chunkFloor + frac * avgChunkDelta);
-      if (interpolated > transcribed) {
-        transcribed = interpolated;
-        post({ type: "progress", message: "Transcribing…", value: transcribed });
-      }
-    };
-
-    const asrOptions = {
-      chunk_length_s: chunkLength,
-      stride_length_s: stride,
-      return_timestamps: "word" as const,
-      // Anti-repetition: Whisper-base on multi-minute audio often falls into
-      // loops like "little bit of a little bit of a…" near chunk boundaries
-      // or silence. Keep penalty mild — 1.15 truncates multi-speaker clips
-      // mid-utterance (second speaker dropped on continuous speech).
-      no_repeat_ngram_size: 4,
-      repetition_penalty: 1.05,
-      ...(promptedIds
-        ? { decoder_input_ids: promptedIds }
-        : { language: transcriptLanguage }),
-    };
-
-    const rawWords: Word[] = [];
-    const leadPadSamples = Math.floor(WHISPER_LEAD_PAD_S * VAD_SAMPLE_RATE);
-    for (const seg of speechSegments) {
-      const segmentSamples = seg.endSample - seg.startSample;
-      // Copy into a fresh buffer with leading silence. Views with a non-zero
-      // byteOffset have caused incomplete ASR with onnxruntime-web; starting
-      // mid-speech with no lead-in also drops later speakers on mixed clips.
-      const slice = new Float32Array(leadPadSamples + segmentSamples);
-      slice.set(audio.subarray(seg.startSample, seg.endSample), leadPadSamples);
-      const sliceDuration = slice.length / VAD_SAMPLE_RATE;
-      const offsetS = seg.startSample / VAD_SAMPLE_RATE - WHISPER_LEAD_PAD_S;
-
-      // Snapshot progress so a failed WebGPU attempt can be rolled back before
-      // the WASM retry of this same segment.
-      const partialBefore = partial;
-      const progressBefore = { transcribed, chunkFloor, chunkTokens };
-
-      const runSlice = async () => {
-        // Each generate() window consumes `chunkLength - 2 * stride` seconds of
-        // new audio, and the streamer's timestamps rewind to ~0 when the next
-        // window starts. A timestamp lower than the last one seen marks that
-        // boundary; accumulate the offset to recover segment-local time.
-        const windowJumpS = chunkLength - 2 * stride;
-        let windowOffsetS = 0;
-        let lastChunkStartT = 0;
-        const tokenizer = transcriber.tokenizer as ConstructorParameters<
-          typeof WhisperTextStreamer
-        >[0];
-        const streamer = new WhisperTextStreamer(tokenizer, {
-          skip_prompt: true,
-          time_precision: timePrecision,
-          on_chunk_start: (t: number) => {
-            if (t < lastChunkStartT) windowOffsetS += windowJumpS;
-            lastChunkStartT = t;
-            reportProgress(
-              Math.max(0, windowOffsetS + t - WHISPER_LEAD_PAD_S),
-              segmentSamples
-            );
-          },
-          callback_function: (text: string) => {
-            partial += text;
-            post({ type: "partial", text: partial });
-            interpolateProgress();
-          },
-        });
-        const output = await transcriber(slice, { ...asrOptions, streamer });
-        const result = Array.isArray(output) ? output[0] : output;
-        return (result.chunks ?? []) as AsrChunk[];
-      };
-
-      let chunks: AsrChunk[];
-      try {
-        chunks = await runSlice();
-      } catch (err) {
-        // Windows screen lock tears down WebGPU mid-OrtRun. Fall back to WASM
-        // and retry this segment once so the job can finish.
-        if (asrDevice !== "webgpu" || !isWebGpuDeviceLostError(err)) throw err;
-        console.warn(
-          "WebGPU lost during transcription (often after screen lock); falling back to WASM.",
-          err
-        );
-        partial = partialBefore;
-        transcribed = progressBefore.transcribed;
-        chunkFloor = progressBefore.chunkFloor;
-        chunkTokens = progressBefore.chunkTokens;
-        post({ type: "partial", text: partial });
-        transcriber = await fallbackAsrToWasm(choice);
-        chunks = await runSlice();
-      }
-
-      rawWords.push(...wordsFromChunks(chunks, offsetS, sliceDuration, duration));
-      speechDone += segmentSamples;
-      reportProgress(0, 0);
-    }
-
-    // Post-process: collapse leftover n-gram loops and drop known hallucination
-    // phrases ("I'm sorry", "thanks for watching", …) that slip past decoding.
-    const cleaned = cleanTranscript(rawWords);
-
-    // Whisper's DTW word timestamps run late by an amount that drifts across the
-    // clip. Correct them against the VAD as a first pass: forced alignment only
-    // needs them accurate enough to batch by, and this is what we fall back to if
-    // the acoustic model is unavailable.
-    let words = alignWordsToSpeech(cleaned, speechFrames, {
-      duration,
-      audio,
-      sampleRate: VAD_SAMPLE_RATE,
-    });
-
-    // Then measure the boundaries properly. CTC forced alignment decides which
-    // audio each word occupies; the envelope sharpens the edges, which CTC leaves
-    // narrow because its emissions spike on each character and go blank around it.
-    try {
-      post({ type: "progress", message: "Aligning words…", value: 0 });
-      const measured = await forceAlign(words, audio, duration);
-      words = expandToAcoustics(measured, speechEnvelope(audio, VAD_SAMPLE_RATE));
-    } catch (err) {
-      console.warn("Forced alignment unavailable; using VAD-corrected times.", err);
-    }
-
-    // Best-effort speaker diarization; a failure should not lose the transcript.
-    try {
-      post({ type: "progress", message: "Identifying speakers…", value: null });
-      const segments = await diarize(audio);
-      assignSpeakers(words, segments);
-    } catch (err) {
-      console.warn("Speaker diarization failed; using a single speaker.", err);
+    let words: Word[];
+    if (isParakeetModel(choice)) {
+      words = await runParakeet(audio, duration);
+    } else if (isWhisperModel(choice)) {
+      words = await runWhisper(audio, duration, choice, transcriptLanguage);
+    } else {
+      throw new Error(`Unknown speech model: ${String(choice)}`);
     }
 
     post({ type: "complete", words });

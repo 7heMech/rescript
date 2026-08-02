@@ -23,6 +23,7 @@ import ModelSelector, {
   ModelOptionSeparator,
 } from "./ModelSelector";
 import ImportTranscriptOption from "./ImportTranscriptOption";
+import { MODEL_ORDER } from "@/lib/models";
 import { useCrossOriginIsolated } from "@/hooks/useCrossOriginIsolated";
 import { detectMediaKind, MEDIA_ACCEPT } from "@/lib/media";
 import { formatTime } from "@/lib/edits";
@@ -33,7 +34,7 @@ import {
 } from "@/lib/projects";
 import { isElectron } from "@/lib/platform";
 import { useEditorStore } from "@/lib/store";
-import type { Word } from "@/lib/types";
+import type { SpeakerInfo, Word } from "@/lib/types";
 
 // The three media cards that stand in for the upload icon. Each carries its
 // resting transform plus the fanned-out one, applied either on hover (via the
@@ -155,7 +156,10 @@ function RecentProjects({
 export default function UploadScreen({
   onFile,
 }: {
-  onFile: (file: File, options?: { words?: Word[] }) => void;
+  onFile: (
+    file: File,
+    options?: { words?: Word[]; speakers?: SpeakerInfo[] }
+  ) => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
@@ -166,7 +170,7 @@ export default function UploadScreen({
   // would fail immediately and lose the file to that reload.
   const isolation = useCrossOriginIsolated();
   const ready = isolation === "ready";
-  const model = useEditorStore((s) => s.model);
+  const source = useEditorStore((s) => s.source);
   const pendingTranscript = useEditorStore((s) => s.pendingTranscript);
   const openProject = useEditorStore((s) => s.openProject);
   const removeProject = useEditorStore((s) => s.removeProject);
@@ -205,14 +209,13 @@ export default function UploadScreen({
         alert("Please choose a video or audio file.");
         return;
       }
-      const { model: source, pendingTranscript: pending } =
-        useEditorStore.getState();
+      const { source, pendingTranscript: pending } = useEditorStore.getState();
       if (source === "import") {
         if (!pending) {
           alert("Choose a transcript file from the source menu first.");
           return;
         }
-        onFile(file, { words: pending.words });
+        onFile(file, { words: pending.words, speakers: pending.speakers });
         return;
       }
       onFile(file);
@@ -275,8 +278,9 @@ export default function UploadScreen({
                 <SettingsMenu />
                 <div className="h-5 w-px bg-zinc-200 dark:bg-zinc-700" />
                 <ModelSelector groupLabel="Transcript source">
-                  <ModelOption id="base" />
-                  <ModelOption id="small" />
+                  {MODEL_ORDER.map((id) => (
+                    <ModelOption key={id} id={id} />
+                  ))}
                   <ModelOptionSeparator />
                   <LanguageSection />
                   <ModelOptionSeparator />
@@ -341,7 +345,7 @@ export default function UploadScreen({
                   <span className="text-neutral-600 dark:text-neutral-300">browse</span>
                 </p>
                 <p className="mt-1 text-[13px] text-zinc-400 dark:text-zinc-500">
-                  {model === "import"
+                  {source === "import"
                     ? pendingTranscript
                       ? `Will use ${pendingTranscript.name} · MP4, WebM, MOV, MP3, WAV, …`
                       : "Pick a transcript in the menu above, then drop your media"

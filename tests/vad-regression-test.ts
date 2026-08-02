@@ -14,7 +14,15 @@ import {
   speechSegmentsFromFrames,
   VAD_SAMPLE_RATE,
 } from "../lib/vad";
-import { MODELS } from "../lib/models";
+import {
+  MAX_VERBATIM_PROMPT_LENGTH,
+  MODELS,
+  whisperFillerPrompt,
+} from "../lib/models";
+import {
+  TRANSCRIPT_LANGUAGE_ORDER,
+  type TranscriptLanguage,
+} from "../lib/languages";
 
 const wav = path.join(
   process.cwd(),
@@ -30,14 +38,29 @@ function ffmpegAvailable(): boolean {
   return probe.status === 0;
 }
 
-// Long decoder prompts truncate long-form ASR — models must not set them.
+// Short filler prompts are OK; long ones truncate multi-speaker / long-form ASR.
 for (const id of Object.keys(MODELS) as (keyof typeof MODELS)[]) {
-  assert(
-    !MODELS[id].verbatimPrompt,
-    `${id} must not set verbatimPrompt (truncates multi-speaker clips)`
-  );
+  const info = MODELS[id];
+  if (info.backend !== "whisper") continue;
+  assert(info.keepFillers === true, `${id} should keep fillers via a short prompt`);
+  for (const language of TRANSCRIPT_LANGUAGE_ORDER) {
+    const prompt = whisperFillerPrompt(id, language);
+    assert(!!prompt, `${id}/${language} must resolve a filler prompt`);
+    assert(
+      prompt!.length <= MAX_VERBATIM_PROMPT_LENGTH,
+      `${id}/${language} filler prompt too long (${prompt!.length} > ${MAX_VERBATIM_PROMPT_LENGTH})`
+    );
+    assert(
+      !/\bI'm\b/i.test(prompt!),
+      `${id}/${language} filler prompt must not contain "I'm" (seeds hallucination loops)`
+    );
+  }
 }
-console.log("models have no verbatimPrompt: ok");
+assert(
+  whisperFillerPrompt("parakeet", "en" as TranscriptLanguage) === null,
+  "parakeet must not use Whisper filler prompts"
+);
+console.log("whisper filler prompts stay short: ok");
 
 const workerSrc = fs.readFileSync(
   path.join(process.cwd(), "workers/transcription.worker.ts"),

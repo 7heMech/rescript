@@ -9,7 +9,7 @@ function assert(cond: boolean, msg: string) {
 }
 
 {
-  const words = parseTranscript(
+  const { words } = parseTranscript(
     `1
 00:00:01,000 --> 00:00:03,000
 Hello world
@@ -31,7 +31,7 @@ Alice: How are you?
 }
 
 {
-  const words = parseTranscript(
+  const { words, speakers } = parseTranscript(
     `WEBVTT
 
 00:00:00.000 --> 00:00:02.000
@@ -45,11 +45,13 @@ Alice: How are you?
   assert(words.length === 6, `vtt expected 6 words, got ${words.length}`);
   assert(words[0].speaker === 0 && words[0].text === "Winter", "vtt voice 0");
   assert(words[3].speaker === 1 && words[3].text === "You", "vtt voice 1");
+  assert(speakers[0].name === "Ned", "vtt keeps Ned");
+  assert(speakers[1].name === "Catelyn", "vtt keeps Catelyn");
   console.log("vtt: ok");
 }
 
 {
-  const words = parseTranscript(
+  const { words } = parseTranscript(
     JSON.stringify({
       words: [
         { text: "One", start: 0, end: 0.4, speaker: "A" },

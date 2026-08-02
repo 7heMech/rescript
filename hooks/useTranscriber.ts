@@ -1,13 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useRef } from "react";
-import { isWhisperModel } from "@/lib/models";
+import { isModelId } from "@/lib/models";
 import { useEditorStore } from "@/lib/store";
 import type { WorkerResponse } from "@/lib/types";
 
 let activeWorker: Worker | null = null;
 
-/** Stop an in-flight Whisper job (e.g. after importing a transcript). */
+/** Stop an in-flight ASR job (e.g. after importing a transcript). */
 export function cancelTranscription() {
   activeWorker?.terminate();
   activeWorker = null;
@@ -26,11 +26,11 @@ export function useTranscriber() {
 
   const transcribe = useCallback((audio: Float32Array, duration: number) => {
     const store = useEditorStore.getState();
-    if (!isWhisperModel(store.model)) {
-      store.setError("Select Whisper Base or Small to transcribe.");
+    if (!isModelId(store.source)) {
+      store.setError("Select a speech model to transcribe.");
       return;
     }
-    const whisperModel = store.model;
+    const model = store.source;
     const transcriptLanguage = store.transcriptLanguage;
     store.setStatus("transcribing");
     store.setProgress({ message: "Loading speech model…", value: null });
@@ -44,7 +44,7 @@ export function useTranscriber() {
     activeWorker = workerRef.current;
     workerRef.current.onmessage = (event: MessageEvent<WorkerResponse>) => {
       const s = useEditorStore.getState();
-      // An imported transcript sets skipTranscription; ignore late Whisper results.
+      // An imported transcript sets skipTranscription; ignore late ASR results.
       if (s.skipTranscription) return;
       const msg = event.data;
       switch (msg.type) {
@@ -73,7 +73,7 @@ export function useTranscriber() {
     // Transfer a copy so the original stays available for the waveform.
     const copy = audio.slice();
     workerRef.current.postMessage(
-      { audio: copy, duration, model: whisperModel, language: transcriptLanguage },
+      { audio: copy, duration, model, language: transcriptLanguage },
       [copy.buffer]
     );
   }, []);
