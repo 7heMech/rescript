@@ -184,9 +184,12 @@ function topAt(anchors: Anchor[], time: number): number {
 export default function TranscriptScrollIndicator({
   scrollRef,
   contentRef,
+  onUserScroll,
 }: {
   scrollRef: RefObject<HTMLDivElement | null>;
   contentRef: RefObject<HTMLDivElement | null>;
+  /** Fired when the user drags or clicks the rail (not programmatic scroll). */
+  onUserScroll?: () => void;
 }) {
   const words = useEditorStore((s) => s.words);
   const starts = useMemo(() => {
@@ -371,6 +374,7 @@ export default function TranscriptScrollIndicator({
       const thumb = thumbRef.current;
       if (!scroller || !rail || !thumb) return;
       e.preventDefault();
+      onUserScroll?.();
 
       const railRect = rail.getBoundingClientRect();
       const thumbRect = thumb.getBoundingClientRect();
@@ -403,7 +407,7 @@ export default function TranscriptScrollIndicator({
       window.addEventListener("pointermove", onMove);
       window.addEventListener("pointerup", onUp);
     },
-    [scrollRef, bump]
+    [scrollRef, bump, onUserScroll]
   );
 
   return (
