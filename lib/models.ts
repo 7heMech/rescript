@@ -7,13 +7,18 @@ export type ModelChoice = AsrModel | "import";
 
 type DType = "fp32" | "fp16" | "q8" | "int8" | "uint8" | "q4" | "q4f16" | "bnb4";
 
-export interface ModelInfo {
-  /** Hugging Face model id (ONNX export compatible with transformers.js). */
-  id: string;
+/** Shared UI fields for every local ASR backend. */
+type ModelDisplay = {
   label: string;
   description: string;
   /** Approximate download size shown in the UI. */
   size: string;
+};
+
+export type WhisperModelInfo = ModelDisplay & {
+  backend: "whisper";
+  /** Hugging Face model id (ONNX export compatible with transformers.js). */
+  id: string;
   /** dtype configuration per device. */
   dtype: {
     webgpu: Record<string, DType>;
@@ -30,21 +35,40 @@ export interface ModelInfo {
    * required for word-level timestamps, which this editor depends on.)
    */
   verbatimPrompt?: string;
-}
+};
 
-/** Display order for Whisper rows in the homepage source dropdown. */
-export const WHISPER_ORDER: WhisperModel[] = ["base", "small"];
+export type ParakeetModelInfo = ModelDisplay & {
+  backend: "parakeet";
+  /** parakeet.js model key (also the weightlift registry id). */
+  id: string;
+  /** Hugging Face repo used by parakeet.js hub downloads / IndexedDB cache keys. */
+  repoId: string;
+};
+
+export type ModelInfo = WhisperModelInfo | ParakeetModelInfo;
+
+/** Display order for ASR rows in the source dropdown. */
+export const ASR_ORDER: AsrModel[] = ["base", "small", "parakeet"];
 
 const WHISPER_DTYPE = {
   // q4 decoder: q8 fails session creation on onnxruntime-web 1.26
   // (Missing required scale … MatMulNBits).
   webgpu: { encoder_model: "fp32", decoder_model_merged: "q4" },
   wasm: { encoder_model: "fp32", decoder_model_merged: "q4" },
-} satisfies ModelInfo["dtype"];
+} satisfies WhisperModelInfo["dtype"];
 
-/** Whisper models that can run in the transcription worker. */
-export const MODELS: Record<WhisperModel, ModelInfo> = {
+/**
+ * Local ASR models that can run in the transcription worker.
+ * Shared display fields live on every entry; backend-specific knobs
+ * (`dtype` / `verbatimPrompt` vs `repoId`) are gated by `backend`.
+ */
+export const MODELS: {
+  base: WhisperModelInfo;
+  small: WhisperModelInfo;
+  parakeet: ParakeetModelInfo;
+} = {
   base: {
+    backend: "whisper",
     id: "onnx-community/whisper-base_timestamped",
     label: "Whisper Base",
     description: "Faster download and transcription. Good for most clips.",
@@ -55,28 +79,24 @@ export const MODELS: Record<WhisperModel, ModelInfo> = {
     // speaker on mixed clips). Prefer post-process / filler tools instead.
   },
   small: {
+    backend: "whisper",
     id: "onnx-community/whisper-small_timestamped",
     label: "Whisper Small",
     description: "More accurate on longer or noisier audio. Larger download.",
     size: "~600 MB",
     dtype: WHISPER_DTYPE,
   },
+  parakeet: {
+    backend: "parakeet",
+    id: "parakeet-tdt-0.6b-v3",
+    repoId: "ysdede/parakeet-tdt-0.6b-v3-onnx",
+    label: "Parakeet TDT v3",
+    description:
+      "NVIDIA FastConformer — faster on WebGPU, strong EU-language accuracy. Auto-detects language.",
+    // WASM int8 ~670 MB; WebGPU fp16 ~1.2 GB.
+    size: "~700 MB",
+  },
 };
-
-/**
- * UI metadata for Parakeet (not a transformers.js Whisper checkpoint).
- * Download size depends on backend: WASM int8 ~670 MB, WebGPU fp16 ~1.2 GB.
- */
-export const PARAKEET_INFO = {
-  /** parakeet.js model key (weightlift registry id). */
-  id: "parakeet-tdt-0.6b-v3",
-  /** Hugging Face repo used by parakeet.js hub downloads / IndexedDB cache keys. */
-  repoId: "ysdede/parakeet-tdt-0.6b-v3-onnx",
-  label: "Parakeet TDT v3",
-  description:
-    "NVIDIA FastConformer — faster on WebGPU, strong EU-language accuracy. Auto-detects language.",
-  size: "~700 MB",
-} as const;
 
 export function isWhisperModel(value: unknown): value is WhisperModel {
   return value === "base" || value === "small";
@@ -88,7 +108,7 @@ export function isParakeetModel(value: unknown): value is ParakeetModel {
 
 /** Models that run local ASR in the transcription worker (not import). */
 export function isAsrModel(value: unknown): value is AsrModel {
-  return isWhisperModel(value) || isParakeetModel(value);
+  return typeof value === "string" && Object.prototype.hasOwnProperty.call(MODELS, value);
 }
 
 export function isModelChoice(value: unknown): value is ModelChoice {

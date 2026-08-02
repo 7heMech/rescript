@@ -27,7 +27,6 @@ import {
 import {
   isAsrModel,
   isModelChoice,
-  isWhisperModel,
   loadModelPreference,
   saveModelPreference,
 } from "./models";

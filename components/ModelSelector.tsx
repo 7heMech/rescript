@@ -26,9 +26,9 @@ import {
   type TranscriptLanguage,
 } from "@/lib/languages";
 import {
+  ASR_ORDER,
   MODELS,
-  PARAKEET_INFO,
-  isParakeetModel,
+  isAsrModel,
   isWhisperModel,
   type ModelChoice,
 } from "@/lib/models";
@@ -191,13 +191,11 @@ export default function ModelSelector({
     activeTrigger?.icon ?? (model === "import" ? FileText : AudioLines);
   const baseTriggerLabel =
     activeTrigger?.label ??
-    (isWhisperModel(model)
+    (isAsrModel(model)
       ? MODELS[model].label
-      : isParakeetModel(model)
-        ? PARAKEET_INFO.label
-        : model === "import"
-          ? "Import transcript"
-          : String(model));
+      : model === "import"
+        ? "Import transcript"
+        : String(model));
   const languageInfo = TRANSCRIPT_LANGUAGES[transcriptLanguage];
   const showLanguageInTrigger =
     isWhisperModel(model) &&
@@ -207,9 +205,9 @@ export default function ModelSelector({
   // Always mount options (hidden when closed) so custom triggers stay registered.
   const options = children ?? (
     <>
-      <ModelOption id="base" />
-      <ModelOption id="small" />
-      <ModelOption id="parakeet" />
+      {ASR_ORDER.map((id) => (
+        <ModelOption key={id} id={id} />
+      ))}
     </>
   );
 
@@ -303,7 +301,7 @@ export default function ModelSelector({
   );
 }
 
-/** Default option row: icon + label + optional meta. Whisper ids fill in from MODELS. */
+/** Default option row: icon + label + optional meta. ASR ids fill in from MODELS. */
 export function ModelOption({
   id,
   label,
@@ -325,20 +323,8 @@ export function ModelOption({
   const selector = useSelectorCtx();
   const selected = selector.value === id;
 
-  const resolvedLabel =
-    label ??
-    (isWhisperModel(id)
-      ? MODELS[id].label
-      : isParakeetModel(id)
-        ? PARAKEET_INFO.label
-        : id);
-  const resolvedMeta =
-    meta ??
-    (isWhisperModel(id)
-      ? MODELS[id].size
-      : isParakeetModel(id)
-        ? PARAKEET_INFO.size
-        : undefined);
+  const resolvedLabel = label ?? (isAsrModel(id) ? MODELS[id].label : id);
+  const resolvedMeta = meta ?? (isAsrModel(id) ? MODELS[id].size : undefined);
 
   const optionCtx = useMemo<ModelOptionContextValue>(
     () => ({

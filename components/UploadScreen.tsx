@@ -23,6 +23,7 @@ import ModelSelector, {
   ModelOptionSeparator,
 } from "./ModelSelector";
 import ImportTranscriptOption from "./ImportTranscriptOption";
+import { ASR_ORDER } from "@/lib/models";
 import { useCrossOriginIsolated } from "@/hooks/useCrossOriginIsolated";
 import { detectMediaKind, MEDIA_ACCEPT } from "@/lib/media";
 import { formatTime } from "@/lib/edits";
@@ -275,9 +276,9 @@ export default function UploadScreen({
                 <SettingsMenu />
                 <div className="h-5 w-px bg-zinc-200 dark:bg-zinc-700" />
                 <ModelSelector groupLabel="Transcript source">
-                  <ModelOption id="base" />
-                  <ModelOption id="small" />
-                  <ModelOption id="parakeet" />
+                  {ASR_ORDER.map((id) => (
+                    <ModelOption key={id} id={id} />
+                  ))}
                   <ModelOptionSeparator />
                   <LanguageSection />
                   <ModelOptionSeparator />

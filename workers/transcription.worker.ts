@@ -30,7 +30,6 @@ import {
 import type { Word, WorkerRequest, WorkerResponse } from "@/lib/types";
 import {
   MODELS,
-  PARAKEET_INFO,
   isParakeetModel,
   isWhisperModel,
   type AsrModel,
@@ -107,7 +106,7 @@ async function isParakeetCached(): Promise<boolean> {
     // databases() can throw in private mode; fall through to open().
   }
 
-  const repoId = PARAKEET_INFO.repoId;
+  const repoId = MODELS.parakeet.repoId;
   // Hub keys: `hf-${repoId}-main--${filename}` (empty subfolder).
   const candidates = [
     `hf-${repoId}-main--encoder-model.int8.onnx`,
@@ -175,7 +174,7 @@ function parakeetModel(): ModelDefinition<ParakeetInstance> {
       const device = await fallbackDevicePolicy.pickDevice();
       if (device === "webgpu") {
         try {
-          const model = await fromHub(PARAKEET_INFO.id, {
+          const model = await fromHub(MODELS.parakeet.id, {
             ...common,
             backend: "webgpu",
             encoderQuant: "fp16",
@@ -192,7 +191,7 @@ function parakeetModel(): ModelDefinition<ParakeetInstance> {
         }
       }
 
-      const model = await fromHub(PARAKEET_INFO.id, {
+      const model = await fromHub(MODELS.parakeet.id, {
         ...common,
         backend: "wasm",
         encoderQuant: "int8",
@@ -205,32 +204,32 @@ function parakeetModel(): ModelDefinition<ParakeetInstance> {
 }
 
 /**
- * ASR registry: Whisper ids are Hugging Face model ids; Parakeet uses
- * PARAKEET_INFO.id. Definitions are registered up front; loaders only take an
- * id. unloadAll() after a WebGPU loss forces a clean reload on WASM.
+ * ASR registry keyed by each model's `id` from MODELS. Definitions are
+ * registered up front; loaders only take an id. unloadAll() after a WebGPU
+ * loss forces a clean reload on WASM.
  */
 const asrModels = new ModelManager({
-  models: {
-    ...Object.fromEntries(
-      (Object.keys(MODELS) as WhisperModel[]).map((choice) => {
-        const { id, dtype } = MODELS[choice];
-        return [
-          id,
-          transformersModel<AutomaticSpeechRecognitionPipeline>({
-            pipeline,
-            task: "automatic-speech-recognition",
-            modelId: id,
-            dtype,
-            cacheKey: env.cacheKey ?? "transformers-cache",
-            onDevice: (device) => {
-              asrDevice = device;
-            },
-          }),
-        ];
-      })
-    ),
-    [PARAKEET_INFO.id]: parakeetModel(),
-  },
+  models: Object.fromEntries(
+    (Object.keys(MODELS) as AsrModel[]).map((choice) => {
+      const info = MODELS[choice];
+      if (info.backend === "parakeet") {
+        return [info.id, parakeetModel()];
+      }
+      return [
+        info.id,
+        transformersModel<AutomaticSpeechRecognitionPipeline>({
+          pipeline,
+          task: "automatic-speech-recognition",
+          modelId: info.id,
+          dtype: info.dtype,
+          cacheKey: env.cacheKey ?? "transformers-cache",
+          onDevice: (device) => {
+            asrDevice = device;
+          },
+        }),
+      ];
+    })
+  ),
 });
 asrModels.subscribe((snap) => {
   const id = snap.loading[0];
@@ -252,7 +251,7 @@ async function getAsr(choice: WhisperModel) {
 }
 
 async function getParakeet() {
-  return asrModels.load<ParakeetInstance>(PARAKEET_INFO.id);
+  return asrModels.load<ParakeetInstance>(MODELS.parakeet.id);
 }
 
 /**

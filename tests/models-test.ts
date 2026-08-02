@@ -2,8 +2,8 @@
  * Model choice helpers for Whisper / Parakeet / import.
  */
 import {
+  ASR_ORDER,
   MODELS,
-  PARAKEET_INFO,
   isAsrModel,
   isModelChoice,
   isParakeetModel,
@@ -25,13 +25,26 @@ assert(isModelChoice("import"), "import is a model choice");
 assert(isModelChoice("parakeet"), "parakeet is a model choice");
 assert(!isModelChoice("tiny"), "tiny is not a model choice");
 
-assert(PARAKEET_INFO.id === "parakeet-tdt-0.6b-v3", "parakeet hub id");
+assert(MODELS.parakeet.backend === "parakeet", "parakeet backend");
+assert(MODELS.parakeet.id === "parakeet-tdt-0.6b-v3", "parakeet hub id");
 assert(
-  PARAKEET_INFO.repoId === "ysdede/parakeet-tdt-0.6b-v3-onnx",
+  MODELS.parakeet.repoId === "ysdede/parakeet-tdt-0.6b-v3-onnx",
   "parakeet HF repo id"
 );
-assert(typeof PARAKEET_INFO.label === "string", "parakeet label");
+assert(typeof MODELS.parakeet.label === "string", "parakeet label");
+assert(MODELS.base.backend === "whisper", "base backend");
 assert(typeof MODELS.base.id === "string", "whisper base id");
 assert(typeof MODELS.small.id === "string", "whisper small id");
+assert(MODELS.base.dtype.webgpu.encoder_model === "fp32", "whisper dtype");
+
+assert(
+  ASR_ORDER.includes("parakeet") && ASR_ORDER.includes("base"),
+  "ASR_ORDER lists whisper + parakeet"
+);
+for (const id of ASR_ORDER) {
+  assert(isAsrModel(id), `${id} in ASR_ORDER is an ASR model`);
+  assert(typeof MODELS[id].label === "string", `${id} has label`);
+  assert(typeof MODELS[id].size === "string", `${id} has size`);
+}
 
 console.log("models-test: ok");

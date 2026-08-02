@@ -23,6 +23,7 @@ import ModelSelector, {
   ModelOptionSeparator,
 } from "./ModelSelector";
 import ImportTranscriptOption from "./ImportTranscriptOption";
+import { ASR_ORDER } from "@/lib/models";
 
 /** How long the desktop mode-change overlay stays up. Matches the macOS
  *  `setBounds(..., animate)` duration plus a small buffer so the layout
@@ -230,9 +231,9 @@ export default function Editor() {
         <>
           {isElectron && <TopBar>
             <ModelSelector groupLabel="Transcript source">
-              <ModelOption id="base" />
-              <ModelOption id="small" />
-              <ModelOption id="parakeet" />
+              {ASR_ORDER.map((id) => (
+                <ModelOption key={id} id={id} />
+              ))}
               <ModelOptionSeparator />
               <LanguageSection />
               <ModelOptionSeparator />
