@@ -47,8 +47,8 @@ export type ParakeetModelInfo = ModelDisplay & {
 
 export type ModelInfo = WhisperModelInfo | ParakeetModelInfo;
 
-/** Display order for ASR rows in the source dropdown. */
-export const ASR_ORDER: AsrModel[] = ["base", "small", "parakeet"];
+/** Display order for model rows in the source dropdown. */
+export const MODEL_ORDER: AsrModel[] = ["base", "small", "parakeet"];
 
 const WHISPER_DTYPE = {
   // q4 decoder: q8 fails session creation on onnxruntime-web 1.26

@@ -2,7 +2,7 @@
  * Model choice helpers for Whisper / Parakeet / import.
  */
 import {
-  ASR_ORDER,
+  MODEL_ORDER,
   MODELS,
   isAsrModel,
   isModelChoice,
@@ -38,11 +38,11 @@ assert(typeof MODELS.small.id === "string", "whisper small id");
 assert(MODELS.base.dtype.webgpu.encoder_model === "fp32", "whisper dtype");
 
 assert(
-  ASR_ORDER.includes("parakeet") && ASR_ORDER.includes("base"),
-  "ASR_ORDER lists whisper + parakeet"
+  MODEL_ORDER.includes("parakeet") && MODEL_ORDER.includes("base"),
+  "MODEL_ORDER lists whisper + parakeet"
 );
-for (const id of ASR_ORDER) {
-  assert(isAsrModel(id), `${id} in ASR_ORDER is an ASR model`);
+for (const id of MODEL_ORDER) {
+  assert(isAsrModel(id), `${id} in MODEL_ORDER is an ASR model`);
   assert(typeof MODELS[id].label === "string", `${id} has label`);
   assert(typeof MODELS[id].size === "string", `${id} has size`);
 }

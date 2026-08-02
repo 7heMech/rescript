@@ -23,7 +23,7 @@ import ModelSelector, {
   ModelOptionSeparator,
 } from "./ModelSelector";
 import ImportTranscriptOption from "./ImportTranscriptOption";
-import { ASR_ORDER } from "@/lib/models";
+import { MODEL_ORDER } from "@/lib/models";
 import { useCrossOriginIsolated } from "@/hooks/useCrossOriginIsolated";
 import { detectMediaKind, MEDIA_ACCEPT } from "@/lib/media";
 import { formatTime } from "@/lib/edits";
@@ -276,7 +276,7 @@ export default function UploadScreen({
                 <SettingsMenu />
                 <div className="h-5 w-px bg-zinc-200 dark:bg-zinc-700" />
                 <ModelSelector groupLabel="Transcript source">
-                  {ASR_ORDER.map((id) => (
+                  {MODEL_ORDER.map((id) => (
                     <ModelOption key={id} id={id} />
                   ))}
                   <ModelOptionSeparator />

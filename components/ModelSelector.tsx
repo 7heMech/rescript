@@ -26,7 +26,7 @@ import {
   type TranscriptLanguage,
 } from "@/lib/languages";
 import {
-  ASR_ORDER,
+  MODEL_ORDER,
   MODELS,
   isAsrModel,
   isWhisperModel,
@@ -205,7 +205,7 @@ export default function ModelSelector({
   // Always mount options (hidden when closed) so custom triggers stay registered.
   const options = children ?? (
     <>
-      {ASR_ORDER.map((id) => (
+      {MODEL_ORDER.map((id) => (
         <ModelOption key={id} id={id} />
       ))}
     </>

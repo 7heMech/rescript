@@ -208,7 +208,7 @@ function parakeetModel(): ModelDefinition<ParakeetInstance> {
  * registered up front; loaders only take an id. unloadAll() after a WebGPU
  * loss forces a clean reload on WASM.
  */
-const asrModels = new ModelManager({
+const models = new ModelManager({
   models: Object.fromEntries(
     (Object.keys(MODELS) as AsrModel[]).map((choice) => {
       const info = MODELS[choice];
@@ -231,7 +231,7 @@ const asrModels = new ModelManager({
     })
   ),
 });
-asrModels.subscribe((snap) => {
+models.subscribe((snap) => {
   const id = snap.loading[0];
   if (!id) return;
   const rec = snap.models[id];
@@ -247,11 +247,11 @@ asrModels.subscribe((snap) => {
 });
 
 async function getAsr(choice: WhisperModel) {
-  return asrModels.load<AutomaticSpeechRecognitionPipeline>(MODELS[choice].id);
+  return models.load<AutomaticSpeechRecognitionPipeline>(MODELS[choice].id);
 }
 
 async function getParakeet() {
-  return asrModels.load<ParakeetInstance>(MODELS.parakeet.id);
+  return models.load<ParakeetInstance>(MODELS.parakeet.id);
 }
 
 /**
@@ -262,7 +262,7 @@ async function getParakeet() {
 async function fallbackAsrToWasm() {
   fallbackDevicePolicy.preferWasm();
   asrDevice = "wasm";
-  await asrModels.unloadAll();
+  await models.unloadAll();
   post({
     type: "progress",
     message: "GPU interrupted — continuing on CPU…",
