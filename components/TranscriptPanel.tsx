@@ -334,25 +334,25 @@ export default function TranscriptPanel() {
           )}
           {(status === "ready" || status === "error" || status === "transcribing") && (
             <>
-              <button
-                onClick={() => importInputRef.current?.click()}
+              <label
                 title="Replace transcript from SRT, VTT, or JSON"
                 className="flex cursor-pointer h-7 items-center gap-1.5 rounded-lg px-2 text-xs text-zinc-500 transition hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
               >
                 <ArrowUpFromLine size={14} />
                 <span className="hidden sm:inline">Import</span>
-              </button>
-              <input
-                ref={importInputRef}
-                type="file"
-                accept={TRANSCRIPT_ACCEPT}
-                className="hidden"
-                onChange={(e) => {
-                  const files = e.target.files;
-                  e.target.value = "";
-                  void handleImportTranscript(files);
-                }}
-              />
+                <input
+                  ref={importInputRef}
+                  type="file"
+                  accept={TRANSCRIPT_ACCEPT}
+                  // Keep in the layout tree — display:none can block the OS picker.
+                  className="sr-only"
+                  onChange={(e) => {
+                    const files = e.target.files;
+                    e.target.value = "";
+                    void handleImportTranscript(files);
+                  }}
+                />
+              </label>
             </>
           )}
           <button
