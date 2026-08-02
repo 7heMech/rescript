@@ -24,13 +24,8 @@ import {
   shrinkManualCuts,
   trimEdgeResult,
 } from "./edits";
-import {
-  isModelChoice,
-  isWhisperModel,
-  loadModelPreference,
-  saveModelPreference,
-} from "./models";
-import type { ModelChoice } from "./models";
+import { isModelId, loadModelPreference, saveModelPreference } from "./models";
+import { isTranscriptSource, type TranscriptSource } from "./source";
 import {
   DEFAULT_TRANSCRIPT_LANGUAGE,
   isTranscriptLanguage,
@@ -59,19 +54,19 @@ interface EditorState {
   duration: number;
   /** Mono 16 kHz PCM of the media's audio track (used for waveform + ASR). */
   audio: Float32Array | null;
-  /** Transcript source selected on the upload screen (Whisper or import). */
-  model: ModelChoice;
-  /** Language hint sent to Whisper when transcribing. */
+  /** Transcript source selected on the upload screen (speech model or import). */
+  source: TranscriptSource;
+  /** Language hint sent to Whisper when transcribing (Parakeet auto-detects). */
   transcriptLanguage: TranscriptLanguage;
   /**
    * Caption file parsed on the upload screen when source is "import".
-   * Cleared when switching back to a Whisper model or after media loads.
+   * Cleared when switching back to a speech model or after media loads.
    */
   pendingTranscript: PendingTranscript | null;
   /** IndexedDB project id when this session is persisted; null for a fresh upload mid-pipeline. */
   projectId: string | null;
   /**
-   * When true, Editor extracts audio for the waveform but skips Whisper
+   * When true, Editor extracts audio for the waveform but skips ASR
    * (restored projects / imported transcripts already have words).
    */
   skipTranscription: boolean;
@@ -121,7 +116,7 @@ interface EditorState {
   openProject: (id: string) => Promise<void>;
   /** Delete a saved project; if it is the active one, resets to the home screen. */
   removeProject: (id: string) => Promise<void>;
-  setModel: (m: ModelChoice) => void;
+  setSource: (s: TranscriptSource) => void;
   setTranscriptLanguage: (language: TranscriptLanguage) => void;
   setPendingTranscript: (t: PendingTranscript | null) => void;
   setDuration: (d: number) => void;
@@ -245,7 +240,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   mediaKind: null,
   duration: 0,
   audio: null,
-  model: "base",
+  source: "base",
   transcriptLanguage: DEFAULT_TRANSCRIPT_LANGUAGE,
   pendingTranscript: null,
   projectId: null,
@@ -282,14 +277,14 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     if (imported && imported.length === 0) return;
     const prev = get().mediaUrl;
     if (prev) URL.revokeObjectURL(prev);
-    const current = get().model;
+    const current = get().source;
     set({
       videoFile: file,
       mediaUrl: URL.createObjectURL(file),
       mediaKind: kind,
       projectId: null,
       skipTranscription: Boolean(imported),
-      model: imported ? "import" : isWhisperModel(current) ? current : "base",
+      source: imported ? "import" : isModelId(current) ? current : "base",
       pendingTranscript: null,
       status: "preparing",
       progress: {
@@ -328,7 +323,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       mediaUrl: URL.createObjectURL(file),
       mediaKind: record.mediaKind,
       duration: record.duration,
-      model: isModelChoice(record.model) ? record.model : "base",
+      source: isTranscriptSource(record.source) ? record.source : "base",
       transcriptLanguage: isTranscriptLanguage(record.transcriptLanguage)
         ? record.transcriptLanguage
         : DEFAULT_TRANSCRIPT_LANGUAGE,
@@ -364,12 +359,12 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     }
   },
 
-  setModel: (model) => {
-    if (isWhisperModel(model)) {
-      saveModelPreference(model);
-      set({ model, pendingTranscript: null });
+  setSource: (source) => {
+    if (isModelId(source)) {
+      saveModelPreference(source);
+      set({ source, pendingTranscript: null });
     } else {
-      set({ model });
+      set({ source });
     }
   },
   setTranscriptLanguage: (transcriptLanguage) => {
@@ -426,7 +421,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       status: "ready",
       progress: { message: "", value: null },
       skipTranscription: true,
-      model: "import",
+      source: "import",
     });
     bumpAutosave();
   },
@@ -708,7 +703,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       mediaKind: null,
       duration: 0,
       audio: null,
-      model: loadModelPreference(),
+      source: loadModelPreference(),
       transcriptLanguage: loadTranscriptLanguagePreference(),
       pendingTranscript: null,
       projectId: null,
@@ -735,12 +730,13 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   },
 }));
 
-/** Apply the stored model choice after mount (avoids SSR/localStorage mismatch). */
+/** Apply the stored model preference after mount (avoids SSR/localStorage mismatch). */
 export function hydrateModelPreference() {
   const stored = loadModelPreference();
-  if (stored !== useEditorStore.getState().model) {
-    useEditorStore.setState({ model: stored });
-  }
+  const current = useEditorStore.getState().source;
+  // Don't clobber an in-progress import selection.
+  if (current === "import" || stored === current) return;
+  useEditorStore.setState({ source: stored });
 }
 
 /** Apply the stored transcript language after mount (avoids SSR/localStorage mismatch). */

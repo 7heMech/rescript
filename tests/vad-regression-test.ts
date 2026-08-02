@@ -30,10 +30,12 @@ function ffmpegAvailable(): boolean {
   return probe.status === 0;
 }
 
-// Long decoder prompts truncate long-form ASR — models must not set them.
+// Long decoder prompts truncate long-form ASR — Whisper models must not set them.
 for (const id of Object.keys(MODELS) as (keyof typeof MODELS)[]) {
+  const info = MODELS[id];
+  if (info.backend !== "whisper") continue;
   assert(
-    !MODELS[id].verbatimPrompt,
+    !info.verbatimPrompt,
     `${id} must not set verbatimPrompt (truncates multi-speaker clips)`
   );
 }

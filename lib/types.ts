@@ -86,8 +86,8 @@ export interface WorkerRequest {
   audio: Float32Array;
   /** Total media duration in seconds (used for progress estimation). */
   duration: number;
-  /** Which Whisper model to use (see lib/models.ts). */
-  model: import("./models").WhisperModel;
-  /** Whisper language code for the transcript. */
+  /** Which local speech model to use (see lib/models.ts). */
+  model: import("./models").ModelId;
+  /** Whisper language code for the transcript (ignored by Parakeet auto-detect). */
   language: import("./languages").TranscriptLanguage;
 }

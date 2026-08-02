@@ -1,16 +1,23 @@
-/** Transcription source choices offered on the upload screen. */
+/** Local speech models offered on the upload screen. */
 export type WhisperModel = "base" | "small";
-export type ModelChoice = WhisperModel | "import";
+/** NVIDIA Parakeet TDT 0.6B v3 via parakeet.js (ONNX / WebGPU). */
+export type ParakeetModel = "parakeet";
+export type ModelId = WhisperModel | ParakeetModel;
 
 type DType = "fp32" | "fp16" | "q8" | "int8" | "uint8" | "q4" | "q4f16" | "bnb4";
 
-export interface ModelInfo {
-  /** Hugging Face model id (ONNX export compatible with transformers.js). */
-  id: string;
+/** Shared UI fields for every local speech backend. */
+type ModelDisplay = {
   label: string;
   description: string;
   /** Approximate download size shown in the UI. */
   size: string;
+};
+
+export type WhisperModelInfo = ModelDisplay & {
+  backend: "whisper";
+  /** Hugging Face model id (ONNX export compatible with transformers.js). */
+  id: string;
   /** dtype configuration per device. */
   dtype: {
     webgpu: Record<string, DType>;
@@ -27,21 +34,40 @@ export interface ModelInfo {
    * required for word-level timestamps, which this editor depends on.)
    */
   verbatimPrompt?: string;
-}
+};
 
-/** Display order for Whisper rows in the homepage source dropdown. */
-export const WHISPER_ORDER: WhisperModel[] = ["base", "small"];
+export type ParakeetModelInfo = ModelDisplay & {
+  backend: "parakeet";
+  /** parakeet.js model key (also the weightlift registry id). */
+  id: string;
+  /** Hugging Face repo used by parakeet.js hub downloads / IndexedDB cache keys. */
+  repoId: string;
+};
+
+export type ModelInfo = WhisperModelInfo | ParakeetModelInfo;
+
+/** Display order for model rows in the source dropdown. */
+export const MODEL_ORDER: ModelId[] = ["base", "small", "parakeet"];
 
 const WHISPER_DTYPE = {
   // q4 decoder: q8 fails session creation on onnxruntime-web 1.26
   // (Missing required scale … MatMulNBits).
   webgpu: { encoder_model: "fp32", decoder_model_merged: "q4" },
   wasm: { encoder_model: "fp32", decoder_model_merged: "q4" },
-} satisfies ModelInfo["dtype"];
+} satisfies WhisperModelInfo["dtype"];
 
-/** Whisper models that can run in the transcription worker. */
-export const MODELS: Record<WhisperModel, ModelInfo> = {
+/**
+ * Local speech models that can run in the transcription worker.
+ * Shared display fields live on every entry; backend-specific knobs
+ * (`dtype` / `verbatimPrompt` vs `repoId`) are gated by `backend`.
+ */
+export const MODELS: {
+  base: WhisperModelInfo;
+  small: WhisperModelInfo;
+  parakeet: ParakeetModelInfo;
+} = {
   base: {
+    backend: "whisper",
     id: "onnx-community/whisper-base_timestamped",
     label: "Whisper Base",
     description: "Faster download and transcription. Good for most clips.",
@@ -52,11 +78,22 @@ export const MODELS: Record<WhisperModel, ModelInfo> = {
     // speaker on mixed clips). Prefer post-process / filler tools instead.
   },
   small: {
+    backend: "whisper",
     id: "onnx-community/whisper-small_timestamped",
     label: "Whisper Small",
     description: "More accurate on longer or noisier audio. Larger download.",
     size: "~600 MB",
     dtype: WHISPER_DTYPE,
+  },
+  parakeet: {
+    backend: "parakeet",
+    id: "parakeet-tdt-0.6b-v3",
+    repoId: "ysdede/parakeet-tdt-0.6b-v3-onnx",
+    label: "Parakeet TDT v3",
+    description:
+      "NVIDIA FastConformer — faster on WebGPU, strong EU-language accuracy. Auto-detects language.",
+    // WASM int8 ~670 MB; WebGPU fp16 ~1.2 GB.
+    size: "~700 MB",
   },
 };
 
@@ -64,28 +101,31 @@ export function isWhisperModel(value: unknown): value is WhisperModel {
   return value === "base" || value === "small";
 }
 
-export function isModelChoice(value: unknown): value is ModelChoice {
-  return isWhisperModel(value) || value === "import";
+export function isParakeetModel(value: unknown): value is ParakeetModel {
+  return value === "parakeet";
+}
+
+/** Whether `value` is a key of {@link MODELS}. */
+export function isModelId(value: unknown): value is ModelId {
+  return typeof value === "string" && Object.prototype.hasOwnProperty.call(MODELS, value);
 }
 
 const MODEL_STORAGE_KEY = "rescript.model";
 
-/** Read the last-selected Whisper model from localStorage (defaults to base). */
-export function loadModelPreference(): WhisperModel {
+/** Read the last-selected speech model from localStorage (defaults to base). */
+export function loadModelPreference(): ModelId {
   if (typeof window === "undefined") return "base";
   try {
     const raw = window.localStorage.getItem(MODEL_STORAGE_KEY);
-    // Ignore a stale "import" preference — that choice is session-only until a
-    // transcript file is picked again.
-    if (isWhisperModel(raw)) return raw;
+    if (isModelId(raw)) return raw;
   } catch {
     // private mode / disabled storage
   }
   return "base";
 }
 
-/** Persist the selected Whisper model for the next visit. */
-export function saveModelPreference(model: WhisperModel) {
+/** Persist the selected speech model for the next visit. */
+export function saveModelPreference(model: ModelId) {
   if (typeof window === "undefined") return;
   try {
     window.localStorage.setItem(MODEL_STORAGE_KEY, model);
