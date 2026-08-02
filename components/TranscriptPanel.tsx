@@ -321,7 +321,7 @@ export default function TranscriptPanel() {
           {status === "ready" && fillerIds.length > 0 && (
             <button
               onClick={removeFillers}
-              title='Cut filler words ("um", "uh", [*], …) from the video'
+              title='Cut filler words ("um", "uh", "...", …) from the video'
               className="flex cursor-pointer h-7 items-center gap-1.5 rounded-lg px-2 text-xs text-zinc-500 transition hover:bg-zinc-100 line-clamp-1 dark:text-zinc-400 dark:hover:bg-zinc-800"
             >
               <WandSparkles size={14} />

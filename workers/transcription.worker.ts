@@ -667,7 +667,7 @@ async function runParakeet(
   }
 
   const cleaned = cleanTranscript(rawWords);
-  // Same [*] filled-pause recovery as Whisper (no timestamp align for Parakeet).
+  // Same "..." filled-pause recovery as Whisper (no timestamp align for Parakeet).
   const words = insertDisfluencyPlaceholders(cleaned, speechFrames, { duration });
   return finishWithDiarization(words, audio);
 }
@@ -852,7 +852,7 @@ async function runWhisper(
   // are assigned from corrected times too.
   const aligned = alignWordsToSpeech(cleaned, speechFrames, { duration });
 
-  // Recover filled pauses Whisper omitted as [*] so Remove fillers can cut them.
+  // Recover filled pauses Whisper omitted as "..." so Remove fillers can cut them.
   const words = insertDisfluencyPlaceholders(aligned, speechFrames, { duration });
 
   return finishWithDiarization(words, audio);

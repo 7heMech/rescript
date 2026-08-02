@@ -33,15 +33,16 @@ function word(id: number, text: string, start: number, end: number): Word {
 }
 
 {
-  assert(isDisfluencyPlaceholder("[*]"), "exact placeholder");
-  assert(isDisfluencyPlaceholder(" [*] "), "trimmed placeholder");
+  assert(isDisfluencyPlaceholder("..."), "exact placeholder");
+  assert(isDisfluencyPlaceholder(" ... "), "trimmed placeholder");
   assert(!isDisfluencyPlaceholder("um"), "um is not a placeholder token");
-  assert(isFillerWord(DISFLUENCY_PLACEHOLDER), "[*] counts as a filler");
+  assert(!isDisfluencyPlaceholder("[*]"), "legacy [*] marker is not used");
+  assert(isFillerWord(DISFLUENCY_PLACEHOLDER), "... counts as a filler");
   console.log("placeholder identity: ok");
 }
 
 {
-  // Continuous speech with a mid gap Whisper skipped → one [*] filler.
+  // Continuous speech with a mid gap Whisper skipped → one "..." filler.
   // Words cover 1.0–1.4 and 2.0–2.4; speech runs 1.0–2.4 (includes filled pause).
   const words = [word(0, "Hello", 1.0, 1.4), word(1, "there", 2.0, 2.4)];
   const frames = framesFor([[1.0, 2.4]], 3);
@@ -49,6 +50,7 @@ function word(id: number, text: string, start: number, end: number): Word {
   const placeholders = out.filter((w) => isDisfluencyPlaceholder(w.text));
   assert(placeholders.length === 1, `expected 1 placeholder, got ${placeholders.length}`);
   const p = placeholders[0]!;
+  assert(p.text === "...", "placeholder text is ...");
   assert(p.end - p.start >= MIN_DISFLUENCY_DURATION - 1e-3, "placeholder long enough");
   assert(p.start >= 1.4 - 1e-3, "placeholder after Hello");
   assert(p.end <= 2.0 + 1e-3, "placeholder before there");
@@ -58,12 +60,12 @@ function word(id: number, text: string, start: number, end: number): Word {
     `ids reindexed: ${out.map((w) => w.id).join(",")}`
   );
   const fillerIds = findFillerWordIds(out);
-  assert(fillerIds.length === 1 && fillerIds[0] === p.id, "Remove fillers sees [*]");
+  assert(fillerIds.length === 1 && fillerIds[0] === p.id, "Remove fillers sees ...");
   console.log("mid-phrase filled pause: ok");
 }
 
 {
-  // Short uncovered hangover after a word must not become [*].
+  // Short uncovered hangover after a word must not become "...".
   const words = [word(0, "Hi", 1.0, 1.5), word(1, "there", 1.7, 2.2)];
   // Speech covers words + 0.15s hangover bridge — under the min duration after trim.
   const frames = framesFor([[1.0, 1.65], [1.7, 2.2]], 3);

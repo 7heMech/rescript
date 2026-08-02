@@ -3,16 +3,16 @@
  *
  * Whisper (and similar models) often omit "um" / "uh". The audio is still
  * speech according to VAD, so those spans show up as speech frames with no
- * covering word. We insert whisper-timestamped-style `[*]` placeholders there
- * so they appear in the transcript / timeline and can be cut via Remove fillers.
+ * covering word. We insert `...` placeholders there so they appear in the
+ * transcript / timeline and can be cut via Remove fillers.
  *
  * Pure helpers — takes VAD frame flags directly so tests need no model.
  */
 import type { Word } from "./types";
 import { VAD_FRAME_SIZE, VAD_SAMPLE_RATE } from "./vad";
 
-/** Marker text for a detected, untranscribed disfluency (whisper-timestamped style). */
-export const DISFLUENCY_PLACEHOLDER = "[*]";
+/** Marker text for a detected, untranscribed disfluency. */
+export const DISFLUENCY_PLACEHOLDER = "...";
 
 /**
  * Minimum uncovered speech (seconds) to emit a placeholder. Must sit above
@@ -71,7 +71,7 @@ function uncoveredSpeechRuns(
 }
 
 /**
- * Insert `[*]` words over VAD speech that no transcript token covers.
+ * Insert `...` words over VAD speech that no transcript token covers.
  * Returns a new array (re-indexed); input is untouched. No-op when there are
  * no speech frames or nothing qualifies.
  */

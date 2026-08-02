@@ -4,7 +4,7 @@ import type { Word } from "./types";
 /**
  * Filler sounds that carry no meaning and can safely be cut. Deliberately
  * conservative: ambiguous words like "like", "so" or "right" are excluded
- * because they are usually legitimate. Also includes `[*]` placeholders for
+ * because they are usually legitimate. Also includes `...` placeholders for
  * filled pauses ASR dropped (see lib/disfluencies.ts).
  */
 const FILLER_WORDS = new Set([

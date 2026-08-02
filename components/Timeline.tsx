@@ -755,8 +755,8 @@ export default function Timeline() {
                   title={
                     placeholder
                       ? showHandles
-                        ? "[*] detected hesitation — drag edges to adjust, or Remove filler words to cut"
-                        : "[*] detected hesitation — cut with Remove filler words"
+                        ? "… detected hesitation — drag edges to adjust, or Remove filler words to cut"
+                        : "… detected hesitation — cut with Remove filler words"
                       : showHandles
                         ? `${w.text} — drag edges to adjust timing`
                         : w.text
