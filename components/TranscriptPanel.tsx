@@ -2,10 +2,11 @@
 
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  ArrowDown,
+  ArrowUp,
   ArrowUpFromLine,
   Eye,
   EyeOff,
-  LocateFixed,
   Merge,
   Pencil,
   RotateCcw,
@@ -147,6 +148,8 @@ export default function TranscriptPanel() {
   // Playhead follow: auto-scroll while true; manual scroll turns it off.
   const followPlayheadRef = useRef(true);
   const [followPlayhead, setFollowPlayhead] = useState(true);
+  /** Which way to jump to the playhead when unfollowed. */
+  const [followDirection, setFollowDirection] = useState<"up" | "down">("down");
   const [correcting, setCorrecting] = useState<{
     ids: number[];
     top: number;
@@ -175,11 +178,29 @@ export default function TranscriptPanel() {
     freezeSelectionRef,
   });
 
+  const updateFollowDirection = useCallback(() => {
+    const scroller = scrollRef.current;
+    if (!scroller) return;
+    const { words, currentTime } = useEditorStore.getState();
+    const activeId = findActiveWordId(words, currentTime);
+    if (activeId < 0) return;
+    const el = containerRef.current?.querySelector(`[data-wid="${activeId}"]`);
+    if (!el) return;
+    const wordRect = el.getBoundingClientRect();
+    const scrollerRect = scroller.getBoundingClientRect();
+    // Header overlays the top of the scroller (pt-10 / scroll-pt-10).
+    const viewTop = scrollerRect.top + 40;
+    const viewBottom = scrollerRect.bottom;
+    if (wordRect.bottom < viewTop) setFollowDirection("up");
+    else if (wordRect.top > viewBottom) setFollowDirection("down");
+  }, []);
+
   const unfollowPlayhead = useCallback(() => {
     if (!followPlayheadRef.current) return;
     followPlayheadRef.current = false;
     setFollowPlayhead(false);
-  }, []);
+    updateFollowDirection();
+  }, [updateFollowDirection]);
 
   const resumeFollowPlayhead = useCallback(() => {
     followPlayheadRef.current = true;
@@ -361,6 +382,17 @@ export default function TranscriptPanel() {
     const el = containerRef.current?.querySelector(`[data-wid="${activeWordId}"]`);
     el?.scrollIntoView({ block: "nearest" });
   }, [activeWordId, playing, followPlayhead]);
+
+  // Keep the Follow button arrow pointed toward the active word.
+  useEffect(() => {
+    if (followPlayhead || !playing || activeWordId < 0) return;
+    updateFollowDirection();
+    const scroller = scrollRef.current;
+    if (!scroller) return;
+    const onScroll = () => updateFollowDirection();
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+    return () => scroller.removeEventListener("scroll", onScroll);
+  }, [followPlayhead, playing, activeWordId, updateFollowDirection]);
 
   const busy = status === "preparing" || status === "transcribing";
 
@@ -620,7 +652,7 @@ export default function TranscriptPanel() {
           title="Scroll with the playhead"
           className="absolute bottom-5 left-1/2 z-20 flex -translate-x-1/2 cursor-pointer items-center gap-1.5 rounded-full border border-zinc-200 bg-white/95 px-3 py-1.5 text-xs font-medium text-zinc-700 shadow-md shadow-zinc-900/10 backdrop-blur-sm transition hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800/95 dark:text-zinc-200 dark:shadow-black/30 dark:hover:bg-zinc-700"
         >
-          <LocateFixed size={13} />
+          {followDirection === "up" ? <ArrowUp size={13} /> : <ArrowDown size={13} />}
           Follow playhead
         </button>
       )}
