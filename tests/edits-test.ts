@@ -14,6 +14,7 @@ import {
   getWordCutRanges,
   mapSplitsToWords,
   MIN_CLIP_DURATION,
+  restoreRangesResult,
   trimEdgeBounds,
   trimEdgeResult,
 } from "../lib/edits";
@@ -293,6 +294,71 @@ function nearly(a: number, b: number, eps = 1e-3) {
   assert(next !== null, "word bounds applied");
   assert(nearly(getCutRanges(next!, 2)[0].start, 0.55), "cut start follows the word");
   assert(nearly(next![0].end, 0.55), "hello keeps its audio");
+}
+
+// --- Restoring a cut range undeletes words and shrinks manual cuts ---
+{
+  const words = [
+    word(1, "keep", 0, 1),
+    word(2, "gone", 1, 2, true),
+    word(3, "also", 2, 3, true),
+    word(4, "end", 3, 4),
+  ];
+  const manual: ManualCut[] = [{ id: 1, start: 1, end: 3 }];
+  const result = restoreRangesResult(words, manual, [{ start: 1, end: 3 }], 10);
+  assert(result !== null, "restore ok");
+  assert(result!.words[1].deleted === false, "gone restored");
+  assert(result!.words[2].deleted === false, "also restored");
+  assert(result!.manualCuts.length === 0, "manual cut removed");
+  const keeps = getKeepRanges(
+    getCutRanges(result!.words, 4, result!.manualCuts),
+    4
+  );
+  assert(keeps.length === 1, "one continuous keep after restore");
+}
+
+// --- Partial restore splits a manual cut (only fully covered words return) ---
+{
+  const words = [
+    word(1, "left", 0, 1, true),
+    word(2, "mid", 1, 3, true),
+    word(3, "right", 3, 5, true),
+  ];
+  const manual: ManualCut[] = [{ id: 1, start: 0, end: 5 }];
+  const result = restoreRangesResult(words, manual, [{ start: 1, end: 3 }], 10);
+  assert(result !== null, "partial restore ok");
+  assert(result!.words[0].deleted === true, "left stays cut");
+  assert(result!.words[1].deleted === false, "mid restored");
+  assert(result!.words[2].deleted === true, "right stays cut");
+  assert(result!.manualCuts.length === 2, "manual cut split into remnants");
+  assert(nearly(result!.manualCuts[0].end, 1), "left remnant");
+  assert(nearly(result!.manualCuts[1].start, 3), "right remnant");
+}
+
+// --- Delete clip then restore that cut brings media back ---
+{
+  const words = [
+    word(1, "a", 0, 2),
+    word(2, "b", 2, 4),
+    word(3, "c", 4, 6),
+  ];
+  // Simulate deleting the middle clip [2,4) via a manual cut + covered words.
+  const cut = trimEdgeResult(words, [], "out", 4, 2, 1);
+  assert(cut !== null, "cut middle");
+  assert(cut!.words[1].deleted === true, "b deleted");
+  const restored = restoreRangesResult(
+    cut!.words,
+    cut!.manualCuts,
+    [{ start: 2, end: 4 }],
+    cut!.nextCutId
+  );
+  assert(restored !== null, "restore middle");
+  assert(restored!.words[1].deleted === false, "b back");
+  assert(
+    getKeepRanges(getCutRanges(restored!.words, 6, restored!.manualCuts), 6)
+      .length === 1,
+    "fully restored keep"
+  );
 }
 
 console.log("edits-test: all passed");

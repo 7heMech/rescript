@@ -16,13 +16,16 @@ import {
   Merge,
   Pause,
   Play,
+  RotateCcw,
   SquareSplitHorizontal,
+  Trash2,
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
 import { useEditorStore } from "@/lib/store";
 import {
   canSplitAt,
+  cutRangeAt,
   formatTime,
   getActiveSceneBoundaries,
   getClipSegments,
@@ -71,6 +74,7 @@ export default function Timeline() {
   const currentTime = useEditorStore((s) => s.currentTime);
   const playing = useEditorStore((s) => s.playing);
   const selectedClipIndex = useEditorStore((s) => s.selectedClipIndex);
+  const selectedCutIndex = useEditorStore((s) => s.selectedCutIndex);
   const selectedWordIds = useEditorStore((s) => s.selectedWordIds);
   const status = useEditorStore((s) => s.status);
 
@@ -102,6 +106,7 @@ export default function Timeline() {
   const [zoom, setZoom] = useState(1);
   const [hoveredWordId, setHoveredWordId] = useState<number | null>(null);
   const [hoveredClipIndex, setHoveredClipIndex] = useState<number | null>(null);
+  const [hoveredCutIndex, setHoveredCutIndex] = useState<number | null>(null);
   /** Id of the split marker under the pointer, if any. */
   const [hoveredSplitId, setHoveredSplitId] = useState<number | null>(null);
   const dark = useIsDark();
@@ -110,6 +115,23 @@ export default function Timeline() {
   const pps = fitPps * zoom;
   const totalWidth = Math.max(width, duration * pps);
   const ready = status === "ready" && duration > 0;
+  const deleteOk =
+    selectedClipIndex != null &&
+    clips.some((c) => c.index === selectedClipIndex);
+  const selectedWordsAllCutOut = useMemo(() => {
+    if (selectedWordIds.length === 0) return false;
+    const idSet = new Set(selectedWordIds);
+    let count = 0;
+    for (const w of words) {
+      if (!idSet.has(w.id)) continue;
+      count++;
+      if (!isWordCutOut(w, cuts)) return false;
+    }
+    return count > 0;
+  }, [selectedWordIds, words, cuts]);
+  const restoreOk =
+    (selectedCutIndex != null && cuts[selectedCutIndex] != null) ||
+    selectedWordsAllCutOut;
 
   // Live mirrors for imperative wheel/drag handlers (avoid stale closures).
   const ppsRef = useRef(pps);
@@ -203,19 +225,37 @@ export default function Timeline() {
       }
     }
 
-    // Cut range backgrounds
-    for (const cut of cuts) {
+    // Cut range backgrounds (selected / hovered wash stronger)
+    cuts.forEach((cut, cutIndex) => {
       const x0 = cut.start * pps - scrollLeft;
       const x1 = cut.end * pps - scrollLeft;
-      if (x1 < 0 || x0 > width) continue;
-      ctx.fillStyle = dark ? "rgba(127, 29, 29, 0.45)" : "rgba(254, 226, 226, 0.78)";
+      if (x1 < 0 || x0 > width) return;
+      const selected = cutIndex === selectedCutIndex;
+      const hovered = cutIndex === hoveredCutIndex && !selected;
+      ctx.fillStyle = selected
+        ? dark
+          ? "rgba(185, 28, 28, 0.62)"
+          : "rgba(254, 202, 202, 0.95)"
+        : hovered
+          ? dark
+            ? "rgba(153, 27, 27, 0.55)"
+            : "rgba(254, 226, 226, 0.9)"
+          : dark
+            ? "rgba(127, 29, 29, 0.45)"
+            : "rgba(254, 226, 226, 0.78)";
       ctx.fillRect(x0, trackTop, x1 - x0, trackH);
       // subtle hatch
       ctx.save();
       ctx.beginPath();
       ctx.rect(x0, trackTop, x1 - x0, trackH);
       ctx.clip();
-      ctx.strokeStyle = dark ? "rgba(248, 113, 113, 0.35)" : "rgba(252, 165, 165, 0.45)";
+      ctx.strokeStyle = selected
+        ? dark
+          ? "rgba(252, 165, 165, 0.55)"
+          : "rgba(248, 113, 113, 0.65)"
+        : dark
+          ? "rgba(248, 113, 113, 0.35)"
+          : "rgba(252, 165, 165, 0.45)";
       ctx.lineWidth = 1;
       for (let x = x0 - trackH; x < x1 + trackH; x += 6) {
         ctx.beginPath();
@@ -224,7 +264,12 @@ export default function Timeline() {
         ctx.stroke();
       }
       ctx.restore();
-    }
+      if (selected) {
+        ctx.strokeStyle = dark ? "rgba(252, 165, 165, 0.7)" : "rgba(239, 68, 68, 0.55)";
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(x0 + 0.75, trackTop + 0.75, Math.max(0, x1 - x0 - 1.5), trackH - 1.5);
+      }
+    });
 
     // Waveform
     if (!audio) return;
@@ -261,6 +306,8 @@ export default function Timeline() {
     height,
     selectedClipIndex,
     hoveredClipIndex,
+    selectedCutIndex,
+    hoveredCutIndex,
     dark,
   ]);
 
@@ -358,9 +405,11 @@ export default function Timeline() {
       const t = timeFromClientX(e.clientX);
       const drag = dragRef.current;
       if (!drag) {
-        // Hover clip under cursor (waveform area)
+        // Hover clip or cut under cursor (waveform area)
         const clip = clips.find((c) => t >= c.start && t < c.end);
         setHoveredClipIndex(clip?.index ?? null);
+        const cutIdx = cuts.findIndex((c) => t >= c.start && t < c.end);
+        setHoveredCutIndex(cutIdx >= 0 ? cutIdx : null);
         const split = splits.find(
           (b) => Math.abs(t - b.time) * pps <= SPLIT_HOVER_PX
         );
@@ -390,12 +439,13 @@ export default function Timeline() {
         return;
       }
     },
-    [clips, pps, seekTo, splits, timeFromClientX]
+    [clips, cuts, pps, seekTo, splits, timeFromClientX]
   );
 
   const onPointerLeave = useCallback(() => {
     if (dragRef.current) return;
     setHoveredClipIndex(null);
+    setHoveredCutIndex(null);
     setHoveredSplitId(null);
   }, []);
 
@@ -414,15 +464,22 @@ export default function Timeline() {
 
       const t = timeFromClientX(e.clientX);
       const clip = clips.find((c) => t >= c.start && t < c.end);
+      const cutIdx = cuts.findIndex((c) => t >= c.start && t < c.end);
       const store = useEditorStore.getState();
-      store.setSelectedClipIndex(clip?.index ?? null);
-      store.setSelectedWords([]);
+      if (cutIdx >= 0) {
+        store.setSelectedCutIndex(cutIdx);
+        store.setSelectedWords([]);
+      } else {
+        store.setSelectedClipIndex(clip?.index ?? null);
+        store.setSelectedCutIndex(null);
+        store.setSelectedWords([]);
+      }
       dragRef.current = { type: "seek" };
       setDragging(true);
       e.currentTarget.setPointerCapture(e.pointerId);
       seekTo(t);
     },
-    [clips, seekTo, timeFromClientX]
+    [clips, cuts, seekTo, timeFromClientX]
   );
 
   const startWordDrag = useCallback(
@@ -578,6 +635,72 @@ export default function Timeline() {
               }`}
             >
               S
+            </kbd>
+          </button>
+
+          <button
+            type="button"
+            disabled={!ready || !deleteOk}
+            onClick={() => {
+              useEditorStore.getState().deleteSelectedClip();
+            }}
+            title={
+              deleteOk
+                ? "Delete selected clip (Delete)"
+                : "Select a clip on the timeline to delete"
+            }
+            className={`flex h-7 items-center gap-1.5 rounded-lg px-2 text-xs font-medium transition ${
+              ready && deleteOk
+                ? "cursor-pointer text-zinc-700 hover:bg-zinc-100 hover:text-zinc-900 active:scale-[0.97] dark:text-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+                : "cursor-not-allowed text-zinc-300 dark:text-zinc-600"
+            }`}
+          >
+            <Trash2 size={13} />
+            <span className="hidden sm:inline">Delete</span>
+            <kbd
+              className={`hidden rounded px-1 py-px text-[10px] font-normal sm:inline ${
+                ready && deleteOk
+                  ? "bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400"
+                  : "bg-zinc-100 text-zinc-300 dark:bg-zinc-800 dark:text-zinc-600"
+              }`}
+            >
+              ⌫
+            </kbd>
+          </button>
+
+          <button
+            type="button"
+            disabled={!ready || !restoreOk}
+            onClick={() => {
+              const store = useEditorStore.getState();
+              if (store.selectedCutIndex != null) {
+                store.restoreSelectedCut();
+              } else if (selectedWordsAllCutOut) {
+                store.restoreWords(store.selectedWordIds);
+                store.setSelectedWords([]);
+              }
+            }}
+            title={
+              restoreOk
+                ? "Restore selected cut (Delete)"
+                : "Select a cut or silence section on the timeline to restore"
+            }
+            className={`flex h-7 items-center gap-1.5 rounded-lg px-2 text-xs font-medium transition ${
+              ready && restoreOk
+                ? "cursor-pointer text-zinc-700 hover:bg-zinc-100 hover:text-zinc-900 active:scale-[0.97] dark:text-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+                : "cursor-not-allowed text-zinc-300 dark:text-zinc-600"
+            }`}
+          >
+            <RotateCcw size={13} />
+            <span className="hidden sm:inline">Restore</span>
+            <kbd
+              className={`hidden rounded px-1 py-px text-[10px] font-normal sm:inline ${
+                ready && restoreOk
+                  ? "bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400"
+                  : "bg-zinc-100 text-zinc-300 dark:bg-zinc-800 dark:text-zinc-600"
+              }`}
+            >
+              ⌫
             </kbd>
           </button>
 
@@ -761,13 +884,31 @@ export default function Timeline() {
                     e.stopPropagation();
                     seekTo(w.start);
                     const store = useEditorStore.getState();
-                    // Select the word (the transcript mirrors this) and the clip
-                    // it sits in.
+                    // Select the word (the transcript mirrors this). Kept words
+                    // also select their clip; cut-out words select the cut so
+                    // Delete / Restore can bring them back.
                     store.setSelectedWords([w.id]);
-                    const clip = clips.find(
-                      (c) => w.start >= c.start && w.start < c.end
-                    );
-                    store.setSelectedClipIndex(clip?.index ?? null);
+                    if (cutOut) {
+                      const cut = cutRangeAt(w.start + (w.end - w.start) / 2, cuts);
+                      const cutIdx = cut
+                        ? cuts.findIndex(
+                            (c) =>
+                              Math.abs(c.start - cut.start) < 1e-4 &&
+                              Math.abs(c.end - cut.end) < 1e-4
+                          )
+                        : -1;
+                      if (cutIdx >= 0) store.setSelectedCutIndex(cutIdx);
+                      else {
+                        store.setSelectedCutIndex(null);
+                        store.setSelectedClipIndex(null);
+                      }
+                    } else {
+                      const clip = clips.find(
+                        (c) => w.start >= c.start && w.start < c.end
+                      );
+                      store.setSelectedClipIndex(clip?.index ?? null);
+                      store.setSelectedCutIndex(null);
+                    }
                   }}
                 >
                   <span className="pointer-events-none min-w-0 flex-1 truncate px-1.5">
