@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import Image from "next/image";
 import {
   AudioLines,
@@ -162,6 +162,7 @@ export default function UploadScreen({
   ) => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const inputId = useId();
   const [dragging, setDragging] = useState(false);
   const [projects, setProjects] = useState<ProjectMeta[]>([]);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -289,12 +290,25 @@ export default function UploadScreen({
               </div>
             </div>
           )}
-          <div
-            role="button"
+          {/*
+            Native <label htmlFor> opens the file dialog without a synthetic
+            input.click(). display:none inputs + .click() fail in some Chromium
+            setups (DnD still works), which matches "browse does nothing".
+          */}
+          <label
+            htmlFor={inputId}
             aria-disabled={!ready}
             tabIndex={ready ? 0 : -1}
-            onClick={() => ready && inputRef.current?.click()}
-            onKeyDown={(e) => ready && e.key === "Enter" && inputRef.current?.click()}
+            onClick={(e) => {
+              if (!ready) e.preventDefault();
+            }}
+            onKeyDown={(e) => {
+              if (!ready) return;
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                inputRef.current?.click();
+              }
+            }}
             onDragOver={(e) => {
               e.preventDefault();
               if (ready) setDragging(true);
@@ -361,13 +375,17 @@ export default function UploadScreen({
               </>
             )}
             <input
+              id={inputId}
               ref={inputRef}
               type="file"
               accept={MEDIA_ACCEPT}
-              className="hidden"
+              disabled={!ready}
+              // Visually hidden but present in the layout tree — display:none
+              // breaks programmatic / label-activated pickers in some browsers.
+              className="sr-only"
               onChange={(e) => handleFiles(e.target.files)}
             />
-          </div>
+          </label>
 
           {ready && (
             <RecentProjects

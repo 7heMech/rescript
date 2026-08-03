@@ -1,9 +1,11 @@
+import { isDisfluencyPlaceholder } from "./disfluencies";
 import type { Word } from "./types";
 
 /**
  * Filler sounds that carry no meaning and can safely be cut. Deliberately
  * conservative: ambiguous words like "like", "so" or "right" are excluded
- * because they are usually legitimate.
+ * because they are usually legitimate. Also includes `...` placeholders for
+ * filled pauses ASR dropped (see lib/disfluencies.ts).
  */
 const FILLER_WORDS = new Set([
   // English
@@ -66,6 +68,7 @@ function normalize(text: string): string {
 }
 
 export function isFillerWord(text: string): boolean {
+  if (isDisfluencyPlaceholder(text)) return true;
   return FILLER_WORDS.has(normalize(text));
 }
 

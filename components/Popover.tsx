@@ -54,8 +54,13 @@ type PopoverProps = {
   padding?: number;
   /** Portal content to document.body. Default true. */
   portal?: boolean;
-  /** Full-screen dismiss catcher for Electron drag regions. Default false. */
+  /**
+   * Full-screen dismiss catcher for Electron drag regions (and a reliable
+   * outside-press target on web). Rendered in a portal under the panel.
+   * Default false.
+   */
   backdrop?: boolean;
+  /** Stacking class for the portaled backdrop; keep below PopoverContent. */
   backdropZClassName?: string;
   /** Stop Escape from bubbling (nested flyouts). Default false. */
   escapeStopPropagation?: boolean;
@@ -128,16 +133,24 @@ export default function Popover({
     };
   }, [open, onOpenChange, refs, escapeStopPropagation]);
 
+  // Portal the backdrop with the panel so both share the same stacking root
+  // (document.body). An in-tree fixed backdrop can end up above the portaled
+  // panel when an ancestor creates a stacking context — clicks then hit the
+  // dismiss layer instead of links / controls inside the menu.
+  const backdropNode =
+    backdrop && open ? (
+      <PopupDismissBackdrop
+        onDismiss={() => onOpenChange(false)}
+        zClassName={backdropZClassName}
+      />
+    ) : null;
+
   return (
     <PopoverContext.Provider
       value={{ open, setReference, setFloating, floatingStyles, portal }}
     >
-      {backdrop && open && (
-        <PopupDismissBackdrop
-          onDismiss={() => onOpenChange(false)}
-          zClassName={backdropZClassName}
-        />
-      )}
+      {backdropNode &&
+        (portal ? <FloatingPortal>{backdropNode}</FloatingPortal> : backdropNode)}
       {children}
     </PopoverContext.Provider>
   );

@@ -96,6 +96,10 @@ export default function SettingsMenu() {
                 href={href}
                 target="_blank"
                 rel="noopener noreferrer"
+                // Keep the click on the anchor — popover dismiss listeners must
+                // not treat this as an outside press or swallow navigation.
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={() => setOpen(false)}
                 className="flex items-center gap-2.5 px-3 py-2 text-[13px] text-zinc-700 transition hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-800/80"
               >
                 <span className="shrink-0 text-zinc-400 dark:text-zinc-500">

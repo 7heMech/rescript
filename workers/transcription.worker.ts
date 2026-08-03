@@ -43,6 +43,7 @@ import {
 } from "@/lib/models";
 import { cleanTranscript } from "@/lib/hallucinations";
 import { alignWordsToSpeech, speechEnvelope } from "@/lib/align";
+import { insertDisfluencyPlaceholders } from "@/lib/disfluencies";
 import {
   alignBatch,
   expandToAcoustics,
@@ -782,7 +783,8 @@ async function runParakeet(
   let model = loaded;
 
   post({ type: "progress", message: "Detecting speech…", value: 0 });
-  const { segments: speechSegments } = await detectSpeechSegments(audio, vad);
+  const { segments: speechSegments, frames: speechFrames } =
+    await detectSpeechSegments(audio, vad);
 
   post({ type: "progress", message: "Transcribing…", value: 0 });
   const speechSamples = speechSegments.reduce(
@@ -840,7 +842,9 @@ async function runParakeet(
   }
 
   const cleaned = cleanTranscript(rawWords);
-  return finishWithDiarization(cleaned, audio);
+  // Same "..." filled-pause recovery as Whisper (no timestamp align for Parakeet).
+  const words = insertDisfluencyPlaceholders(cleaned, speechFrames, { duration });
+  return finishWithDiarization(words, audio);
 }
 
 async function runWhisper(
@@ -1041,6 +1045,12 @@ async function runWhisper(
   } catch (err) {
     console.warn("Forced alignment unavailable; using VAD-corrected times.", err);
   }
+
+  // Recover filled pauses Whisper omitted as "..." so Remove fillers can cut
+  // them. After alignment, not before: this looks for speech no word covers, so
+  // it needs the measured boundaries — and a "..." has no spelling for CTC, so
+  // aligning it would only interpolate the placeholder away again.
+  words = insertDisfluencyPlaceholders(words, speechFrames, { duration });
 
   return finishWithDiarization(words, audio);
 }
