@@ -2,6 +2,8 @@
 
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  ArrowDown,
+  ArrowUp,
   ArrowUpFromLine,
   Eye,
   EyeOff,
@@ -38,6 +40,7 @@ import {
   mapSplitsToWords,
 } from "@/lib/edits";
 import { useTranscriptSelection } from "@/hooks/useTranscriptSelection";
+import { useTranscriptPlayheadFollow } from "@/hooks/useTranscriptPlayheadFollow";
 import { useWordAnchorFloating } from "@/hooks/useWordAnchorFloating";
 import { useCutRanges } from "@/hooks/useCutRanges";
 import { findActiveWordId, groupWordsBySpeaker } from "@/lib/transcript";
@@ -171,6 +174,27 @@ export default function TranscriptPanel() {
     cutOutIds,
     freezeSelectionRef,
   });
+
+  const {
+    showFollowControl,
+    followDirection,
+    resumeFollowPlayhead,
+    markUserScrollGesture,
+  } = useTranscriptPlayheadFollow({
+    scrollRef,
+    containerRef,
+    playing,
+    activeWordId,
+  });
+
+  // Clicking a word seeks — resume following so playback stays in view.
+  const onWordClick = useCallback(
+    (word: Word, el: HTMLElement) => {
+      resumeFollowPlayhead();
+      handleWordClick(word, el);
+    },
+    [handleWordClick, resumeFollowPlayhead]
+  );
 
   const toolbarOpen = !!(selection && !correcting && !assigningSpeaker);
   const { setFloating: setToolbarFloating, floatingStyles: toolbarStyles } =
@@ -326,13 +350,6 @@ export default function TranscriptPanel() {
     return () => document.removeEventListener("keydown", handler);
   }, [selection, assigningSpeaker, correcting, openSpeakerAssign]);
 
-  // Keep the active word in view during playback.
-  useEffect(() => {
-    if (!playing || activeWordId < 0) return;
-    const el = containerRef.current?.querySelector(`[data-wid="${activeWordId}"]`);
-    el?.scrollIntoView({ block: "nearest" });
-  }, [activeWordId, playing]);
-
   const busy = status === "preparing" || status === "transcribing";
 
   return (
@@ -480,7 +497,7 @@ export default function TranscriptPanel() {
                               word={w}
                               cutOut={cutOutIds.has(w.id)}
                               active={w.id === activeWordId}
-                              onClick={handleWordClick}
+                              onClick={onWordClick}
                             />
                           </React.Fragment>
                         );
@@ -585,7 +602,22 @@ export default function TranscriptPanel() {
       </div>
       {/* Gradient overlay — must match the transcript panel surface */}
       <div className="absolute z-10 pointer-events-none inset-x-0 bottom-0 w-full h-20 bg-gradient-to-t from-white to-transparent dark:from-zinc-900" />
-      <TranscriptScrollIndicator scrollRef={scrollRef} contentRef={containerRef} />
+      {showFollowControl && (
+        <button
+          type="button"
+          onClick={resumeFollowPlayhead}
+          title="Scroll with the playhead"
+          className="absolute bottom-5 left-1/2 z-20 flex -translate-x-1/2 cursor-pointer items-center gap-1.5 rounded-full border border-zinc-200 bg-white/95 px-3 py-1.5 text-xs font-medium text-zinc-700 shadow-md shadow-zinc-900/10 backdrop-blur-sm transition hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800/95 dark:text-zinc-200 dark:shadow-black/30 dark:hover:bg-zinc-700"
+        >
+          {followDirection === "up" ? <ArrowUp size={13} /> : <ArrowDown size={13} />}
+          Follow playhead
+        </button>
+      )}
+      <TranscriptScrollIndicator
+        scrollRef={scrollRef}
+        contentRef={containerRef}
+        onUserScroll={markUserScrollGesture}
+      />
     </section>
   );
 }
