@@ -5,13 +5,15 @@
  * 2. ASR (Whisper via transformers.js, or Parakeet TDT v3 via parakeet.js)
  *    transcribes each segment with per-word timestamps, remapped onto the
  *    original timeline.
- * 3. Pyannote segmentation 3.0 assigns a speaker to each word.
+ * 3. CTC forced alignment (language-specific wav2vec2 / MMS) measures word
+ *    boundaries against the audio; a VAD/envelope heuristic is the fallback.
+ * 4. Pyannote segmentation 3.0 assigns a speaker to each word.
  *
- * Both ASR backends and the CTC aligner are registered in a weightlift
- * ModelManager so download progress, cache labeling, and WebGPU→WASM fallback
- * share one path. Weights land in Cache Storage (Whisper, aligner) or IndexedDB
- * (Parakeet); later runs are offline. ORT WASM is served same-origin from
- * /vendor/ort* .
+ * ASR backends live in one weightlift ModelManager (download progress, cache
+ * labeling, WebGPU→WASM fallback). The CTC aligner has its own registry so a
+ * GPU loss does not unload WASM aligner weights. Weights land in Cache Storage
+ * (Whisper, aligner) or IndexedDB (Parakeet); later runs are offline. ORT WASM
+ * is served same-origin from /vendor/ort* .
  */
 import {
   pipeline,
@@ -43,6 +45,11 @@ import {
 } from "@/lib/models";
 import { cleanTranscript } from "@/lib/hallucinations";
 import { alignWordsToSpeech, speechEnvelope } from "@/lib/align";
+import {
+  ALIGN_MODELS,
+  alignModelFor,
+  type AlignModelInfo,
+} from "@/lib/alignModels";
 import { insertDisfluencyPlaceholders } from "@/lib/disfluencies";
 import {
   alignBatch,
@@ -51,6 +58,7 @@ import {
   type CtcEmission,
   type CtcVocab,
 } from "@/lib/forcedAlign";
+import type { TranscriptLanguage } from "@/lib/languages";
 import {
   VAD_FRAME_SIZE,
   VAD_SAMPLE_RATE,
@@ -71,14 +79,6 @@ if (env.backends?.onnx?.wasm) {
 
 const DIARIZATION_MODEL = "onnx-community/pyannote-segmentation-3.0";
 const VAD_MODEL = "onnx-community/silero-vad";
-/**
- * Character-level CTC model used to place word boundaries against the audio.
- * Whisper's own timestamps are a by-product of decoding and only roughly right;
- * this measures them.
- */
-const ALIGN_MODEL = "Xenova/wav2vec2-base-960h";
-/** `|` in the wav2vec2 vocabulary — the between-words symbol. */
-const ALIGN_DELIMITER_ID = 4;
 /** Viterbi needs a frames x tokens lattice, so alignment runs in bounded batches. */
 const ALIGN_BATCH_MAX_S = 20;
 /** Context either side of a batch, so edge words are not clipped. */
@@ -272,6 +272,12 @@ models.subscribe((snap) => {
   });
 });
 
+type Aligner = {
+  processor: Awaited<ReturnType<typeof AutoProcessor.from_pretrained>>;
+  model: Awaited<ReturnType<typeof AutoModelForCTC.from_pretrained>>;
+  vocab: CtcVocab;
+};
+
 /**
  * The aligner gets its own registry rather than joining `models`.
  *
@@ -280,9 +286,22 @@ models.subscribe((snap) => {
  * registry exists under a WebGPU→WASM fallback policy whose recovery step is
  * `unloadAll()`. The aligner never asks for a device, so transformers.js runs it
  * on WASM (`DEFAULT_DEVICE`), where a lost GPU cannot touch it. Sharing the
- * registry meant a GPU loss threw away 86 MB that was still perfectly good.
+ * registry meant a GPU loss threw away perfectly good WASM weights.
+ *
+ * Multiple language-specific CTC models are registered; only the one for the
+ * active transcript language is loaded.
  */
-const aligners = new ModelManager({ models: { [ALIGN_MODEL]: alignerModel() } });
+function buildAlignerRegistry(): Record<string, ModelDefinition<Aligner>> {
+  const byId = new Map<string, AlignModelInfo>();
+  for (const info of Object.values(ALIGN_MODELS)) {
+    if (!byId.has(info.id)) byId.set(info.id, info);
+  }
+  return Object.fromEntries(
+    [...byId.entries()].map(([id, info]) => [id, alignerModel(info)])
+  );
+}
+
+const aligners = new ModelManager({ models: buildAlignerRegistry() });
 
 async function getAsr(choice: WhisperModel) {
   return models.load<AutomaticSpeechRecognitionPipeline>(MODELS[choice].id);
@@ -354,12 +373,6 @@ interface DiarizationSegment {
   end: number;
   confidence: number;
 }
-
-type Aligner = {
-  processor: Awaited<ReturnType<typeof AutoProcessor.from_pretrained>>;
-  model: Awaited<ReturnType<typeof AutoModelForCTC.from_pretrained>>;
-  vocab: CtcVocab;
-};
 
 type Diarizer = {
   processor: Awaited<ReturnType<typeof AutoProcessor.from_pretrained>>;
@@ -549,31 +562,31 @@ function getDiarizer(): Promise<Diarizer> {
  * Not `transformersModel()`: that builds a `pipeline()`, and this needs the
  * processor, model and tokenizer separately. The progress wiring is the same.
  *
- * q4 is 86 MB against fp32's 360 MB and scored identically on the test clip
- * (0.033 s mean boundary error). q8 is no smaller and markedly worse — it moved
- * one word 0.22 s — and fp16 fails to load on onnxruntime-web.
+ * q4 is used throughout: English wav2vec2 is ~86 MB; MMS / Chinese XLS-R are
+ * ~240 MB. fp16 fails to load on onnxruntime-web.
  */
-function alignerModel(): ModelDefinition<Aligner> {
+function alignerModel(info: AlignModelInfo): ModelDefinition<Aligner> {
   return {
     isCached: () =>
-      isTransformersModelCached(ALIGN_MODEL, {
+      isTransformersModelCached(info.id, {
         cacheKey: env.cacheKey ?? "transformers-cache",
       }),
     load: async ({ progress }) => {
       const progress_callback = transformersProgress(progress);
       const [processor, model, tokenizer] = await Promise.all([
-        AutoProcessor.from_pretrained(ALIGN_MODEL, { progress_callback }),
-        AutoModelForCTC.from_pretrained(ALIGN_MODEL, {
+        AutoProcessor.from_pretrained(info.id, { progress_callback }),
+        AutoModelForCTC.from_pretrained(info.id, {
           dtype: "q4",
           progress_callback,
         }),
-        AutoTokenizer.from_pretrained(ALIGN_MODEL, { progress_callback }),
+        AutoTokenizer.from_pretrained(info.id, { progress_callback }),
       ]);
       /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
       const tok = tokenizer as any;
       const vocab: CtcVocab = {
         blankId: tok.pad_token_id ?? 0,
-        delimiterId: ALIGN_DELIMITER_ID,
+        delimiterId: delimiterIdFromTokenizer(tok),
+        normalizeMode: info.normalize,
         encode: (text) =>
           text ? (tok.encode(text, { add_special_tokens: false }) as number[]) : [],
       };
@@ -582,8 +595,27 @@ function alignerModel(): ModelDefinition<Aligner> {
   };
 }
 
-function getAligner(): Promise<Aligner> {
-  return aligners.load<Aligner>(ALIGN_MODEL);
+/** `|` word delimiter when the tokenizer has one (wav2vec2); MMS has none. */
+function delimiterIdFromTokenizer(tok: {
+  encode?: (text: string, opts?: { add_special_tokens?: boolean }) => number[];
+}): number | undefined {
+  try {
+    const ids = tok.encode?.("|", { add_special_tokens: false });
+    if (Array.isArray(ids) && ids.length === 1 && typeof ids[0] === "number") {
+      return ids[0];
+    }
+  } catch {
+    // tokenizer rejected "|"
+  }
+  return undefined;
+}
+
+function getAligner(language: TranscriptLanguage): Promise<Aligner> {
+  const info = alignModelFor(language);
+  if (!info) {
+    return Promise.reject(new Error(`No CTC aligner for language: ${language}`));
+  }
+  return aligners.load<Aligner>(info.id);
 }
 
 /** Per-frame log-probabilities for one slice of audio. */
@@ -608,18 +640,22 @@ async function ctcEmission(aligner: Aligner, slice: Float32Array): Promise<CtcEm
 }
 
 /**
- * Replace Whisper's word timings with boundaries measured against the audio.
+ * Replace decoded word timings with boundaries measured against the audio.
  *
- * Whisper's own timestamps come from DTW over cross-attention and are only
- * roughly right; they are used here just to decide which words go in which
- * batch. Any batch that fails to align keeps the timings it came in with, so a
- * bad slice costs accuracy on those words rather than losing them.
+ * Incoming timestamps (Whisper DTW or Parakeet TDT) are only used to decide
+ * which words go in which batch. Any batch that fails to align keeps the
+ * timings it came in with, so a bad slice costs accuracy on those words rather
+ * than losing them.
  */
 async function forceAlign(
   words: Word[],
   audio: Float32Array,
-  duration: number
+  duration: number,
+  language: TranscriptLanguage
 ): Promise<Word[]> {
+  const info = alignModelFor(language);
+  if (!info) return words;
+
   // Subscribe only while we are actually waiting. The aligner also warms in the
   // background during transcription, and those bytes must not fight the
   // "Transcribing…" line — but a wait here is worth a bar, since a cold cache
@@ -637,13 +673,13 @@ async function forceAlign(
       value: rec.indeterminate ? null : rec.percent,
     });
   };
-  const unsubscribe = aligners.subscribe((snap) => report(snap.models[ALIGN_MODEL]));
+  const unsubscribe = aligners.subscribe((snap) => report(snap.models[info.id]));
   // subscribe() only fires on the next change, so prime from current state: a
   // load that has started but not yet received its first byte would otherwise
   // leave the UI sitting on "Transcribing…".
-  report(aligners.status(ALIGN_MODEL));
+  report(aligners.status(info.id));
   try {
-    aligner = await getAligner();
+    aligner = await getAligner(language);
   } finally {
     unsubscribe();
   }
@@ -679,6 +715,39 @@ async function forceAlign(
     post({ type: "progress", message: "Aligning words…", value: done / batches.length });
   }
   return out;
+}
+
+/**
+ * Shared post-ASR timing pass for Whisper and Parakeet.
+ *
+ * 1. VAD / loudness-envelope heuristic (language-agnostic fallback and batch seed)
+ * 2. CTC forced alignment when a model exists for `language`
+ * 3. Envelope edge expansion of peaky CTC spans
+ * 4. Disfluency placeholders (after alignment — "..." has no CTC spelling)
+ */
+async function refineWordTimestamps(
+  words: Word[],
+  speechFrames: boolean[],
+  audio: Float32Array,
+  duration: number,
+  language: TranscriptLanguage
+): Promise<Word[]> {
+  let out = alignWordsToSpeech(words, speechFrames, {
+    duration,
+    audio,
+    sampleRate: VAD_SAMPLE_RATE,
+  });
+
+  if (alignModelFor(language)) {
+    try {
+      const measured = await forceAlign(out, audio, duration, language);
+      out = expandToAcoustics(measured, speechEnvelope(audio, VAD_SAMPLE_RATE));
+    } catch (err) {
+      console.warn("Forced alignment unavailable; using VAD-corrected times.", err);
+    }
+  }
+
+  return insertDisfluencyPlaceholders(out, speechFrames, { duration });
 }
 
 async function diarize(audio: Float32Array): Promise<DiarizationSegment[]> {
@@ -785,9 +854,14 @@ async function finishWithDiarization(
 
 async function runParakeet(
   audio: Float32Array,
-  duration: number
+  duration: number,
+  transcriptLanguage: TranscriptLanguage
 ): Promise<Word[]> {
+  // Overlap diarizer (+ language-matched aligner) with Parakeet load.
   getDiarizer().catch(() => {});
+  if (alignModelFor(transcriptLanguage)) {
+    getAligner(transcriptLanguage).catch(() => {});
+  }
   const [loaded, vad] = await Promise.all([getParakeet(), getVad()]);
   let model = loaded;
 
@@ -851,8 +925,13 @@ async function runParakeet(
   }
 
   const cleaned = cleanTranscript(rawWords);
-  // Same "..." filled-pause recovery as Whisper (no timestamp align for Parakeet).
-  const words = insertDisfluencyPlaceholders(cleaned, speechFrames, { duration });
+  const words = await refineWordTimestamps(
+    cleaned,
+    speechFrames,
+    audio,
+    duration,
+    transcriptLanguage
+  );
   return finishWithDiarization(words, audio);
 }
 
@@ -860,12 +939,14 @@ async function runWhisper(
   audio: Float32Array,
   duration: number,
   choice: WhisperModel,
-  transcriptLanguage: WorkerRequest["language"]
+  transcriptLanguage: TranscriptLanguage
 ): Promise<Word[]> {
-  // Overlap Whisper + Silero downloads; diarizer and aligner warm in the
-  // background so both are cached by the time the transcript lands.
+  // Overlap Whisper + Silero downloads; diarizer and language-matched aligner
+  // warm in the background so both are cached by the time the transcript lands.
   getDiarizer().catch(() => {});
-  getAligner().catch(() => {});
+  if (alignModelFor(transcriptLanguage)) {
+    getAligner(transcriptLanguage).catch(() => {});
+  }
   const [asr, vad] = await Promise.all([getAsr(choice), getVad()]);
   let transcriber = asr;
 
@@ -1034,32 +1115,13 @@ async function runWhisper(
   // Post-process: collapse leftover n-gram loops and drop known hallucination
   // phrases ("I'm sorry", "thanks for watching", …) that slip past decoding.
   const cleaned = cleanTranscript(rawWords);
-
-  // Whisper's DTW word timestamps run late by an amount that drifts across the
-  // clip. Correct them against the VAD as a first pass: forced alignment only
-  // needs them accurate enough to batch by, and this is what we fall back to if
-  // the acoustic model is unavailable.
-  let words = alignWordsToSpeech(cleaned, speechFrames, {
-    duration,
+  const words = await refineWordTimestamps(
+    cleaned,
+    speechFrames,
     audio,
-    sampleRate: VAD_SAMPLE_RATE,
-  });
-
-  // Then measure the boundaries properly. CTC forced alignment decides which
-  // audio each word occupies; the envelope sharpens the edges, which CTC leaves
-  // narrow because its emissions spike on each character and go blank around it.
-  try {
-    const measured = await forceAlign(words, audio, duration);
-    words = expandToAcoustics(measured, speechEnvelope(audio, VAD_SAMPLE_RATE));
-  } catch (err) {
-    console.warn("Forced alignment unavailable; using VAD-corrected times.", err);
-  }
-
-  // Recover filled pauses Whisper omitted as "..." so Remove fillers can cut
-  // them. After alignment, not before: this looks for speech no word covers, so
-  // it needs the measured boundaries — and a "..." has no spelling for CTC, so
-  // aligning it would only interpolate the placeholder away again.
-  words = insertDisfluencyPlaceholders(words, speechFrames, { duration });
+    duration,
+    transcriptLanguage
+  );
 
   return finishWithDiarization(words, audio);
 }
@@ -1068,11 +1130,11 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
   const { audio, duration, model, language } = event.data;
   try {
     const choice: ModelId = model ?? "base";
-    const transcriptLanguage = language ?? "en";
+    const transcriptLanguage: TranscriptLanguage = language ?? "en";
 
     let words: Word[];
     if (isParakeetModel(choice)) {
-      words = await runParakeet(audio, duration);
+      words = await runParakeet(audio, duration, transcriptLanguage);
     } else if (isWhisperModel(choice)) {
       words = await runWhisper(audio, duration, choice, transcriptLanguage);
     } else {

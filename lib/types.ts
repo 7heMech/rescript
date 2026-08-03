@@ -95,6 +95,9 @@ export interface WorkerRequest {
   duration: number;
   /** Which local speech model to use (see lib/models.ts). */
   model: import("./models").ModelId;
-  /** Whisper language code for the transcript (ignored by Parakeet auto-detect). */
+  /**
+   * Transcript language: conditions Whisper decoding, selects the CTC aligner,
+   * and is passed through for Parakeet alignment (Parakeet ASR still auto-detects).
+   */
   language: import("./languages").TranscriptLanguage;
 }

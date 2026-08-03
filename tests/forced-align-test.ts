@@ -48,6 +48,26 @@ function word(id: number, text: string, start: number, end: number): Word {
   assert(normalizeForCtc("Shot.") === "SHOT", "punctuation is stripped");
   assert(normalizeForCtc("don't") === "DON'T", "apostrophes survive");
   assert(normalizeForCtc("1985") === "", "digits have no spelling");
+  assert(
+    normalizeForCtc("café", "latin-upper") === "CAFE",
+    "accents fold for Latin-upper"
+  );
+  assert(
+    normalizeForCtc("niño", "latin-lower") === "nino",
+    "accents fold for Latin-lower / MMS"
+  );
+  assert(
+    normalizeForCtc("über", "latin-lower") === "uber",
+    "German umlaut folds"
+  );
+  assert(
+    normalizeForCtc("你好世界!", "cjk") === "你好世界",
+    "CJK keeps Han and drops punctuation"
+  );
+  assert(
+    normalizeForCtc("OK了", "cjk") === "OK了",
+    "CJK keeps Latin letters uppercased"
+  );
   console.log("normalisation: ok");
 }
 

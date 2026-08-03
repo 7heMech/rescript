@@ -26,23 +26,52 @@ export interface CtcEmission {
   vocab: number;
 }
 
+/**
+ * How transcript text is folded into a CTC model's character vocabulary.
+ *
+ * - `latin-upper` — English wav2vec2 (A–Z, `'`)
+ * - `latin-lower` — MMS forced-aligner (a–z, `'`); accents are stripped
+ * - `cjk` — Chinese XLS-R (Han + A–Z, `'`)
+ */
+export type CtcNormalizeMode = "latin-upper" | "latin-lower" | "cjk";
+
 /** The pieces of a CTC tokenizer this module needs. */
 export interface CtcVocab {
-  /** Id of the CTC blank symbol (`<pad>` for wav2vec2). */
+  /** Id of the CTC blank symbol (`<pad>` / `<blank>` for wav2vec2). */
   blankId: number;
   /** Encode already-normalised text to token ids. */
   encode(text: string): number[];
   /** Id of the between-words symbol (`|`), if the vocab has one. */
   delimiterId?: number;
+  /** Text folding applied before `encode`. Default `latin-upper`. */
+  normalizeMode?: CtcNormalizeMode;
 }
 
 /**
  * Keep only what a character-level CTC vocabulary can represent. Digits and
  * punctuation have no acoustic spelling here, so a word made only of those
  * cannot be aligned and is interpolated from its neighbours instead.
+ *
+ * Latin modes fold accents (`café` → `CAFE` / `cafe`) so European text can use
+ * ASCII-only models like MMS. CJK mode keeps Han characters.
  */
-export function normalizeForCtc(text: string): string {
-  return text.toUpperCase().replace(/[^A-Z']/g, "");
+export function normalizeForCtc(
+  text: string,
+  mode: CtcNormalizeMode = "latin-upper"
+): string {
+  if (mode === "cjk") {
+    return Array.from(text)
+      .filter((ch) => {
+        const cp = ch.codePointAt(0) ?? 0;
+        const isHan = cp >= 0x4e00 && cp <= 0x9fff;
+        return isHan || /[A-Za-z']/.test(ch);
+      })
+      .join("")
+      .toUpperCase();
+  }
+  const folded = text.normalize("NFD").replace(/\p{M}/gu, "");
+  const letters = folded.replace(/[^A-Za-z']/g, "");
+  return mode === "latin-lower" ? letters.toLowerCase() : letters.toUpperCase();
 }
 
 /** Which slice of the flattened token sequence belongs to which word. */
@@ -62,8 +91,9 @@ interface TokenSequence {
 function buildTokens(words: Word[], vocab: CtcVocab): TokenSequence {
   const tokens: number[] = [];
   const spans: TokenSpan[] = [];
+  const mode = vocab.normalizeMode ?? "latin-upper";
   words.forEach((word, index) => {
-    const ids = vocab.encode(normalizeForCtc(word.text));
+    const ids = vocab.encode(normalizeForCtc(word.text, mode));
     if (ids.length === 0) return;
     if (tokens.length > 0 && vocab.delimiterId !== undefined) {
       tokens.push(vocab.delimiterId);
