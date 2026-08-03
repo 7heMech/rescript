@@ -7,10 +7,11 @@
  *    original timeline.
  * 3. Pyannote segmentation 3.0 assigns a speaker to each word.
  *
- * Both ASR backends are registered in a weightlift ModelManager so download
- * progress, cache labeling, and WebGPU→WASM fallback share one path. Weights
- * land in Cache Storage (Whisper) or IndexedDB (Parakeet); later runs are
- * offline. ORT WASM is served same-origin from /vendor/ort* .
+ * Both ASR backends and the CTC aligner are registered in a weightlift
+ * ModelManager so download progress, cache labeling, and WebGPU→WASM fallback
+ * share one path. Weights land in Cache Storage (Whisper, aligner) or IndexedDB
+ * (Parakeet); later runs are offline. ORT WASM is served same-origin from
+ * /vendor/ort* .
  */
 import {
   pipeline,
@@ -27,7 +28,9 @@ import {
 import { ModelManager, type ModelDefinition } from "weightlift";
 import {
   fallbackDevicePolicy,
+  isTransformersModelCached,
   transformersModel,
+  transformersProgress,
 } from "weightlift/transformers";
 import type { Word, WorkerRequest, WorkerResponse } from "@/lib/types";
 import {
@@ -253,17 +256,41 @@ const models = new ModelManager({
     })
   ),
 });
+models.define(ALIGN_MODEL, alignerModel());
+
+/**
+ * Whether the aligner currently owns the progress line.
+ *
+ * It warms in the background while Whisper transcribes, and its bytes must not
+ * fight the "Transcribing…" updates. Once transcription is done and we are
+ * actually waiting on it, its download is the thing worth showing — that wait
+ * used to sit behind a bare "Aligning words…" with no bar.
+ */
+let awaitingAligner = false;
+
+const MODEL_LABELS: Record<string, { cached: string; download: string }> = {
+  [ALIGN_MODEL]: {
+    cached: "Loading alignment model from cache…",
+    download: "Downloading alignment model…",
+  },
+};
+const ASR_LABELS = {
+  cached: "Loading speech model from cache…",
+  download: "Downloading speech model…",
+};
+
 models.subscribe((snap) => {
-  const id = snap.loading[0];
+  // Speech models always win the line; the aligner only gets it while awaited.
+  const id =
+    snap.loading.find((each) => each !== ALIGN_MODEL) ??
+    (awaitingAligner ? snap.loading.find((each) => each === ALIGN_MODEL) : undefined);
   if (!id) return;
   const rec = snap.models[id];
   if (!rec) return;
+  const labels = MODEL_LABELS[id] ?? ASR_LABELS;
   post({
     type: "progress",
-    message:
-      rec.fromCache === true
-        ? "Loading speech model from cache…"
-        : "Downloading speech model…",
+    message: rec.fromCache === true ? labels.cached : labels.download,
     value: rec.indeterminate ? null : rec.percent,
   });
 });
@@ -525,21 +552,32 @@ function getDiarizer(): Promise<Diarizer> {
 }
 
 /**
- * Load the CTC acoustic model used to place word boundaries. Warmed in the
- * background alongside the diarizer, so it is cached by the time Whisper is done.
+ * The CTC acoustic model that places word boundaries, as a weightlift
+ * definition so its bytes are tracked like the ASR models rather than
+ * downloading silently behind an "Aligning words…" label.
+ *
+ * Not `transformersModel()`: that builds a `pipeline()`, and this needs the
+ * processor, model and tokenizer separately. The progress wiring is the same.
  *
  * q4 is 86 MB against fp32's 360 MB and scored identically on the test clip
  * (0.033 s mean boundary error). q8 is no smaller and markedly worse — it moved
  * one word 0.22 s — and fp16 fails to load on onnxruntime-web.
  */
-let alignerPromise: Promise<Aligner> | null = null;
-function getAligner(): Promise<Aligner> {
-  if (!alignerPromise) {
-    alignerPromise = (async () => {
+function alignerModel(): ModelDefinition<Aligner> {
+  return {
+    isCached: () =>
+      isTransformersModelCached(ALIGN_MODEL, {
+        cacheKey: env.cacheKey ?? "transformers-cache",
+      }),
+    load: async ({ progress }) => {
+      const progress_callback = transformersProgress(progress);
       const [processor, model, tokenizer] = await Promise.all([
-        AutoProcessor.from_pretrained(ALIGN_MODEL, {}),
-        AutoModelForCTC.from_pretrained(ALIGN_MODEL, { dtype: "q4" }),
-        AutoTokenizer.from_pretrained(ALIGN_MODEL),
+        AutoProcessor.from_pretrained(ALIGN_MODEL, { progress_callback }),
+        AutoModelForCTC.from_pretrained(ALIGN_MODEL, {
+          dtype: "q4",
+          progress_callback,
+        }),
+        AutoTokenizer.from_pretrained(ALIGN_MODEL, { progress_callback }),
       ]);
       /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
       const tok = tokenizer as any;
@@ -550,12 +588,12 @@ function getAligner(): Promise<Aligner> {
           text ? (tok.encode(text, { add_special_tokens: false }) as number[]) : [],
       };
       return { processor, model, vocab };
-    })();
-    alignerPromise.catch(() => {
-      alignerPromise = null;
-    });
-  }
-  return alignerPromise;
+    },
+  };
+}
+
+function getAligner(): Promise<Aligner> {
+  return models.load<Aligner>(ALIGN_MODEL);
 }
 
 /** Per-frame log-probabilities for one slice of audio. */
@@ -592,7 +630,15 @@ async function forceAlign(
   audio: Float32Array,
   duration: number
 ): Promise<Word[]> {
-  const aligner = await getAligner();
+  awaitingAligner = true;
+  let aligner: Aligner;
+  try {
+    aligner = await getAligner();
+  } finally {
+    awaitingAligner = false;
+  }
+  // Switch off the download label as soon as the weights are in hand.
+  post({ type: "progress", message: "Aligning words…", value: 0 });
   const batches = groupWordsForAlignment(words, ALIGN_BATCH_MAX_S);
   const out: Word[] = [];
   let done = 0;
