@@ -626,9 +626,8 @@ async function forceAlign(
   // otherwise looks like a hang. Scoping the subscription to the await is the
   // whole gate: no shared flag to get out of step if this is ever re-entered.
   let aligner: Aligner;
-  const unsubscribe = aligners.subscribe((snap) => {
-    const rec = snap.models[ALIGN_MODEL];
-    if (!rec || rec.status !== "loading") return;
+  const report = (rec: ReturnType<typeof aligners.status>) => {
+    if (rec.status !== "loading") return;
     post({
       type: "progress",
       message:
@@ -637,7 +636,12 @@ async function forceAlign(
           : "Downloading alignment model…",
       value: rec.indeterminate ? null : rec.percent,
     });
-  });
+  };
+  const unsubscribe = aligners.subscribe((snap) => report(snap.models[ALIGN_MODEL]));
+  // subscribe() only fires on the next change, so prime from current state: a
+  // load that has started but not yet received its first byte would otherwise
+  // leave the UI sitting on "Transcribing…".
+  report(aligners.status(ALIGN_MODEL));
   try {
     aligner = await getAligner();
   } finally {
