@@ -257,44 +257,32 @@ const models = new ModelManager({
     })
   ),
 });
-models.define(ALIGN_MODEL, alignerModel());
-
-/**
- * Whether the aligner currently owns the progress line.
- *
- * It warms in the background while Whisper transcribes, and its bytes must not
- * fight the "Transcribing…" updates. Once transcription is done and we are
- * actually waiting on it, its download is the thing worth showing — that wait
- * used to sit behind a bare "Aligning words…" with no bar.
- */
-let awaitingAligner = false;
-
-const MODEL_LABELS: Record<string, { cached: string; download: string }> = {
-  [ALIGN_MODEL]: {
-    cached: "Loading alignment model from cache…",
-    download: "Downloading alignment model…",
-  },
-};
-const ASR_LABELS = {
-  cached: "Loading speech model from cache…",
-  download: "Downloading speech model…",
-};
-
 models.subscribe((snap) => {
-  // Speech models always win the line; the aligner only gets it while awaited.
-  const id =
-    snap.loading.find((each) => each !== ALIGN_MODEL) ??
-    (awaitingAligner ? snap.loading.find((each) => each === ALIGN_MODEL) : undefined);
+  const id = snap.loading[0];
   if (!id) return;
   const rec = snap.models[id];
   if (!rec) return;
-  const labels = MODEL_LABELS[id] ?? ASR_LABELS;
   post({
     type: "progress",
-    message: rec.fromCache === true ? labels.cached : labels.download,
+    message:
+      rec.fromCache === true
+        ? "Loading speech model from cache…"
+        : "Downloading speech model…",
     value: rec.indeterminate ? null : rec.percent,
   });
 });
+
+/**
+ * The aligner gets its own registry rather than joining `models`.
+ *
+ * It is a different family — an acoustic aligner, not a transcriber, and not
+ * something the user picks — but the deciding factor is lifecycle. The ASR
+ * registry exists under a WebGPU→WASM fallback policy whose recovery step is
+ * `unloadAll()`. The aligner never asks for a device, so transformers.js runs it
+ * on WASM (`DEFAULT_DEVICE`), where a lost GPU cannot touch it. Sharing the
+ * registry meant a GPU loss threw away 86 MB that was still perfectly good.
+ */
+const aligners = new ModelManager({ models: { [ALIGN_MODEL]: alignerModel() } });
 
 async function getAsr(choice: WhisperModel) {
   return models.load<AutomaticSpeechRecognitionPipeline>(MODELS[choice].id);
@@ -307,7 +295,8 @@ async function getParakeet() {
 /**
  * Drop dead WebGPU pipelines and reload on WASM.
  * A lost GPU device invalidates every WebGPU session, so clear the whole
- * ASR cache — not just the model that was running.
+ * ASR cache — not just the model that was running. The aligner is a separate
+ * registry and runs on WASM, so it is deliberately untouched.
  */
 async function fallbackAsrToWasm() {
   fallbackDevicePolicy.preferWasm();
@@ -594,7 +583,7 @@ function alignerModel(): ModelDefinition<Aligner> {
 }
 
 function getAligner(): Promise<Aligner> {
-  return models.load<Aligner>(ALIGN_MODEL);
+  return aligners.load<Aligner>(ALIGN_MODEL);
 }
 
 /** Per-frame log-probabilities for one slice of audio. */
@@ -631,12 +620,28 @@ async function forceAlign(
   audio: Float32Array,
   duration: number
 ): Promise<Word[]> {
-  awaitingAligner = true;
+  // Subscribe only while we are actually waiting. The aligner also warms in the
+  // background during transcription, and those bytes must not fight the
+  // "Transcribing…" line — but a wait here is worth a bar, since a cold cache
+  // otherwise looks like a hang. Scoping the subscription to the await is the
+  // whole gate: no shared flag to get out of step if this is ever re-entered.
   let aligner: Aligner;
+  const unsubscribe = aligners.subscribe((snap) => {
+    const rec = snap.models[ALIGN_MODEL];
+    if (!rec || rec.status !== "loading") return;
+    post({
+      type: "progress",
+      message:
+        rec.fromCache === true
+          ? "Loading alignment model from cache…"
+          : "Downloading alignment model…",
+      value: rec.indeterminate ? null : rec.percent,
+    });
+  });
   try {
     aligner = await getAligner();
   } finally {
-    awaitingAligner = false;
+    unsubscribe();
   }
   // Switch off the download label as soon as the weights are in hand.
   post({ type: "progress", message: "Aligning words…", value: 0 });
