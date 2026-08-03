@@ -16,7 +16,9 @@ import {
   WandSparkles,
   X,
 } from "lucide-react";
+import { FloatingPortal } from "@floating-ui/react";
 import { useEditorStore } from "@/lib/store";
+import { isDisfluencyPlaceholder } from "@/lib/disfluencies";
 import { findFillerWordIds } from "@/lib/fillers";
 import { findSilenceRanges } from "@/lib/silences";
 import {
@@ -39,6 +41,7 @@ import {
 } from "@/lib/edits";
 import { useTranscriptSelection } from "@/hooks/useTranscriptSelection";
 import { useTranscriptPlayheadFollow } from "@/hooks/useTranscriptPlayheadFollow";
+import { useWordAnchorFloating } from "@/hooks/useWordAnchorFloating";
 import { useCutRanges } from "@/hooks/useCutRanges";
 import { findActiveWordId, groupWordsBySpeaker } from "@/lib/transcript";
 
@@ -54,18 +57,23 @@ const WordSpan = memo(function WordSpan({
   active: boolean;
   onClick: (word: Word, el: HTMLElement) => void;
 }) {
+  const placeholder = isDisfluencyPlaceholder(word.text);
   // The trailing space lives inside the span so that selection and deletion
   // highlights are continuous across words instead of breaking at each gap.
   return (
     <span
       data-wid={word.id}
       data-cut={cutOut ? "" : undefined}
+      data-placeholder={placeholder ? "" : undefined}
+      title={placeholder ? "Detected hesitation (not transcribed) — cut with Remove filler words" : undefined}
       onClick={(e) => onClick(word, e.currentTarget)}
       className={`py-0.5 cursor-pointer transition-colors duration-75 ${cutOut
         ? "word-deleted bg-red-50 text-red-600 line-through decoration-red-300 dark:bg-red-950/40 dark:text-red-400 dark:decoration-red-800"
         : active
           ? "bg-neutral-200/80 text-zinc-900 dark:bg-neutral-700/80 dark:text-zinc-50"
-          : "text-zinc-800 hover:bg-neutral-50 dark:text-zinc-200 dark:hover:bg-neutral-800/60"
+          : placeholder
+            ? "font-medium text-amber-700/90 hover:bg-amber-50 dark:text-amber-400/90 dark:hover:bg-amber-950/40"
+            : "text-zinc-800 hover:bg-neutral-50 dark:text-zinc-200 dark:hover:bg-neutral-800/60"
         }`}
     >
       {word.text}{" "}
@@ -146,17 +154,10 @@ export default function TranscriptPanel() {
   const containerRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
-  const [correcting, setCorrecting] = useState<{
-    ids: number[];
-    top: number;
-    left: number;
-    containerWidth: number;
-  } | null>(null);
+  const [correcting, setCorrecting] = useState<{ ids: number[] } | null>(null);
   const [correctText, setCorrectText] = useState("");
   const [assigningSpeaker, setAssigningSpeaker] = useState<{
     ids: number[];
-    top: number;
-    left: number;
   } | null>(null);
   // Mirrors Correct / Speaker pickers so selection handlers freeze highlights.
   const freezeSelectionRef = useRef(false);
@@ -194,6 +195,25 @@ export default function TranscriptPanel() {
     },
     [handleWordClick, resumeFollowPlayhead]
   );
+
+  const toolbarOpen = !!(selection && !correcting && !assigningSpeaker);
+  const { setFloating: setToolbarFloating, floatingStyles: toolbarStyles } =
+    useWordAnchorFloating({
+      open: toolbarOpen,
+      wordIds: selection?.ids,
+      containerRef,
+      placement: "top",
+      offsetMain: 8,
+    });
+
+  const { setFloating: setCorrectFloating, floatingStyles: correctStyles } =
+    useWordAnchorFloating({
+      open: !!correcting,
+      wordIds: correcting?.ids,
+      containerRef,
+      placement: "top",
+      offsetMain: 12,
+    });
 
   const turns = useMemo(() => groupWordsBySpeaker(words), [words]);
 
@@ -258,12 +278,7 @@ export default function TranscriptPanel() {
       .join(" ");
     freezeSelectionRef.current = true;
     setCorrectText(text);
-    setCorrecting({
-      ids: selection.ids,
-      top: selection.top,
-      left: selection.left,
-      containerWidth: containerRef.current?.clientWidth ?? 640,
-    });
+    setCorrecting({ ids: selection.ids });
     releaseToolbar();
   }, [selection, words, releaseToolbar]);
 
@@ -276,11 +291,7 @@ export default function TranscriptPanel() {
   const openSpeakerAssign = useCallback(() => {
     if (!selection) return;
     freezeSelectionRef.current = true;
-    setAssigningSpeaker({
-      ids: selection.ids,
-      top: selection.top,
-      left: selection.left,
-    });
+    setAssigningSpeaker({ ids: selection.ids });
     releaseToolbar();
   }, [selection, releaseToolbar]);
 
@@ -308,22 +319,21 @@ export default function TranscriptPanel() {
     return () => document.removeEventListener("mousedown", handler);
   }, [correcting, closeCorrect]);
 
-  // Delete / Backspace cuts the selected words. Driven by the shared selection so
-  // it works for words picked in the timeline wordbar too.
+  // Escape clears the transcript selection chrome. Delete / Backspace are handled
+  // globally in Editor (cut words restore; kept words / clips delete).
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.key !== "Delete" && e.key !== "Backspace" && e.key !== "Escape") return;
+      if (e.key !== "Escape") return;
       const target = e.target as HTMLElement;
       if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)
         return;
       if (selectedWordIds.length === 0) return;
       e.preventDefault();
-      if (e.key !== "Escape") deleteWords(selectedWordIds);
       clearSelection();
     };
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
-  }, [selectedWordIds, deleteWords, clearSelection]);
+  }, [selectedWordIds, clearSelection]);
 
   // "@" opens the speaker picker for the current selection.
   useEffect(() => {
@@ -361,7 +371,7 @@ export default function TranscriptPanel() {
           {status === "ready" && fillerIds.length > 0 && (
             <button
               onClick={removeFillers}
-              title='Cut filler words ("um", "uh", …) from the video'
+              title='Cut filler words ("um", "uh", "...", …) from the video'
               className="flex cursor-pointer h-7 items-center gap-1.5 rounded-lg px-2 text-xs text-zinc-500 transition hover:bg-zinc-100 line-clamp-1 dark:text-zinc-400 dark:hover:bg-zinc-800"
             >
               <WandSparkles size={14} />
@@ -499,93 +509,94 @@ export default function TranscriptPanel() {
             </div>
           )}
 
-          {selection && !correcting && !assigningSpeaker && (
-            <div
-              data-transcript-toolbar
-              className="absolute z-20 flex -translate-x-1/2 items-center gap-0.5 rounded-xl border border-zinc-200 bg-white p-1 shadow-lg shadow-zinc-900/10 dark:border-zinc-700 dark:bg-zinc-800 dark:shadow-black/30"
-              style={{ top: selection.top, left: selection.left }}
-              onMouseDown={(e) => e.preventDefault()}
-            >
-              {selection.anyKept && (
-                <button
-                  onClick={cutSelection}
-                  className="flex cursor-pointer items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[13px] font-medium text-zinc-700 transition hover:bg-red-50 hover:text-red-600 dark:text-zinc-200 dark:hover:bg-red-950/50 dark:hover:text-red-400"
-                >
-                  <Scissors size={13} />
-                  Cut
-                </button>
-              )}
-              {selection.anyDeleted && (
-                <button
-                  onClick={restoreSelection}
-                  className="flex cursor-pointer items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[13px] font-medium text-zinc-700 transition hover:bg-emerald-50 hover:text-emerald-600 dark:text-zinc-200 dark:hover:bg-emerald-950/40 dark:hover:text-emerald-400"
-                >
-                  <RotateCcw size={13} />
-                  Restore
-                </button>
-              )}
-              <button
-                onClick={openCorrect}
-                className="flex cursor-pointer items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[13px] font-medium text-zinc-700 transition hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-700"
+          {toolbarOpen && selection && (
+            <FloatingPortal>
+              <div
+                ref={setToolbarFloating}
+                data-transcript-toolbar
+                className="z-40 flex items-center gap-0.5 rounded-xl border border-zinc-200 bg-white p-1 shadow-lg shadow-zinc-900/10 dark:border-zinc-700 dark:bg-zinc-800 dark:shadow-black/30"
+                style={toolbarStyles}
+                onMouseDown={(e) => e.preventDefault()}
               >
-                <Pencil size={13} />
-                Correct
-              </button>
-              <SelectionSpeakerButton onClick={openSpeakerAssign} />
-            </div>
+                {selection.anyKept && (
+                  <button
+                    onClick={cutSelection}
+                    className="flex cursor-pointer items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[13px] font-medium text-zinc-700 transition hover:bg-red-50 hover:text-red-600 dark:text-zinc-200 dark:hover:bg-red-950/50 dark:hover:text-red-400"
+                  >
+                    <Scissors size={13} />
+                    Cut
+                  </button>
+                )}
+                {selection.anyDeleted && (
+                  <button
+                    onClick={restoreSelection}
+                    className="flex cursor-pointer items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[13px] font-medium text-zinc-700 transition hover:bg-emerald-50 hover:text-emerald-600 dark:text-zinc-200 dark:hover:bg-emerald-950/40 dark:hover:text-emerald-400"
+                  >
+                    <RotateCcw size={13} />
+                    Restore
+                  </button>
+                )}
+                <button
+                  onClick={openCorrect}
+                  className="flex cursor-pointer items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[13px] font-medium text-zinc-700 transition hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-700"
+                >
+                  <Pencil size={13} />
+                  Correct
+                </button>
+                <SelectionSpeakerButton onClick={openSpeakerAssign} />
+              </div>
+            </FloatingPortal>
           )}
 
           {assigningSpeaker && (
             <SelectionSpeakerPopover
               wordIds={assigningSpeaker.ids}
-              top={assigningSpeaker.top}
-              left={assigningSpeaker.left}
+              containerRef={containerRef}
               onClose={closeSpeakerAssign}
             />
           )}
 
           {correcting && (
-            <div
-              ref={popoverRef}
-              className="absolute z-20 w-80 max-w-[calc(100%-16px)] -translate-x-1/2 rounded-2xl border border-zinc-200 bg-white p-3 shadow-xl shadow-zinc-900/10 dark:border-zinc-700 dark:bg-zinc-800 dark:shadow-black/40"
-              style={{
-                top: Math.max(4, correcting.top - 56),
-                left: Math.min(
-                  Math.max(168, correcting.left),
-                  correcting.containerWidth - 168
-                ),
-              }}
-            >
-              <div className="mb-2 flex items-center justify-between">
-                <span className="text-[13px] font-semibold text-zinc-800 dark:text-zinc-100">Correct</span>
-                <button
-                  onClick={closeCorrect}
-                  className="flex h-6 w-6 items-center justify-center rounded-md text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
-                >
-                  <X size={13} />
-                </button>
-              </div>
-              <input
-                autoFocus
-                value={correctText}
-                onChange={(e) => setCorrectText(e.target.value)}
-                onFocus={(e) => e.currentTarget.select()}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") applyCorrection();
-                  else if (e.key === "Escape") closeCorrect();
+            <FloatingPortal>
+              <div
+                ref={(node: HTMLDivElement | null) => {
+                  popoverRef.current = node;
+                  setCorrectFloating(node);
                 }}
-                className="w-full rounded-lg border border-zinc-300 bg-zinc-50 px-2.5 py-1.5 text-sm text-zinc-800 outline-none focus:border-zinc-500 focus:bg-white dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100 dark:focus:border-zinc-400 dark:focus:bg-zinc-950"
-              />
-              <div className="mt-2.5 flex justify-end">
-                <button
-                  onClick={applyCorrection}
-                  disabled={correctText.trim().length === 0}
-                  className="cursor-pointer flex h-8 items-center rounded-full bg-zinc-900 px-4 text-[13px] font-medium text-white transition hover:bg-zinc-700 disabled:opacity-40 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
-                >
-                  Correct
-                </button>
+                className="z-40 w-80 max-w-[calc(100vw-16px)] rounded-2xl border border-zinc-200 bg-white p-3 shadow-xl shadow-zinc-900/10 dark:border-zinc-700 dark:bg-zinc-800 dark:shadow-black/40"
+                style={correctStyles}
+              >
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="text-[13px] font-semibold text-zinc-800 dark:text-zinc-100">Correct</span>
+                  <button
+                    onClick={closeCorrect}
+                    className="flex h-6 w-6 items-center justify-center rounded-md text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
+                  >
+                    <X size={13} />
+                  </button>
+                </div>
+                <input
+                  autoFocus
+                  value={correctText}
+                  onChange={(e) => setCorrectText(e.target.value)}
+                  onFocus={(e) => e.currentTarget.select()}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") applyCorrection();
+                    else if (e.key === "Escape") closeCorrect();
+                  }}
+                  className="w-full rounded-lg border border-zinc-300 bg-zinc-50 px-2.5 py-1.5 text-sm text-zinc-800 outline-none focus:border-zinc-500 focus:bg-white dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100 dark:focus:border-zinc-400 dark:focus:bg-zinc-950"
+                />
+                <div className="mt-2.5 flex justify-end">
+                  <button
+                    onClick={applyCorrection}
+                    disabled={correctText.trim().length === 0}
+                    className="cursor-pointer flex h-8 items-center rounded-full bg-zinc-900 px-4 text-[13px] font-medium text-white transition hover:bg-zinc-700 disabled:opacity-40 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                  >
+                    Correct
+                  </button>
+                </div>
               </div>
-            </div>
+            </FloatingPortal>
           )}
         </div>
       </div>

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Group, Panel, Separator, useDefaultLayout } from "react-resizable-panels";
 import { useEditorStore } from "@/lib/store";
+import { getCutRanges, isWordCutOut } from "@/lib/edits";
 import { extractAudio, getFFmpeg } from "@/lib/ffmpeg";
 import { VAD_SAMPLE_RATE } from "@/lib/vad";
 import { isElectron } from "@/lib/platform";
@@ -176,7 +177,8 @@ export default function Editor() {
     return () => window.clearTimeout(timer);
   }, [status]);
 
-  // Global shortcuts: space = play/pause, ⌘Z / ⇧⌘Z = undo / redo, S = split.
+  // Global shortcuts: space = play/pause, ⌘Z / ⇧⌘Z = undo / redo, S = split,
+  // Delete/Backspace = delete selected clip or restore selected cut / cut words.
   // Capture phase so Space is ours before a focused <button> synthesizes a click
   // (which would double-toggle playback and look like the hotkey "didn't work").
   useEffect(() => {
@@ -203,6 +205,40 @@ export default function Editor() {
       ) {
         e.preventDefault();
         s.splitAtPlayhead();
+      } else if (
+        (e.key === "Delete" || e.key === "Backspace") &&
+        !e.metaKey &&
+        !e.ctrlKey &&
+        !e.altKey &&
+        s.status === "ready" &&
+        !s.exportOpen
+      ) {
+        // Cut region selected → restore it (also covers cut words clicked on
+        // the timeline, which select their cut). Kept words → cut them. Clip
+        // selected with no words → delete the clip.
+        if (s.selectedCutIndex != null) {
+          e.preventDefault();
+          e.stopPropagation();
+          s.restoreSelectedCut();
+          return;
+        }
+        if (s.selectedWordIds.length > 0) {
+          e.preventDefault();
+          e.stopPropagation();
+          const cuts = getCutRanges(s.words, s.duration, s.manualCuts);
+          const selected = s.words.filter((w) => s.selectedWordIds.includes(w.id));
+          const allCutOut =
+            selected.length > 0 && selected.every((w) => isWordCutOut(w, cuts));
+          if (allCutOut) s.restoreWords(s.selectedWordIds);
+          else s.deleteWords(s.selectedWordIds);
+          s.setSelectedWords([]);
+          return;
+        }
+        if (s.selectedClipIndex != null) {
+          e.preventDefault();
+          e.stopPropagation();
+          s.deleteSelectedClip();
+        }
       }
     };
     document.addEventListener("keydown", handler, true);
