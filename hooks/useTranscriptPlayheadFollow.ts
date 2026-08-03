@@ -136,10 +136,15 @@ export function useTranscriptPlayheadFollow({
   }, [activeWordId, playing, followPlayhead, containerRef]);
 
   // Refresh offscreen/direction as the playhead advances while unfollowed.
+  // Measured in a frame callback so layout has settled for the newly active
+  // word (and so the state update stays out of the render pass).
   useEffect(() => {
     if (followPlayhead || !playing || activeWordId < 0) return;
-    const { offscreen } = measurePlayheadAnchor();
-    if (!offscreen) resumeFollowPlayhead();
+    const raf = requestAnimationFrame(() => {
+      const { offscreen } = measurePlayheadAnchor();
+      if (!offscreen) resumeFollowPlayhead();
+    });
+    return () => cancelAnimationFrame(raf);
   }, [
     followPlayhead,
     playing,

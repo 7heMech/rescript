@@ -4,7 +4,6 @@ import { useEditorStore } from "@/lib/store";
 import Image from "next/image";
 import logo from "@/assets/logo.png";
 import { useWindowChrome } from "@/hooks/useWindowChrome";
-import SettingsMenu from "./SettingsMenu";
 
 function truncateMiddle(value: string, maxLength = 40): string {
   if (value.length <= maxLength) return value;

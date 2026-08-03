@@ -7,7 +7,6 @@ import {
   Clapperboard,
   Film,
   Loader2,
-  Lock,
   Music,
   Scissors,
   ShieldAlert,
