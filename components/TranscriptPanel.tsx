@@ -607,7 +607,7 @@ export default function TranscriptPanel() {
           type="button"
           onClick={resumeFollowPlayhead}
           title="Scroll with the playhead"
-          className="absolute bottom-5 left-1/2 z-20 flex -translate-x-1/2 cursor-pointer items-center gap-1.5 rounded-full border border-zinc-200 bg-white/95 px-3 py-1.5 text-xs font-medium text-zinc-700 shadow-md shadow-zinc-900/10 backdrop-blur-sm transition hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800/95 dark:text-zinc-200 dark:shadow-black/30 dark:hover:bg-zinc-700"
+          className="absolute bottom-5 left-1/2 z-20 flex -translate-x-1/2 cursor-pointer items-center gap-1.5 rounded-full border border-zinc-200 bg-white/95 px-3 py-1.5 text-xs font-medium text-zinc-700 backdrop-blur-sm transition hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800/95 dark:text-zinc-200 dark:hover:bg-zinc-700"
         >
           {followDirection === "up" ? <ArrowUp size={13} /> : <ArrowDown size={13} />}
           Follow playhead

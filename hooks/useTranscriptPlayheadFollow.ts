@@ -132,7 +132,7 @@ export function useTranscriptPlayheadFollow({
     const el = containerRef.current?.querySelector(
       `[data-wid="${activeWordId}"]`
     );
-    el?.scrollIntoView({ block: "nearest" });
+    el?.scrollIntoView({ block: "center" });
   }, [activeWordId, playing, followPlayhead, containerRef]);
 
   // Refresh offscreen/direction as the playhead advances while unfollowed.
@@ -154,7 +154,7 @@ export function useTranscriptPlayheadFollow({
   ]);
 
   const showFollowControl =
-    !followPlayhead && playheadOffscreen && playing && activeWordId >= 0;
+    !followPlayhead && playheadOffscreen && playing;
 
   return {
     showFollowControl,

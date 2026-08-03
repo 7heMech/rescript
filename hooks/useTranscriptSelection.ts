@@ -307,7 +307,7 @@ export function useTranscriptSelection({
     }
     applyMarks(els);
     clickSelectionRef.current = true;
-    els[0].scrollIntoView({ block: "nearest" });
+    els[0].scrollIntoView({ block: "center" });
     setSelection({
       ids: selectedWordIds,
       anyDeleted: selectedWordIds.some((id) => cutOutIds.has(id)),
