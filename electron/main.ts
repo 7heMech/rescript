@@ -45,6 +45,19 @@ const MIME: Record<string, string> = {
   ".txt": "text/plain; charset=utf-8",
 };
 
+// At module scope, before `app.whenReady()`: a crash while registering the
+// protocol or resolving the static root happens before any window exists, and
+// those are precisely the failures nothing else can report.
+//
+// This must also come *before* our own registerSchemesAsPrivileged call below.
+// Electron's registerSchemesAsPrivileged replaces the scheme list rather than
+// appending to it, and Sentry registers its own `sentry-ipc` scheme during
+// init, then proxies the function so *later* calls merge its scheme back in.
+// Registering `app` first therefore gets it silently overwritten, and the
+// renderer's fetch() of app:// URLs fails with `URL scheme "app" is not
+// supported` — which is how ffmpeg.wasm's core fails to load.
+initMainSentry();
+
 // Register before app ready so the scheme can be privileged (fetch, workers,
 // SharedArrayBuffer via COOP/COEP headers we attach below).
 protocol.registerSchemesAsPrivileged([
@@ -59,11 +72,6 @@ protocol.registerSchemesAsPrivileged([
     },
   },
 ]);
-
-// At module scope, before `app.whenReady()`: a crash while registering the
-// protocol or resolving the static root happens before any window exists, and
-// those are precisely the failures nothing else can report.
-initMainSentry();
 
 function staticRoot(): string {
   // Packaged: next export lives next to the compiled main process under

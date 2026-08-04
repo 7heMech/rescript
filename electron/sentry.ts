@@ -73,6 +73,11 @@ let initialised = false;
 
 function ensureInitialised() {
   if (initialised || !DSN) return;
+  // The SDK registers its own IPC scheme as privileged, which Electron only
+  // permits before the 'ready' event — initialising later throws outright. So a
+  // mid-session opt-in cannot start reporting in this session; the preference is
+  // already mirrored to disk, and `initMainSentry()` picks it up next launch.
+  if (app.isReady()) return;
   initialised = true;
 
   Sentry.init({
