@@ -59,8 +59,22 @@ export function isTelemetryEnabled(): boolean {
   return read(ENABLED_KEY) !== "off";
 }
 
+/**
+ * The Electron main process can't read localStorage, so it keeps its own mirror
+ * of this preference on disk to gate crash reporting at startup. Push every
+ * change (and the current value at boot) across the bridge.
+ */
+function mirrorToDesktop(enabled: boolean) {
+  try {
+    window.rescriptDesktop?.setTelemetryEnabled(enabled);
+  } catch {
+    // Older shell without the bridge method; the web build has no bridge at all.
+  }
+}
+
 export function setTelemetryEnabled(enabled: boolean) {
   write(ENABLED_KEY, enabled ? "on" : "off");
+  mirrorToDesktop(enabled);
 }
 
 function installId(): string | null {
@@ -85,15 +99,8 @@ function platform(): "macos" | "windows" | "linux" | "unknown" {
   return "unknown";
 }
 
-/** Guards `app_opened` against React remounts and Strict Mode double-effects. */
-let openedReported = false;
-
 export function trackEvent(event: TelemetryEvent, props?: Props) {
   if (typeof window === "undefined") return;
-  if (event === "app_opened") {
-    if (openedReported) return;
-    openedReported = true;
-  }
   if (!isTelemetryEnabled()) return;
 
   const id = installId();
@@ -128,4 +135,55 @@ export function trackEvent(event: TelemetryEvent, props?: Props) {
   } catch {
     // Offline, blocked by an extension, or CSP — all fine, all ignored.
   }
+}
+
+/** Local calendar day — "was it used today" should mean the user's today. */
+function currentDay(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+}
+
+/** Session-scoped, so a genuine relaunch still counts as a launch. */
+let reportedDay: string | null = null;
+
+function reportOpenedOncePerDay() {
+  const day = currentDay();
+  if (reportedDay === day) return;
+  reportedDay = day;
+  trackEvent("app_opened");
+}
+
+/** Coarse on purpose: this only has to notice a date change, not be prompt. */
+const DAY_ROLLOVER_CHECK_MS = 15 * 60 * 1000;
+
+/**
+ * Reports `app_opened` now, and again if the calendar day changes while the app
+ * stays open.
+ *
+ * Without the rollover part, a desktop app left running for a week reports one
+ * launch and then looks churned — the daily-active number would undercount
+ * exactly the people using it most. Both triggers are needed: `visibilitychange`
+ * catches the common case of coming back to a window left open overnight, and
+ * the interval catches a window that stays open *and* focused across midnight,
+ * where no visibility event ever fires.
+ *
+ * Returns a cleanup function. Calling this twice (React Strict Mode) is
+ * harmless — the second call lands on the same day and no-ops.
+ */
+export function startSessionReporting(): () => void {
+  // Re-assert the preference each launch, so a shell whose on-disk mirror is
+  // stale (or was never written) converges on the renderer's value.
+  mirrorToDesktop(isTelemetryEnabled());
+  reportOpenedOncePerDay();
+
+  const onVisibility = () => {
+    if (document.visibilityState === "visible") reportOpenedOncePerDay();
+  };
+  document.addEventListener("visibilitychange", onVisibility);
+  const timer = window.setInterval(reportOpenedOncePerDay, DAY_ROLLOVER_CHECK_MS);
+
+  return () => {
+    document.removeEventListener("visibilitychange", onVisibility);
+    window.clearInterval(timer);
+  };
 }

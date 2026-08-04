@@ -17,6 +17,10 @@ const isExport = process.env.STATIC_EXPORT === "1";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  // Sentry stack traces are unreadable against a minified bundle. The source is
+  // public anyway, so serving maps costs no secrecy and saves an upload step for
+  // the web build — Sentry fetches them from app.getrescript.com on demand.
+  productionBrowserSourceMaps: true,
   // Inlined into the client bundle at build time (both targets are static, so
   // there is no runtime env to read this from).
   env: { NEXT_PUBLIC_APP_VERSION: version },

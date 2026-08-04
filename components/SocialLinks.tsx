@@ -1,6 +1,7 @@
 export const GITHUB_REPO_URL = "https://github.com/wassgha/rescript";
 export const DISCORD_INVITE_URL = "https://discord.gg/qJAhYFydat";
 export const X_PROFILE_URL = "https://x.com/wassgha";
+export const WEBSITE_URL = "https://getrescript.com";
 
 export function GitHubIcon({ size }: { size: number }) {
   return (

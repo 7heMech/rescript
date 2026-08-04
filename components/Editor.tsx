@@ -7,7 +7,8 @@ import { getCutRanges, isWordCutOut } from "@/lib/edits";
 import { extractAudio, getFFmpeg } from "@/lib/ffmpeg";
 import { VAD_SAMPLE_RATE } from "@/lib/vad";
 import { isElectron } from "@/lib/platform";
-import { trackEvent } from "@/lib/telemetry";
+import { reportError } from "@/lib/sentry";
+import { startSessionReporting } from "@/lib/telemetry";
 import { useIsDesktopLayout } from "@/hooks/useIsDesktopLayout";
 import { useTranscriber } from "@/hooks/useTranscriber";
 import TopBar from "./TopBar";
@@ -136,10 +137,9 @@ export default function Editor() {
   const [modeTransitioning, setModeTransitioning] = useState(false);
   const wasIdle = useRef(status === "idle");
 
-  // Daily-active signal. trackEvent guards against Strict Mode's double effect.
-  useEffect(() => {
-    trackEvent("app_opened");
-  }, []);
+  // Daily-active signal: reports the launch, then again on each day rollover so
+  // a long-running window doesn't look churned.
+  useEffect(() => startSessionReporting(), []);
 
   // Processing pipeline: load ffmpeg -> extract audio -> (maybe) transcribe.
   // Restored projects already have words; they only need PCM for the waveform.
@@ -164,6 +164,7 @@ export default function Editor() {
         }
       } catch (err) {
         console.error("Processing pipeline failed:", err);
+        reportError(err, "media-pipeline");
         s.setError(err instanceof Error ? err.message : "Failed to process this file.");
       }
     })();

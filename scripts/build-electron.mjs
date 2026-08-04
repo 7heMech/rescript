@@ -17,6 +17,13 @@ const shared = {
   sourcemap: true,
   external: ["electron"],
   logLevel: "info",
+  define: {
+    // The packaged app has no build-time env, so the DSN has to be baked in.
+    // Same variable as the renderer, so there is only one thing to configure.
+    "process.env.NEXT_PUBLIC_SENTRY_DSN": JSON.stringify(
+      process.env.NEXT_PUBLIC_SENTRY_DSN ?? ""
+    ),
+  },
 };
 
 await build({

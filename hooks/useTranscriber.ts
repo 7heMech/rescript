@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef } from "react";
 import { isModelId } from "@/lib/models";
+import { reportError } from "@/lib/sentry";
 import { useEditorStore } from "@/lib/store";
 import { trackEvent } from "@/lib/telemetry";
 import type { WorkerResponse } from "@/lib/types";
@@ -68,6 +69,9 @@ export function useTranscriber() {
           break;
         case "error":
           s.setError(msg.message);
+          // Worker errors cross a postMessage boundary, so the original stack is
+          // already gone by here — send the message with a stage tag instead.
+          reportError(new Error(msg.message), "transcription");
           break;
       }
     };
@@ -75,6 +79,10 @@ export function useTranscriber() {
       const s = useEditorStore.getState();
       if (s.skipTranscription) return;
       s.setError(err.message || "Transcription worker crashed.");
+      reportError(
+        new Error(err.message || "Transcription worker crashed."),
+        "transcription-worker"
+      );
     };
 
     // Transfer a copy so the original stays available for the waveform.

@@ -17,6 +17,13 @@ contextBridge.exposeInMainWorld("rescriptDesktop", {
   setWindowMode: (mode: "compact" | "expanded") => {
     ipcRenderer.send("window:set-mode", mode);
   },
+  /**
+   * Mirror the renderer's telemetry opt-out into the main process, which can't
+   * read localStorage but needs the preference to gate its own crash reporting.
+   */
+  setTelemetryEnabled: (enabled: boolean) => {
+    ipcRenderer.send("telemetry:set-enabled", enabled);
+  },
   isFullScreen: (): Promise<boolean> => ipcRenderer.invoke("window:is-full-screen"),
   onFullScreenChange: (callback: (value: boolean) => void) => {
     const listener = (_event: IpcRendererEvent, value: boolean) => callback(value);

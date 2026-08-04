@@ -2,6 +2,7 @@ import { app, BrowserWindow, ipcMain, protocol, screen, shell, net } from "elect
 import { join, normalize, extname } from "node:path";
 import { pathToFileURL } from "node:url";
 import { existsSync, statSync } from "node:fs";
+import { initMainSentry, setMainTelemetryEnabled } from "./sentry";
 import { initAutoUpdater } from "./updater";
 
 const isDev = !app.isPackaged;
@@ -58,6 +59,11 @@ protocol.registerSchemesAsPrivileged([
     },
   },
 ]);
+
+// At module scope, before `app.whenReady()`: a crash while registering the
+// protocol or resolving the static root happens before any window exists, and
+// those are precisely the failures nothing else can report.
+initMainSentry();
 
 function staticRoot(): string {
   // Packaged: next export lives next to the compiled main process under
@@ -238,6 +244,11 @@ if (!gotLock) {
     "window:is-full-screen",
     (event) => BrowserWindow.fromWebContents(event.sender)?.isFullScreen() ?? false
   );
+  // The renderer owns the preference; this mirrors it so the next launch can gate
+  // reporting before any window exists.
+  ipcMain.on("telemetry:set-enabled", (_event, value: unknown) => {
+    setMainTelemetryEnabled(value === true);
+  });
 
   app.whenReady().then(() => {
     if (!isDev) registerAppProtocol();

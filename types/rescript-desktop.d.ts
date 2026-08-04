@@ -11,6 +11,8 @@ export interface RescriptDesktop {
   };
   /** Resize the shell: "compact" for the upload screen, "expanded" for the editor. */
   setWindowMode: (mode: WindowMode) => void;
+  /** Mirror the telemetry opt-out to the main process, which gates its own reporting. */
+  setTelemetryEnabled: (enabled: boolean) => void;
   isFullScreen: () => Promise<boolean>;
   /** Subscribe to full-screen changes; returns an unsubscribe function. */
   onFullScreenChange: (callback: (value: boolean) => void) => () => void;

@@ -7,6 +7,7 @@ import {
   DISCORD_INVITE_URL,
   GitHubIcon,
   GITHUB_REPO_URL,
+  WEBSITE_URL,
   XIcon,
   X_PROFILE_URL,
 } from "./SocialLinks";
@@ -22,7 +23,8 @@ const MENU_LINKS = [
     href: `${GITHUB_REPO_URL}/issues`,
     Icon: Bug,
   },
-  { label: "Homepage", href: GITHUB_REPO_URL, Icon: GitHubIcon },
+  { label: "Homepage", href: WEBSITE_URL, Icon: GitHubIcon },
+  { label: "Github", href: GITHUB_REPO_URL, Icon: GitHubIcon },
   { label: "Follow on X", href: X_PROFILE_URL, Icon: XIcon },
 ] as const;
 
@@ -132,7 +134,8 @@ export default function SettingsMenu() {
                   Help improve the app
                 </span>
                 <span className="mt-0.5 block text-[11px] leading-snug text-zinc-400 dark:text-zinc-500">
-                  Send anonymous usage statistics (nothing about your media).
+                  Send anonymous usage statistics and crash reports (nothing
+                  about your media).
                 </span>
               </span>
             </label>

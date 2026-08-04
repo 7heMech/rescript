@@ -108,10 +108,10 @@ bundles Chromium via Electron and sets the same isolation headers on its
 
 ## Telemetry
 
-By default, Rescript reports anonymous usage stats so we can tell how many people actually
-use it and which features are worth the maintenance. You
-can turn it off in **Settings → Privacy → Anonymous usage stats**, which stops
-it immediately and permanently on that install.
+By default, Rescript reports anonymous usage stats and crash reports so we can
+tell how many people actually use it, which features are worth the maintenance,
+and what's breaking. You can turn both off in **Settings → Privacy → Help
+improve the app**, which stops them immediately and permanently on that install. Crash reports go to Sentry and carry a stack trace, the app version, and the platform.
 
 ## License
 

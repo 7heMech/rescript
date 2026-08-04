@@ -14,7 +14,7 @@ import {
   Type,
 } from "lucide-react";
 import logo from "@/assets/logo.png";
-import SocialLinks from "./SocialLinks";
+import SocialLinks, { WEBSITE_URL } from "./SocialLinks";
 import SettingsMenu from "./SettingsMenu";
 import ModelSelector, {
   LanguageSection,
@@ -260,19 +260,21 @@ export default function UploadScreen({
         <div className="w-full max-w-xl">
           {!isElectron && (
             <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex min-w-0 items-center">
-                <Image
-                  src={logo}
-                  alt="Rescript"
-                  width={24}
-                  height={24}
-                  priority
-                  className="rounded-sm border border-zinc-200 dark:border-zinc-700"
-                />
-                <p className="ml-2 text-[15px] font-medium text-zinc-800 dark:text-zinc-100">
-                  Rescript
-                </p>
-              </div>
+              <a href={WEBSITE_URL} className="hover:opacity-80 transition-opacity">
+                <div className="flex min-w-0 items-center">
+                  <Image
+                    src={logo}
+                    alt="Rescript"
+                    width={24}
+                    height={24}
+                    priority
+                    className="rounded-sm border border-zinc-200 dark:border-zinc-700"
+                  />
+                  <p className="ml-2 text-[15px] font-medium text-zinc-800 dark:text-zinc-100">
+                    Rescript
+                  </p>
+                </div>
+              </a>
               <div className="flex flex-wrap items-center gap-2 sm:justify-end">
                 <SettingsMenu />
                 <div className="h-5 w-px bg-zinc-200 dark:bg-zinc-700" />
@@ -318,10 +320,10 @@ export default function UploadScreen({
               handleFiles(e.dataTransfer.files);
             }}
             className={`group flex flex-col items-center justify-center rounded-2xl border-2 border-dashed bg-white/80 px-8 py-14 text-center transition dark:bg-zinc-900/40 ${!ready
-                ? "cursor-default border-zinc-200 dark:border-zinc-700"
-                : dragging
-                  ? "cursor-pointer border-neutral-500 bg-neutral-50/80 dark:border-neutral-600 dark:bg-zinc-900/60"
-                  : "cursor-pointer border-zinc-300 hover:border-neutral-400 hover:bg-white dark:border-zinc-700 dark:hover:border-neutral-600 dark:hover:bg-zinc-900/60"
+              ? "cursor-default border-zinc-200 dark:border-zinc-700"
+              : dragging
+                ? "cursor-pointer border-neutral-500 bg-neutral-50/80 dark:border-neutral-600 dark:bg-zinc-900/60"
+                : "cursor-pointer border-zinc-300 hover:border-neutral-400 hover:bg-white dark:border-zinc-700 dark:hover:border-neutral-600 dark:hover:bg-zinc-900/60"
               }`}
           >
             {ready ? (
@@ -329,8 +331,8 @@ export default function UploadScreen({
             ) : (
               <div
                 className={`mb-3 flex h-12 w-12 items-center justify-center rounded-full ${isolation === "unavailable"
-                    ? "bg-amber-50 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400"
-                    : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
+                  ? "bg-amber-50 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400"
+                  : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
                   }`}
               >
                 {isolation === "unavailable" ? (
