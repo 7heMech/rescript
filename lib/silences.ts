@@ -13,6 +13,25 @@ export const MIN_SILENCE_DURATION = 0.3;
  */
 export const SILENCE_PAD = 0.05;
 
+/**
+ * Manual cuts that hold no words at all — what "Remove silences" leaves behind
+ * (and any trim that happened to land on a pause). Restoring these brings the
+ * quiet audio back without un-deleting speech, so a cut that merged with a
+ * word-bearing cut is deliberately left out.
+ */
+export function findSilenceCuts(
+  words: Word[],
+  manualCuts: ManualCut[]
+): TimeRange[] {
+  return manualCuts
+    .filter(
+      (c) =>
+        c.end - c.start > 1e-4 &&
+        !words.some((w) => w.end > c.start + 1e-4 && w.start < c.end - 1e-4)
+    )
+    .map((c) => ({ start: c.start, end: c.end }));
+}
+
 /** Split `range` into the pieces not covered by any of `cuts`. */
 function subtractCuts(range: TimeRange, cuts: TimeRange[]): TimeRange[] {
   let parts: TimeRange[] = [range];

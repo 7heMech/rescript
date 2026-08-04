@@ -76,3 +76,8 @@ export function isFillerWord(text: string): boolean {
 export function findFillerWordIds(words: Word[]): number[] {
   return words.filter((w) => !w.deleted && isFillerWord(w.text)).map((w) => w.id);
 }
+
+/** Ids of deleted filler words — the ones "Restore filler words" brings back. */
+export function findDeletedFillerWordIds(words: Word[]): number[] {
+  return words.filter((w) => w.deleted && isFillerWord(w.text)).map((w) => w.id);
+}

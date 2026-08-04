@@ -12,15 +12,12 @@ import {
   RotateCcw,
   Scissors,
   VolumeOff,
-  VolumeX,
-  WandSparkles,
   X,
 } from "lucide-react";
 import { FloatingPortal } from "@floating-ui/react";
 import { useEditorStore } from "@/lib/store";
 import { isDisfluencyPlaceholder } from "@/lib/disfluencies";
-import { findFillerWordIds } from "@/lib/fillers";
-import { findSilenceRanges } from "@/lib/silences";
+import TranscriptToolsMenu from "./TranscriptToolsMenu";
 import {
   isTranscriptFile,
   parseTranscriptFile,
@@ -122,10 +119,8 @@ export default function TranscriptPanel() {
   const toggleShowDeleted = useEditorStore((s) => s.toggleShowDeleted);
   const deleteWords = useEditorStore((s) => s.deleteWords);
   const restoreWords = useEditorStore((s) => s.restoreWords);
-  const cutRanges = useEditorStore((s) => s.cutRanges);
   const correctWords = useEditorStore((s) => s.correctWords);
   const importWords = useEditorStore((s) => s.importWords);
-  const manualCuts = useEditorStore((s) => s.manualCuts);
   const removeSceneBoundary = useEditorStore((s) => s.removeSceneBoundary);
   const selectedWordIds = useEditorStore((s) => s.selectedWordIds);
   const playing = useEditorStore((s) => s.playing);
@@ -218,20 +213,6 @@ export default function TranscriptPanel() {
   const turns = useMemo(() => groupWordsBySpeaker(words), [words]);
 
   const deletedCount = useMemo(() => cutOutIds.size, [cutOutIds]);
-  const fillerIds = useMemo(() => findFillerWordIds(words), [words]);
-  const silenceRanges = useMemo(
-    () => findSilenceRanges(words, duration, manualCuts),
-    [words, duration, manualCuts]
-  );
-
-  const removeFillers = useCallback(() => {
-    deleteWords(fillerIds);
-  }, [deleteWords, fillerIds]);
-
-  const removeSilences = useCallback(() => {
-    cutRanges(silenceRanges);
-  }, [cutRanges, silenceRanges]);
-
   const handleImportTranscript = useCallback(
     async (files: FileList | null) => {
       const file = files?.[0];
@@ -368,26 +349,7 @@ export default function TranscriptPanel() {
               {deletedCount} word{deletedCount === 1 ? "" : "s"}
             </span>
           )}
-          {status === "ready" && fillerIds.length > 0 && (
-            <button
-              onClick={removeFillers}
-              title='Cut filler words ("um", "uh", "...", …) from the video'
-              className="flex cursor-pointer h-7 items-center gap-1.5 rounded-lg px-2 text-xs text-zinc-500 transition hover:bg-zinc-100 line-clamp-1 dark:text-zinc-400 dark:hover:bg-zinc-800"
-            >
-              <WandSparkles size={14} />
-              <span className="hidden sm:inline">Remove filler words ({fillerIds.length})</span>
-            </button>
-          )}
-          {status === "ready" && silenceRanges.length > 0 && (
-            <button
-              onClick={removeSilences}
-              title="Cut pauses and silences (≥0.3s) from the video"
-              className="flex cursor-pointer h-7 items-center gap-1.5 rounded-lg px-2 text-xs text-zinc-500 transition hover:bg-zinc-100 line-clamp-1 dark:text-zinc-400 dark:hover:bg-zinc-800"
-            >
-              <VolumeX size={14} />
-              <span className="hidden sm:inline">Remove silences ({silenceRanges.length})</span>
-            </button>
-          )}
+          {status === "ready" && <TranscriptToolsMenu />}
           {(status === "ready" || status === "error" || status === "transcribing") && (
             <>
               <label
