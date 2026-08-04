@@ -7,6 +7,7 @@ import { getCutRanges, isWordCutOut } from "@/lib/edits";
 import { extractAudio, getFFmpeg } from "@/lib/ffmpeg";
 import { VAD_SAMPLE_RATE } from "@/lib/vad";
 import { isElectron } from "@/lib/platform";
+import { trackEvent } from "@/lib/telemetry";
 import { useIsDesktopLayout } from "@/hooks/useIsDesktopLayout";
 import { useTranscriber } from "@/hooks/useTranscriber";
 import TopBar from "./TopBar";
@@ -134,6 +135,11 @@ export default function Editor() {
 
   const [modeTransitioning, setModeTransitioning] = useState(false);
   const wasIdle = useRef(status === "idle");
+
+  // Daily-active signal. trackEvent guards against Strict Mode's double effect.
+  useEffect(() => {
+    trackEvent("app_opened");
+  }, []);
 
   // Processing pipeline: load ffmpeg -> extract audio -> (maybe) transcribe.
   // Restored projects already have words; they only need PCM for the waveform.
