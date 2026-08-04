@@ -74,16 +74,26 @@ jobs:
       # can't fetch either map the way it can for the web build. Uploaded from
       # one OS only — the bundles are byte-identical across the matrix, and the
       # Sentry release is keyed on version, not platform.
+      # Never block a release on this: the installers are already published by the
+      # step above, and Sentry being unreachable shouldn't hold back a shipped
+      # build. --strict still makes a misconfigured upload loud in the log rather
+      # than silently uploading nothing.
       - name: Upload source maps to Sentry
         if: matrix.os == 'ubuntu-latest' && env.SENTRY_AUTH_TOKEN != ''
+        continue-on-error: true
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          npx @sentry/cli releases new "$VERSION"
-          npx @sentry/cli releases files "$VERSION" upload-sourcemaps out/_next \
-            --url-prefix "app:///_next" --rewrite
-          npx @sentry/cli releases files "$VERSION" upload-sourcemaps electron-dist \
-            --url-prefix "app:///electron-dist" --rewrite
-          npx @sentry/cli releases finalize "$VERSION"
+          # Pinned to the v3 line: `releases files ... upload-sourcemaps` was
+          # removed in v3 in favour of `sourcemaps upload`, and an unpinned npx
+          # silently follows the next major into the same kind of breakage.
+          CLI="npx --yes @sentry/cli@3"
+          $CLI releases new "$VERSION"
+          # Rewriting is the default in v3 (there is only --no-rewrite now).
+          $CLI sourcemaps upload --release "$VERSION" \
+            --url-prefix "app:///_next" --strict out/_next
+          $CLI sourcemaps upload --release "$VERSION" \
+            --url-prefix "app:///electron-dist" --strict electron-dist
+          $CLI releases finalize "$VERSION"
 
   # Flip the draft to published only after every OS build succeeds, so a release
   # never goes live (or reaches auto-update) with partial artifacts.
