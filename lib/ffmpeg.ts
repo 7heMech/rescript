@@ -44,6 +44,31 @@ export async function getFFmpeg(): Promise<FFmpeg> {
   return ffmpegPromise;
 }
 
+/**
+ * Terminate the ffmpeg worker and hand its heap back to the browser.
+ *
+ * ffmpeg-core is built with INITIAL_MEMORY === MAXIMUM_MEMORY === 1 GiB on a
+ * shared WebAssembly.Memory, so the full gigabyte is committed the moment the
+ * core instantiates and never shrinks — deleting MEMFS files frees nothing.
+ * Held across transcription it sits alongside onnxruntime's heap, the model
+ * weights and the decoded PCM, and WebKit kills the tab for it ("This webpage
+ * was reloaded because it was using significant memory"). Nothing needs ffmpeg
+ * between audio extraction and export, so drop it there and pay one re-init.
+ */
+export async function releaseFFmpeg(): Promise<void> {
+  const pending = ffmpegPromise;
+  if (!pending) return;
+  // Clear first so a concurrent getFFmpeg() builds a fresh instance rather than
+  // handing out the one we are about to terminate.
+  ffmpegPromise = null;
+  writtenFor = null;
+  try {
+    (await pending).terminate();
+  } catch {
+    // Load failed or the worker is already gone — the heap went with it.
+  }
+}
+
 async function ensureInput(ffmpeg: FFmpeg, file: File): Promise<string> {
   if (writtenFor !== file) {
     const { fetchFile } = await import("@ffmpeg/util");

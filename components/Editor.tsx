@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Group, Panel, Separator, useDefaultLayout } from "react-resizable-panels";
 import { useEditorStore } from "@/lib/store";
 import { getCutRanges, isWordCutOut } from "@/lib/edits";
-import { extractAudio, getFFmpeg } from "@/lib/ffmpeg";
+import { extractAudio, getFFmpeg, releaseFFmpeg } from "@/lib/ffmpeg";
 import { VAD_SAMPLE_RATE } from "@/lib/vad";
 import { isElectron } from "@/lib/platform";
 import { reportError } from "@/lib/sentry";
@@ -156,6 +156,10 @@ export default function Editor() {
         s.setProgress({ message: "Extracting audio…", value: null });
         const audio = await extractAudio(videoFile);
         s.setAudio(audio);
+        // ffmpeg's gigabyte is pure overhead from here until the user exports,
+        // and holding it through model instantiation is what makes WebKit kill
+        // the tab. Export re-initialises it lazily from the HTTP cache.
+        await releaseFFmpeg();
         if (restoreOnly || !audio) {
           s.setStatus("ready");
           s.setProgress({ message: "", value: null });
