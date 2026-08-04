@@ -1,7 +1,7 @@
 "use client";
 
 import { useId, useState } from "react";
-import { Bug, ExternalLink, Moon, Settings, Sun } from "lucide-react";
+import { Bug, ExternalLink, HomeIcon, Moon, Settings, Sun } from "lucide-react";
 import {
   DiscordIcon,
   DISCORD_INVITE_URL,
@@ -23,7 +23,7 @@ const MENU_LINKS = [
     href: `${GITHUB_REPO_URL}/issues`,
     Icon: Bug,
   },
-  { label: "Homepage", href: WEBSITE_URL, Icon: GitHubIcon },
+  { label: "Homepage", href: WEBSITE_URL, Icon: HomeIcon },
   { label: "Github", href: GITHUB_REPO_URL, Icon: GitHubIcon },
   { label: "Follow on X", href: X_PROFILE_URL, Icon: XIcon },
 ] as const;
@@ -134,8 +134,7 @@ export default function SettingsMenu() {
                   Help improve the app
                 </span>
                 <span className="mt-0.5 block text-[11px] leading-snug text-zinc-400 dark:text-zinc-500">
-                  Send anonymous usage statistics and crash reports (nothing
-                  about your media).
+                  Send anonymous feature usage statistics and crash reports.
                 </span>
               </span>
             </label>
