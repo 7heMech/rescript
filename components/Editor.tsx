@@ -65,7 +65,7 @@ function SplitWorkspace({ orientation }: { orientation: "horizontal" | "vertical
   );
   const separator = (
     <Separator
-      className={`${horizontal ? "w-px" : "h-px"} bg-zinc-200 outline-none transition-colors hover:bg-zinc-300 data-[separator=active]:bg-zinc-400 data-[separator=focus]:bg-zinc-400 dark:bg-zinc-800 dark:hover:bg-zinc-700 dark:data-[separator=active]:bg-zinc-500 dark:data-[separator=focus]:bg-zinc-500`}
+      className={`${horizontal ? "w-px" : "h-px"} bg-zinc-200 outline-none transition-colors hover:bg-zinc-300 data-[separator=active]:bg-zinc-300 data-[separator=focus]:bg-zinc-300 dark:bg-zinc-800 dark:hover:bg-zinc-700 dark:data-[separator=active]:bg-zinc-700 dark:data-[separator=focus]:bg-zinc-700`}
     />
   );
 
