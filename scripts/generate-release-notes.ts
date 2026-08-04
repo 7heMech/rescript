@@ -1,20 +1,40 @@
 // Generates GitHub release notes from the git range since the previous tag.
-// Usage: `npx tsx scripts/generate-release-notes.ts <current-ref> [previous-ref]`
-// Writes markdown to stdout. Requires AI_GATEWAY_API_KEY.
+// Usage: `npx tsx scripts/generate-release-notes.ts <current-ref> [previous-ref] [--out <file>]`
+// Writes markdown to <file>, or to stdout when --out is omitted.
+// Requires AI_GATEWAY_API_KEY.
 import { config as loadEnv } from "dotenv";
 import { generateText } from "ai";
 import { execSync } from "node:child_process";
+import { writeFileSync } from "node:fs";
 
-// quiet: dotenv's banner would otherwise land in stdout, which is the release body.
+// quiet: dotenv's banner would otherwise pollute stdout.
 loadEnv({ quiet: true });
 
-const current = process.argv[2];
-const previous = process.argv[3];
+const argv = process.argv.slice(2);
+let outFile: string | undefined;
+const positional: string[] = [];
+
+for (let i = 0; i < argv.length; i++) {
+  const arg = argv[i];
+  if (arg === "--out" || arg === "-o") {
+    outFile = argv[++i];
+    if (!outFile) {
+      console.error("[release-notes] --out requires a file path");
+      process.exit(1);
+    }
+  } else if (arg.startsWith("--out=")) {
+    outFile = arg.slice("--out=".length);
+  } else {
+    positional.push(arg);
+  }
+}
+
+const [current, previous] = positional;
 const model = process.env.RELEASE_NOTES_MODEL ?? "anthropic/claude-sonnet-4-6";
 
 if (!current) {
   console.error(
-    "Usage: tsx scripts/generate-release-notes.ts <current-ref> [previous-ref]"
+    "Usage: tsx scripts/generate-release-notes.ts <current-ref> [previous-ref] [--out <file>]"
   );
   process.exit(1);
 }
@@ -79,7 +99,14 @@ Recent commits:
 ${commits || "(none)"}`,
   });
 
-  process.stdout.write(`${text.trim()}\n`);
+  const notes = `${text.trim()}\n`;
+
+  if (outFile) {
+    writeFileSync(outFile, notes, "utf8");
+    console.error(`[release-notes] wrote ${outFile}`);
+  } else {
+    process.stdout.write(notes);
+  }
 }
 
 main().catch((err) => {

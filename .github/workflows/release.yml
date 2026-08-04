@@ -134,7 +134,7 @@ jobs:
           if [ -n "${{ steps.tags.outputs.previous }}" ]; then
             ARGS+=("${{ steps.tags.outputs.previous }}")
           fi
-          npx tsx scripts/generate-release-notes.ts "${ARGS[@]}" > release-notes.md
+          npx tsx scripts/generate-release-notes.ts "${ARGS[@]}" --out release-notes.md
           gh release edit "${{ github.ref_name }}" \
             --repo wassgha/rescript \
             --notes-file release-notes.md
