@@ -5,7 +5,8 @@ import { config as loadEnv } from "dotenv";
 import { generateText } from "ai";
 import { execSync } from "node:child_process";
 
-loadEnv();
+// quiet: dotenv's banner would otherwise land in stdout, which is the release body.
+loadEnv({ quiet: true });
 
 const current = process.argv[2];
 const previous = process.argv[3];
