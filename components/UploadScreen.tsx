@@ -349,7 +349,7 @@ export default function UploadScreen({
                 </p>
                 <p className="mt-1 max-w-sm text-[13px] leading-relaxed text-zinc-400 dark:text-zinc-500">
                   Editing needs SharedArrayBuffer, which requires a cross-origin-isolated page.
-                  Try a recent Chrome, Edge or Firefox over HTTPS.
+                  Try a recent Chrome, Edge, Safari or Firefox over HTTPS.
                 </p>
               </>
             ) : ready ? (

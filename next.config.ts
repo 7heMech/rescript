@@ -34,17 +34,20 @@ const nextConfig: NextConfig = {
     : {
         // SharedArrayBuffer (required by ffmpeg.wasm multi-threading and
         // onnxruntime multi-threading) is only available in
-        // cross-origin-isolated contexts. COEP "credentialless" (rather than
-        // "require-corp") keeps the page cross-origin isolated while still
-        // allowing third-party scripts like Google Analytics, which don't
-        // send Cross-Origin-Resource-Policy headers.
+        // cross-origin-isolated contexts. It has to be "require-corp" rather
+        // than the laxer "credentialless": WebKit never shipped credentialless
+        // and treats it as unsafe-none, which left every Safari user staring at
+        // "This browser can't run the editor". Every cross-origin subresource
+        // we load opts in — gtag.js and the analytics proxy on
+        // www.getrescript.com both send Cross-Origin-Resource-Policy, and model
+        // downloads are CORS-mode fetches, which COEP allows regardless.
         async headers() {
           return [
             {
               source: "/(.*)",
               headers: [
                 { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
-                { key: "Cross-Origin-Embedder-Policy", value: "credentialless" },
+                { key: "Cross-Origin-Embedder-Policy", value: "require-corp" },
               ],
             },
           ];

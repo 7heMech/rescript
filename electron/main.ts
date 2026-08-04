@@ -107,7 +107,7 @@ function registerAppProtocol(): void {
     // Enable SharedArrayBuffer for ffmpeg.wasm + onnxruntime (same as Next
     // headers() in next.config.ts for the non-export server).
     headers.set("Cross-Origin-Opener-Policy", "same-origin");
-    headers.set("Cross-Origin-Embedder-Policy", "credentialless");
+    headers.set("Cross-Origin-Embedder-Policy", "require-corp");
     const type = MIME[extname(filePath).toLowerCase()];
     if (type) headers.set("Content-Type", type);
     return new Response(response.body, {
