@@ -2,10 +2,7 @@
 
 import { useSyncExternalStore } from "react";
 
-export type IsolationState = "checking" | "preparing" | "ready" | "unavailable";
-
-/** How long to wait for the COI service worker to take over before giving up. */
-const PREPARE_TIMEOUT_MS = 10_000;
+export type IsolationState = "checking" | "ready" | "unavailable";
 
 function isIsolated() {
   return self.crossOriginIsolated && typeof SharedArrayBuffer !== "undefined";
@@ -23,37 +20,14 @@ function emit(next: IsolationState) {
   for (const listener of listeners) listener();
 }
 
-function watch() {
-  if (isIsolated()) return emit("ready");
-  // A service worker already controlling an un-isolated page means the worker
-  // cannot fix this (insecure context, stripped headers, or a browser without
-  // SharedArrayBuffer) — waiting for a reload that never comes is worse than
-  // saying so.
-  const sw = navigator.serviceWorker;
-  if (!window.isSecureContext || !sw || sw.controller) return emit("unavailable");
-
-  emit("preparing");
-  // coi-serviceworker reloads as soon as it takes control, so normally the page
-  // goes away before this resolves. Poll anyway — the reload can be blocked (or
-  // skipped by a future version) and we still want to notice isolation.
-  let waited = 0;
-  const timer = setInterval(() => {
-    waited += 250;
-    if (isIsolated()) {
-      clearInterval(timer);
-      emit("ready");
-    } else if (waited >= PREPARE_TIMEOUT_MS) {
-      clearInterval(timer);
-      emit("unavailable");
-    }
-  }, 250);
-}
-
 function subscribe(listener: () => void) {
   listeners.add(listener);
   if (!watching) {
     watching = true;
-    watch();
+    // Isolation is decided by the response headers of the document itself, so it
+    // is already settled by the time any component mounts — there is nothing to
+    // poll for or wait on.
+    emit(isIsolated() ? "ready" : "unavailable");
   }
   return () => listeners.delete(listener);
 }
@@ -62,11 +36,11 @@ function subscribe(listener: () => void) {
  * Reports whether the page can use SharedArrayBuffer, which ffmpeg.wasm and
  * onnxruntime both require for multi-threading.
  *
- * On static hosts isolation comes from public/coi-serviceworker.js, which
- * registers itself and then reloads the page — so on a first visit the app is
- * briefly interactive *without* isolation. Anything started in that window dies
- * with "SharedArrayBuffer is not defined" (and loses its work to the reload),
- * so the UI waits for "ready" before touching the pipeline.
+ * Isolation comes from real COOP/COEP headers on every target: vercel.json for
+ * the web app, the app:// protocol handler for Electron, and next.config.ts
+ * headers() for `next dev`. "unavailable" therefore means the browser itself
+ * can't do it (insecure context, or no SharedArrayBuffer), not that we're still
+ * setting up — so the UI can say so immediately instead of showing a spinner.
  */
 export function useCrossOriginIsolated(): IsolationState {
   return useSyncExternalStore(

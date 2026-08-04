@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Rescript has moved to app.getrescript.com</title>
+    <!-- The app used to be served from this GitHub Pages site under /rescript/.
+         It now lives at app.getrescript.com, which can send the COOP/COEP
+         headers that SharedArrayBuffer (ffmpeg.wasm, onnxruntime) requires.
+         GitHub Pages cannot issue a real 301, so redirect via meta refresh plus
+         script, and point crawlers at the new home with rel=canonical. -->
+    <link rel="canonical" href="https://app.getrescript.com/" />
+    <meta http-equiv="refresh" content="0; url=https://app.getrescript.com/" />
+    <meta name="robots" content="noindex" />
+    <script>
+      // Carry deep links across: /rescript/editor?x=1#y -> /editor?x=1#y
+      (function () {
+        var PREFIX = "/rescript";
+        var path = location.pathname;
+        if (path.indexOf(PREFIX) === 0) path = path.slice(PREFIX.length);
+        if (path.charAt(0) !== "/") path = "/" + path;
+        location.replace(
+          "https://app.getrescript.com" + path + location.search + location.hash
+        );
+      })();
+    </script>
+    <style>
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        font: 15px/1.6 system-ui, -apple-system, sans-serif;
+        color: #18181b;
+        background: #fff;
+      }
+      main {
+        padding: 2rem;
+        text-align: center;
+      }
+      a {
+        color: #18181b;
+      }
+      @media (prefers-color-scheme: dark) {
+        body {
+          color: #fafafa;
+          background: #09090b;
+        }
+        a {
+          color: #fafafa;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Rescript has moved</h1>
+      <p>
+        The editor is now at
+        <a href="https://app.getrescript.com/">app.getrescript.com</a>.
+      </p>
+    </main>
+  </body>
+</html>

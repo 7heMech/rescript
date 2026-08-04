@@ -7,9 +7,9 @@
 [![Join the Discord](https://img.shields.io/badge/Discord-Join%20the%20server-5865F2?logo=discord&logoColor=white)](https://discord.gg/qJAhYFydat)
 [![Follow @wassgha on X](https://img.shields.io/badge/Follow%20@wassgha-000000?logo=x&logoColor=white)](https://x.com/wassgha)
 
-**✨ Try it in the browser [wassgha.github.io/rescript](https://wassgha.github.io/rescript/)** or download the [Desktop App](#download)
+**✨ Try it in the browser [app.getrescript.com](https://app.getrescript.com/)** or download the [Desktop App](#download)
 
-[![Rescript Demo](./screenshots/rescript.png)](https://wassgha.github.io/rescript/)
+[![Rescript Demo](./screenshots/rescript.png)](https://app.getrescript.com/)
 
 Rescript is an open-source, transcript-based media editor. Drop in a video or
 audio file and it is transcribed locally with per-word timestamps and speaker
@@ -26,9 +26,9 @@ the media. Export the final cut — without your file ever leaving your device.
 
 See the [Releases](https://github.com/wassgha/rescript/releases) page. Desktop
 builds auto-update from GitHub Releases. Prefer the browser? Use the
-[web app](https://wassgha.github.io/rescript/) — same editor, no install.
+[web app](https://app.getrescript.com/) — same editor, no install.
 
-- 🔒 **Private by design** — no server, no auth, no uploads; all media processing happens on-device
+- 🔒 **Private by design** — no auth, no uploads; all media processing happens on-device
 - 📝 **Word-level editing** — select words, press ⌫, the cut follows the text
 - 📥 **Import your own transcript** — skip Whisper and edit with an SRT, VTT, or JSON caption file
 - 📤 **Export hub** — video (MP4/WebM, 720p–4K), audio (M4A/MP3/WAV), transcript (TXT/MD), or subtitles (SRT/VTT/JSON)
@@ -78,12 +78,13 @@ audio track. For desktop packaging, signing, and cutting releases, see
 > *first* time you transcribe, then cached in browser / app storage. After that,
 > everything — transcription, editing, export — works with the network fully
 > disconnected. Your media and transcript never leave the device; the only
-> third-party request the app makes is anonymous page analytics (Google
-> Analytics), which fails silently when offline.
+> third-party requests the app makes are anonymous page analytics (Google
+> Analytics and Vercel Web Analytics — page views and app opens, nothing about
+> your media), which fail silently when offline.
 
 ## How it works
 
-[![Rescript Promo](./screenshots/rescript-2.png)](https://wassgha.github.io/rescript/)
+[![Rescript Promo](./screenshots/rescript-2.png)](https://app.getrescript.com/)
 
 1. **Extract** — ffmpeg.wasm decodes the audio track to mono 16 kHz PCM.
 2. **Transcribe** — Whisper runs in a Web Worker with `return_timestamps: "word"`,
