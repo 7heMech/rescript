@@ -49,9 +49,9 @@ import {
 import { isWebGpuDeviceLostError } from "@/lib/webgpu";
 
 env.allowLocalModels = false;
-const ORT_WASM_PATHS = `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/vendor/ort/`;
+const ORT_WASM_PATHS = "/vendor/ort/";
 /** Parakeet.js pins onnxruntime-web@1.24.1 — keep its WASM on a separate path. */
-const PARAKEET_ORT_WASM_PATHS = `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/vendor/ort-parakeet/`;
+const PARAKEET_ORT_WASM_PATHS = "/vendor/ort-parakeet/";
 // Serve onnxruntime-web WASM from our own origin (offline friendly).
 if (env.backends?.onnx?.wasm) {
   env.backends.onnx.wasm.wasmPaths = ORT_WASM_PATHS;

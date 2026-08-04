@@ -165,9 +165,8 @@ export default function UploadScreen({
   const [dragging, setDragging] = useState(false);
   const [projects, setProjects] = useState<ProjectMeta[]>([]);
   const [busyId, setBusyId] = useState<string | null>(null);
-  // The pipeline needs SharedArrayBuffer, which on static hosts only appears
-  // after the COI service worker reloads the page. Accepting a file before then
-  // would fail immediately and lose the file to that reload.
+  // The pipeline needs SharedArrayBuffer, so don't accept a file until the page
+  // is confirmed cross-origin isolated — transcription would fail immediately.
   const isolation = useCrossOriginIsolated();
   const ready = isolation === "ready";
   const source = useEditorStore((s) => s.source);

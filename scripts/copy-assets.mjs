@@ -102,24 +102,4 @@ function patchParakeetWasmPaths() {
 
 patchParakeetWasmPaths();
 
-// coi-serviceworker provides COOP/COEP headers on static hosts (GitHub Pages)
-// that can't send them, keeping cross-origin isolation for SharedArrayBuffer.
-// A config prelude is prepended: always use COEP "credentialless" (needed for
-// Google Analytics) and skip registration when real headers already isolated
-// the page (local dev / self-hosting with a proper server).
-const coiSrc = join(root, "node_modules/coi-serviceworker/coi-serviceworker.js");
-const coiPrelude =
-  'if (typeof window !== "undefined") {\n' +
-  "  window.coi = {\n" +
-  "    coepCredentialless: () => true,\n" +
-  "    shouldRegister: () => !window.crossOriginIsolated,\n" +
-  "  };\n" +
-  "}\n";
-writeFileSync(
-  join(root, "public/coi-serviceworker.js"),
-  coiPrelude + readFileSync(coiSrc, "utf8")
-);
-
-console.log(
-  "[copy-assets] ffmpeg core + onnxruntime wasm + coi-serviceworker copied to public/"
-);
+console.log("[copy-assets] ffmpeg core + onnxruntime wasm copied to public/");

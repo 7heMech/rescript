@@ -6,7 +6,7 @@ User-facing progress for Rescript. Items are marked done when they shipped to
 ## Done
 
 ### Core editor
-- [x] Offline transcript-based editor in the browser (no server, no auth, no uploads)
+- [x] Offline transcript-based editor in the browser (no auth, no uploads)
 - [x] Upload → local Whisper transcription with per-word timestamps
 - [x] Speaker diarization (pyannote) with speaker-grouped transcript
 - [x] Cut / restore by selecting words (⌫, floating toolbar); undo / redo

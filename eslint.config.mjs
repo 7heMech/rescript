@@ -18,7 +18,6 @@ const eslintConfig = defineConfig([
     "dist/**",
     // Runtime assets copied from node_modules on postinstall.
     "public/vendor/**",
-    "public/coi-serviceworker.js",
   ]),
 ]);
 

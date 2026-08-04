@@ -3,8 +3,7 @@
 import type { FFmpeg } from "@ffmpeg/ffmpeg";
 import type { TimeRange } from "./types";
 
-const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
-const CORE_BASE = `${BASE_PATH}/vendor/ffmpeg`;
+const CORE_BASE = "/vendor/ffmpeg";
 const INPUT_NAME = "input_video";
 
 let ffmpegPromise: Promise<FFmpeg> | null = null;
@@ -19,8 +18,8 @@ export async function getFFmpeg(): Promise<FFmpeg> {
         import("@ffmpeg/util"),
       ]);
       // Multi-threaded ffmpeg.wasm needs SharedArrayBuffer, i.e. a
-      // cross-origin-isolated page (real COOP/COEP headers, or the COI service
-      // worker after its reload). Without it the core throws a bare
+      // cross-origin-isolated page (COOP/COEP from vercel.json on the web, from
+      // the app:// handler in Electron). Without it the core throws a bare
       // "SharedArrayBuffer is not defined" from deep inside the worker.
       if (!self.crossOriginIsolated || typeof SharedArrayBuffer === "undefined") {
         throw new Error(
@@ -34,8 +33,7 @@ export async function getFFmpeg(): Promise<FFmpeg> {
         workerURL: await toBlobURL(`${CORE_BASE}/ffmpeg-core.worker.js`, "text/javascript"),
         // Served same-origin (copied on postinstall): the bundled class worker
         // contains a dynamic import() that Next's bundler cannot handle.
-        classWorkerURL: new URL(`${BASE_PATH}/vendor/ffmpeg-class/worker.js`, location.href)
-          .href,
+        classWorkerURL: new URL("/vendor/ffmpeg-class/worker.js", location.href).href,
       });
       return ffmpeg;
     })();

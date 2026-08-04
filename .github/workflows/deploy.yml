@@ -1,8 +1,17 @@
-name: Deploy to GitHub Pages
+name: Deploy GitHub Pages redirect
+
+# The web app itself is deployed to app.getrescript.com by Vercel (see
+# vercel.json), which can serve the cross-origin isolation headers GitHub Pages
+# cannot. This workflow keeps the old wassgha.github.io/rescript URL alive as a
+# redirect so existing links, README badges, and shared URLs still land in the
+# editor.
 
 on:
   push:
     branches: [main]
+    paths:
+      - "redirect/**"
+      - ".github/workflows/deploy.yml"
   workflow_dispatch:
 
 permissions:
@@ -19,22 +28,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
       - uses: actions/configure-pages@v5
         with:
           enablement: true
-      - run: npm ci
-      - name: Build static export
-        run: npm run build
-        env:
-          STATIC_EXPORT: "1"
-          NEXT_PUBLIC_BASE_PATH: /${{ github.event.repository.name }}
+      - name: Assemble redirect site
+        run: |
+          mkdir -p site
+          cp redirect/index.html site/index.html
+          # Deep links (/rescript/editor) have no file on Pages, so 404.html is
+          # served for those — it runs the same path-preserving redirect.
+          cp redirect/index.html site/404.html
+          touch site/.nojekyll
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: out
+          path: site
 
   deploy:
     needs: build

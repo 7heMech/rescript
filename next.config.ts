@@ -1,11 +1,11 @@
 import type { NextConfig } from "next";
 
-// Static export for GitHub Pages: set STATIC_EXPORT=1 and (for project pages
-// served under /<repo>/) NEXT_PUBLIC_BASE_PATH=/<repo>. Static hosts cannot
-// send custom headers, so cross-origin isolation is provided at runtime by
-// public/coi-serviceworker.js instead of the headers() below.
+// STATIC_EXPORT=1 emits the static bundle shipped to both targets: the web app
+// at app.getrescript.com (served by Vercel, which sends the cross-origin
+// isolation headers from vercel.json) and the Electron shell (which sets them
+// itself in electron/main.ts). Both serve from the root, so there is no
+// basePath. The headers() below only covers `next dev`, where neither applies.
 const isExport = process.env.STATIC_EXPORT === "1";
-const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
@@ -14,7 +14,6 @@ const nextConfig: NextConfig = {
   ...(isExport
     ? {
         output: "export" as const,
-        basePath,
         images: { unoptimized: true },
       }
     : {
