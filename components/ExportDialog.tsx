@@ -10,6 +10,7 @@ import {
   X,
 } from "lucide-react";
 import { useEditorStore } from "@/lib/store";
+import { trackEvent } from "@/lib/telemetry";
 import { formatTime, getEditedDuration, getKeepRanges } from "@/lib/edits";
 import {
   exportAudio,
@@ -190,6 +191,11 @@ export default function ExportDialog() {
       const prev = useEditorStore.getState().exportUrl;
       if (prev) URL.revokeObjectURL(prev);
       setExportUrl(URL.createObjectURL(blob));
+      trackEvent("export_completed", {
+        kind: activeTab,
+        format: activeTab === "audio" ? audioFormat : videoFormat,
+        ...(activeTab === "audio" ? {} : { resolution }),
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Export failed.");
     } finally {
@@ -221,6 +227,7 @@ export default function ExportDialog() {
           speakers,
         });
         setError(null);
+        trackEvent("export_completed", { kind, format });
       } catch (err) {
         setError(err instanceof Error ? err.message : "Export failed.");
       }

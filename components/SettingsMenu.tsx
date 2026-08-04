@@ -11,6 +11,7 @@ import {
   X_PROFILE_URL,
 } from "./SocialLinks";
 import { useAppearance } from "@/hooks/useAppearance";
+import { useTelemetryPref } from "@/hooks/useTelemetryPref";
 import Popover, { PopoverContent, PopoverTrigger } from "./Popover";
 import type { Appearance } from "@/lib/theme";
 
@@ -33,6 +34,7 @@ export default function SettingsMenu() {
   const [open, setOpen] = useState(false);
   const panelId = useId();
   const { appearance, setAppearance } = useAppearance();
+  const { enabled: telemetry, setEnabled: setTelemetry } = useTelemetryPref();
 
   return (
     <Popover
@@ -89,7 +91,7 @@ export default function SettingsMenu() {
             </div>
           </section>
 
-          <section className="py-1.5">
+          <section className="border-b border-zinc-100 px-1.5 py-1.5 dark:border-zinc-800">
             {MENU_LINKS.map(({ label, href, Icon }) => (
               <a
                 key={label}
@@ -113,6 +115,29 @@ export default function SettingsMenu() {
               </a>
             ))}
           </section>
+
+          <section className="px-2 py-2.5">
+            <p className="mb-2 text-[11px] font-medium tracking-wide text-zinc-400 dark:text-zinc-500">
+              Privacy
+            </p>
+            <label className="flex cursor-pointer items-start gap-2.5">
+              <input
+                type="checkbox"
+                checked={telemetry}
+                onChange={(e) => setTelemetry(e.target.checked)}
+                className="mt-0.5 h-3.5 w-3.5 shrink-0 cursor-pointer accent-transparent"
+              />
+              <span>
+                <span className="block text-[12px] text-zinc-700 dark:text-zinc-300">
+                  Help improve the app
+                </span>
+                <span className="mt-0.5 block text-[11px] leading-snug text-zinc-400 dark:text-zinc-500">
+                  Send anonymous usage statistics (nothing about your media).
+                </span>
+              </span>
+            </label>
+          </section>
+
         </PopoverContent>
       </div>
     </Popover>

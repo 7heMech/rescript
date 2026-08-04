@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import { isModelId } from "@/lib/models";
 import { useEditorStore } from "@/lib/store";
+import { trackEvent } from "@/lib/telemetry";
 import type { WorkerResponse } from "@/lib/types";
 
 let activeWorker: Worker | null = null;
@@ -58,6 +59,12 @@ export function useTranscriber() {
           s.setWords(msg.words);
           s.setStatus("ready");
           s.setPartialText("");
+          // Which model and language actually get used, to prioritise backends.
+          // Nothing about the media itself — not its length, not the text.
+          trackEvent("transcription_completed", {
+            model,
+            language: transcriptLanguage,
+          });
           break;
         case "error":
           s.setError(msg.message);

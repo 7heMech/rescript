@@ -106,6 +106,13 @@ inference when available, falling back to WASM otherwise. The desktop app
 bundles Chromium via Electron and sets the same isolation headers on its
 `app://` protocol.
 
+## Telemetry
+
+By default, Rescript reports anonymous usage stats so we can tell how many people actually
+use it and which features are worth the maintenance. You
+can turn it off in **Settings → Privacy → Anonymous usage stats**, which stops
+it immediately and permanently on that install.
+
 ## License
 
 Copyright (c) 2026 Wassim Gharbi and Rescript contributors.
