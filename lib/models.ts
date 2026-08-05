@@ -2,11 +2,11 @@
 export type WhisperModel =
   | "base"
   | "small"
-  | "medium"
+  // | "medium"
   /** CrisperWhisper 2.0 Small, exported by tools/crisperwhisper-onnx. */
-  | "crisperSmall"
+  // | "crisperSmall"
   /** CrisperWhisper 2.0 Turbo, published ONNX export. */
-  | "crisperTurbo";
+  // | "crisperTurbo";
 /** NVIDIA Parakeet TDT 0.6B v3 via parakeet.js (ONNX / WebGPU). */
 export type ParakeetModel = "parakeet";
 export type ModelId = WhisperModel | ParakeetModel;
@@ -68,10 +68,10 @@ export type ModelInfo = WhisperModelInfo | ParakeetModelInfo;
 export const MODEL_ORDER: ModelId[] = [
   "base",
   "small",
-  "medium",
+  // "medium",
   "parakeet",
-  "crisperSmall",
-  "crisperTurbo",
+  // "crisperSmall",
+  // "crisperTurbo",
 ];
 
 const WHISPER_DTYPE = {
@@ -179,10 +179,10 @@ const CRISPER_TURBO_DTYPE = {
 export const MODELS: {
   base: WhisperModelInfo;
   small: WhisperModelInfo;
-  medium: WhisperModelInfo;
+  // medium: WhisperModelInfo;
   parakeet: ParakeetModelInfo;
-  crisperSmall: WhisperModelInfo;
-  crisperTurbo: WhisperModelInfo;
+  // crisperSmall: WhisperModelInfo;
+  // crisperTurbo: WhisperModelInfo;
 } = {
   base: {
     backend: "whisper",
@@ -200,51 +200,51 @@ export const MODELS: {
     size: "~600 MB",
     dtype: WHISPER_DTYPE,
   },
-  medium: {
-    backend: "whisper",
-    id: "onnx-community/whisper-medium_timestamped",
-    label: "Whisper Medium",
-    description:
-      "Best accuracy on accents, crosstalk and poor recordings. Slow, and a big download.",
-    // WASM int8 encoder + q4 decoder ~780 MB; WebGPU fp16 encoder ~1.1 GB.
-    size: "~1.1 GB",
-    dtype: WHISPER_MEDIUM_DTYPE,
-  },
+  // medium: {
+  //   backend: "whisper",
+  //   id: "onnx-community/whisper-medium_timestamped",
+  //   label: "Whisper Medium",
+  //   description:
+  //     "Best accuracy on accents, crosstalk and poor recordings. Slow, and a big download.",
+  //   // WASM int8 encoder + q4 decoder ~780 MB; WebGPU fp16 encoder ~1.1 GB.
+  //   size: "~1.1 GB",
+  //   dtype: WHISPER_MEDIUM_DTYPE,
+  // },
   parakeet: {
     backend: "parakeet",
     id: "parakeet-tdt-0.6b-v3",
     repoId: "ysdede/parakeet-tdt-0.6b-v3-onnx",
-    label: "Parakeet TDT v3",
+    label: "Parakeet v3",
     description:
       "NVIDIA FastConformer — faster on WebGPU, strong EU-language accuracy. Auto-detects language.",
     // WASM int8 encoder + fp16 decoder ~690 MB; WebGPU fp16 + fp32 ~1.3 GB.
     size: "~1.3 GB",
   },
-  crisperSmall: {
-    backend: "whisper",
-    // Local folder under public/models — not published yet. Install with
-    // `python tools/crisperwhisper-onnx/install_local.py`.
-    id: "crisperwhisper-2.0-small-onnx",
-    local: true,
-    label: "CrisperWhisper Small (local)",
-    description:
-      "Verbatim: transcribes fillers as [UM] / [UH] instead of dropping them. Self-exported, unpublished. Non-commercial licence.",
-    // q4 encoder 66 MB + q4 merged decoder 258 MB.
-    size: "~324 MB",
-    dtype: CRISPER_SMALL_DTYPE,
-    crisper: true,
-  },
-  crisperTurbo: {
-    backend: "whisper",
-    id: "Masterx/CrisperWhisper2.0-turbo-ONNX",
-    label: "CrisperWhisper Turbo",
-    description:
-      "Keeps fillers, on a large-v3 encoder. The largest download. Non-commercial licence.",
-    // q4 encoder 425 MB + fp16 merged decoder 477 MB.
-    size: "~900 MB",
-    dtype: CRISPER_TURBO_DTYPE,
-    crisper: true,
-  },
+  // crisperSmall: {
+  //   backend: "whisper",
+  //   // Local folder under public/models — not published yet. Install with
+  //   // `python tools/crisperwhisper-onnx/install_local.py`.
+  //   id: "crisperwhisper-2.0-small-onnx",
+  //   local: true,
+  //   label: "CrisperWhisper Small (local)",
+  //   description:
+  //     "Verbatim: transcribes fillers as [UM] / [UH] instead of dropping them. Self-exported, unpublished. Non-commercial licence.",
+  //   // q4 encoder 66 MB + q4 merged decoder 258 MB.
+  //   size: "~324 MB",
+  //   dtype: CRISPER_SMALL_DTYPE,
+  //   crisper: true,
+  // },
+  // crisperTurbo: {
+  //   backend: "whisper",
+  //   id: "Masterx/CrisperWhisper2.0-turbo-ONNX",
+  //   label: "CrisperWhisper Turbo",
+  //   description:
+  //     "Keeps fillers, on a large-v3 encoder. The largest download. Non-commercial licence.",
+  //   // q4 encoder 425 MB + fp16 merged decoder 477 MB.
+  //   size: "~900 MB",
+  //   dtype: CRISPER_TURBO_DTYPE,
+  //   crisper: true,
+  // },
 };
 
 /**
