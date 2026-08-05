@@ -14,11 +14,7 @@ import {
   speechSegmentsFromFrames,
   VAD_SAMPLE_RATE,
 } from "../lib/vad";
-import {
-  MAX_VERBATIM_PROMPT_LENGTH,
-  MODELS,
-  whisperFillerPrompt,
-} from "../lib/models";
+import { MODELS, whisperFillerPrompt } from "../lib/models";
 import {
   TRANSCRIPT_LANGUAGE_ORDER,
   type TranscriptLanguage,
@@ -37,6 +33,17 @@ function ffmpegAvailable(): boolean {
   const probe = spawnSync("ffmpeg", ["-version"], { encoding: "utf8" });
   return probe.status === 0;
 }
+
+/**
+ * Longest `<|startofprev|>` filler prompt considered safe. Lived in lib/models
+ * until every model stopped opting in; kept here because the constraint is
+ * still real for anything that opts back in, and prod no longer reads it.
+ *
+ * Note the cap is necessary but not sufficient — Whisper Small collapses a long
+ * VAD segment to a bare "Um," with a 20-character prompt, well inside it. That
+ * is why `keepFillers` is unset everywhere rather than merely bounded.
+ */
+const MAX_VERBATIM_PROMPT_LENGTH = 32;
 
 // Short filler prompts are OK; long ones truncate multi-speaker / long-form ASR.
 // Not every Whisper model opts in: Medium truncates to a fragment even inside

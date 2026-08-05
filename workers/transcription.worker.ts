@@ -32,6 +32,7 @@ import {
   MODELS,
   isParakeetModel,
   isWhisperModel,
+  isCrisperModel,
   verbatimTagCount,
   whisperFillerPrompt,
   type ModelId,
@@ -395,7 +396,9 @@ async function getAsr(choice: WhisperModel) {
   const transcriber = await models.load<AutomaticSpeechRecognitionPipeline>(
     MODELS[choice].id
   );
-  if (verbatimTagCount(choice) !== null) {
+  // Keyed on the checkpoint, not on the prefix: the repair is required by
+  // CrisperWhisper's vocabulary layout, so it applies even without one.
+  if (isCrisperModel(choice)) {
     markCrisperPromptTokensSpecial(transcriber);
   }
   return transcriber;

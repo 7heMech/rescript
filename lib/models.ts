@@ -68,6 +68,20 @@ export type WhisperModelInfo = ModelDisplay & {
    */
   verbatimTags?: number;
   /**
+   * A CrisperWhisper checkpoint, whose vocabulary extends past Whisper's
+   * timestamp block: `[UM]`, `[UH]`, vocal events and the prompt scaffolding all
+   * sit above it. transformers.js's `decodeWithTimestamps` infers the timestamp
+   * boundary as `all_special_ids.at(-1) + 1` with no upper bound, so every one of
+   * those tokens is mistaken for a timestamp and word-timestamp collation dies on
+   * the first filler. The worker repairs this per model — see
+   * `markCrisperPromptTokensSpecial`.
+   *
+   * Deliberately separate from {@link WhisperModelInfo.verbatimTags}: the repair
+   * is required by the vocabulary layout, so it must keep running even for a
+   * CrisperWhisper model decoded without the mode prefix.
+   */
+  crisper?: boolean;
+  /**
    * Load from `public/models/<id>/` instead of the Hub. Used for exports that
    * have not been published yet — see tools/crisperwhisper-onnx.
    */
@@ -139,15 +153,37 @@ const WHISPER_MEDIUM_DTYPE = {
 } satisfies WhisperModelInfo["dtype"];
 
 /**
- * Both CrisperWhisper exports run q4 on either device — it is the only
- * quantisation available for the merged decoder in both repos, because
- * `quantize_dynamic` cannot reach weights inside the merged decoder's
- * control-flow subgraphs (see tools/crisperwhisper-onnx/README.md). The q4 pair
- * is also the combination verified end-to-end for the local export.
+ * The local Small export ships only q4 for the merged decoder: int8 cannot
+ * reach weights inside the decoder's control-flow subgraphs, so
+ * `quantize_dynamic` silently emits an un-quantised file and the export tooling
+ * refuses it (see tools/crisperwhisper-onnx/README.md). This q4 pair is the
+ * combination verified end-to-end — encoder and decoder loaded in onnxruntime,
+ * cross-attentions returned at the right shape.
  */
-const CRISPER_DTYPE = {
+const CRISPER_SMALL_DTYPE = {
   webgpu: { encoder_model: "q4", decoder_model_merged: "q4" },
   wasm: { encoder_model: "q4", decoder_model_merged: "q4" },
+} satisfies WhisperModelInfo["dtype"];
+
+/**
+ * Turbo takes fp16 for the decoder rather than q4.
+ *
+ * Turbo collapsed after the first VAD segment on q4/q4. Bisecting against the
+ * fp32 checkpoint cleared everything else: fp32 transcribes the clip in full,
+ * and the q4 encoder is faithful — swapping it in under an fp32 decoder gives a
+ * byte-identical transcript (cosine 0.93 against fp32 hidden states, but no
+ * effect on output). That leaves the merged decoder as the only component not
+ * exonerated, so it gets the precision.
+ *
+ * It is also cheaper: fp16 is 477 MB against q4's 600 MB, because q4 leaves the
+ * embedding and lm_head — most of a 4-layer decoder's weight — unquantised.
+ * fp32 would be better still but ships as a 953 MB external-data sidecar, which
+ * transformers.js only fetches when `use_external_data_format` is declared, and
+ * this repo's config.json does not declare it.
+ */
+const CRISPER_TURBO_DTYPE = {
+  webgpu: { encoder_model: "q4", decoder_model_merged: "fp16" },
+  wasm: { encoder_model: "q4", decoder_model_merged: "fp16" },
 } satisfies WhisperModelInfo["dtype"];
 
 /**
@@ -217,21 +253,47 @@ export const MODELS: {
       "Verbatim: transcribes fillers as [UM] / [UH] instead of dropping them. Self-exported, unpublished. Non-commercial licence.",
     // q4 encoder 66 MB + q4 merged decoder 258 MB.
     size: "~324 MB",
-    dtype: CRISPER_DTYPE,
-    verbatimTags: 5,
+    dtype: CRISPER_SMALL_DTYPE,
+    crisper: true,
+    // No `verbatimTags` — see the note on crisperTurbo. Measured against the
+    // fp32 checkpoint on an 11.5 s clip, the mode prefix drops "Nice. How does
+    // it," and emits [breath] where the speaker hesitated, while plain decoding
+    // keeps the hesitation as "uh".
   },
   crisperTurbo: {
     backend: "whisper",
     id: "Masterx/CrisperWhisper2.0-turbo-ONNX",
     label: "CrisperWhisper Turbo",
     description:
-      "Verbatim, on a large-v3 encoder. The most accurate verbatim option, and the largest download. Non-commercial licence.",
-    // q4 encoder 425 MB + q4 merged decoder 600 MB.
-    size: "~1.0 GB",
-    dtype: CRISPER_DTYPE,
-    verbatimTags: 5,
+      "Keeps fillers, on a large-v3 encoder. The largest download. Non-commercial licence.",
+    // q4 encoder 425 MB + fp16 merged decoder 477 MB.
+    size: "~900 MB",
+    dtype: CRISPER_TURBO_DTYPE,
+    crisper: true,
+    // No `verbatimTags`, for the same reason Medium carries no filler prompt:
+    // prefix conditioning collapses short segments, and the worker decodes VAD
+    // segments rather than whole files. Measured on an 11.5 s clip against the
+    // fp32 checkpoint, one segment at a time:
+    //
+    //   slice       | plain                       | + [verbatim_1..5]
+    //   ------------|-----------------------------|---------------------
+    //   full 11.5 s | complete, includes "[UH]"   | drops "Nice."
+    //   2.5–5.0 s   | "Nice. How does it work?"   | "Nice. How does it-"
+    //
+    // Nothing is lost by dropping it: this checkpoint emits `[UH]` unprompted,
+    // so plain decoding is both more complete and still verbatim.
   },
 };
+
+/**
+ * Whether `model` is a CrisperWhisper checkpoint, and so needs the tokenizer
+ * repair in {@link WhisperModelInfo.crisper}. Independent of whether it is
+ * decoded with a mode prefix.
+ */
+export function isCrisperModel(model: ModelId): boolean {
+  const info = MODELS[model];
+  return info.backend === "whisper" && info.crisper === true;
+}
 
 /** Whether `model` is steered with CrisperWhisper's `[verbatim_N]` prefix. */
 export function verbatimTagCount(model: ModelId): number | null {

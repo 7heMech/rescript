@@ -86,6 +86,21 @@ assert(verbatimTagCount("crisperTurbo") === null, "crisperTurbo sends no mode pr
 assert(verbatimTagCount("base") === null, "base has no verbatim tags");
 // The tokenizer fix-up must still run without a mode prefix — the extended
 // vocabulary tokens that break word collation are emitted either way.
+// Turbo runs fp16 on the merged decoder, not q4: on q4 it collapsed after the
+// first VAD segment, and bisection cleared the encoder (a q4 encoder under an
+// fp32 decoder reproduces the fp32 transcript exactly). fp16 is also 477 MB
+// against q4's 600 MB. Pinned so a dtype tidy-up cannot fold it back into the
+// Small config.
+assert(
+  MODELS.crisperTurbo.dtype.wasm.decoder_model_merged === "fp16" &&
+    MODELS.crisperTurbo.dtype.webgpu.decoder_model_merged === "fp16",
+  "crisperTurbo decodes in fp16"
+);
+assert(
+  MODELS.crisperSmall.dtype.wasm.decoder_model_merged === "q4",
+  "crisperSmall keeps the verified q4 decoder"
+);
+
 assert(isCrisperModel("crisperSmall"), "crisperSmall needs the tokenizer fix-up");
 assert(isCrisperModel("crisperTurbo"), "crisperTurbo needs the tokenizer fix-up");
 assert(!isCrisperModel("base"), "base needs no tokenizer fix-up");
