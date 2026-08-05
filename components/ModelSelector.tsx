@@ -8,6 +8,7 @@ import {
   useId,
   useMemo,
   useState,
+  type ComponentType,
   type ReactNode,
 } from "react";
 import {
@@ -18,8 +19,12 @@ import {
   FileText,
   Languages,
   Loader2,
-  type LucideIcon,
 } from "lucide-react";
+import {
+  SignalBarsHigh,
+  SignalBarsLow,
+  SignalBarsMedium,
+} from "./SignalBars";
 import {
   TRANSCRIPT_LANGUAGE_ORDER,
   TRANSCRIPT_LANGUAGES,
@@ -30,6 +35,7 @@ import {
   MODELS,
   isModelId,
   isWhisperModel,
+  type ModelId,
 } from "@/lib/models";
 import type { TranscriptSource } from "@/lib/source";
 import {
@@ -50,9 +56,15 @@ export type ModelOptionContextValue = {
   keepMenuOpen: () => void;
 };
 
+/** Any `size` + `className` icon: lucide's, or a local one like {@link SignalBarsLow}. */
+export type IconComponent = ComponentType<{
+  size?: number | string;
+  className?: string;
+}>;
+
 export type OptionTrigger = {
   label: ReactNode;
-  icon?: LucideIcon;
+  icon?: IconComponent;
   iconClassName?: string;
   /** Show a spinner instead of the icon in the closed trigger. */
   busy?: boolean;
@@ -301,12 +313,24 @@ export default function ModelSelector({
   );
 }
 
+/** Signal bars stand in for relative model strength on the default rows. */
+const MODEL_ICONS: Record<ModelId, IconComponent> = {
+  base: SignalBarsLow,
+  small: SignalBarsMedium,
+  parakeet: SignalBarsHigh,
+};
+
+function iconForSource(id: TranscriptSource): IconComponent {
+  if (isModelId(id)) return MODEL_ICONS[id];
+  return id === "import" ? FileText : AudioLines;
+}
+
 /** Default option row: icon + label + optional meta. ASR ids fill in from MODELS. */
 export function ModelOption({
   id,
   label,
   meta,
-  icon: Icon = AudioLines,
+  icon,
   children,
   onSelect,
   /** When false, a child owns the closed trigger via `useOptionTrigger`. */
@@ -315,7 +339,7 @@ export function ModelOption({
   id: TranscriptSource;
   label?: string;
   meta?: string;
-  icon?: LucideIcon;
+  icon?: IconComponent;
   children?: ReactNode;
   onSelect?: (ctx: ModelOptionContextValue) => void;
   autoTrigger?: boolean;
@@ -323,6 +347,7 @@ export function ModelOption({
   const selector = useSelectorCtx();
   const selected = selector.value === id;
 
+  const Icon = icon ?? iconForSource(id);
   const resolvedLabel = label ?? (isModelId(id) ? MODELS[id].label : id);
   const resolvedMeta = meta ?? (isModelId(id) ? MODELS[id].size : undefined);
 
@@ -355,11 +380,10 @@ export function ModelOption({
         role="option"
         aria-selected={selected}
         onClick={handleClick}
-        className={`flex w-full flex-col gap-0.5 rounded-lg px-2.5 py-2 text-left transition cursor-pointer ${
-          selected
+        className={`flex w-full flex-col gap-0.5 rounded-lg px-2.5 py-2 text-left transition cursor-pointer ${selected
             ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
             : "text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-800/60"
-        }`}
+          }`}
       >
         <span className="flex w-full items-center gap-2.5">
           <Icon
@@ -425,11 +449,10 @@ export function LanguageSection() {
                 setSubmenuOpen((v) => !v);
                 selector.keepMenuOpen();
               }}
-              className={`flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition ${
-                submenuOpen
+              className={`flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition ${submenuOpen
                   ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
                   : "text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-800/60"
-              }`}
+                }`}
             >
               <span className="text-[15px] leading-none" aria-hidden>
                 {active.flag}
@@ -439,9 +462,8 @@ export function LanguageSection() {
               </span>
               <ChevronRight
                 size={14}
-                className={`shrink-0 text-zinc-400 transition dark:text-zinc-500 ${
-                  submenuOpen ? "rotate-180" : ""
-                }`}
+                className={`shrink-0 text-zinc-400 transition dark:text-zinc-500 ${submenuOpen ? "rotate-180" : ""
+                  }`}
               />
             </button>
           </PopoverTrigger>
@@ -462,11 +484,10 @@ export function LanguageSection() {
                   role="menuitemradio"
                   aria-checked={selected}
                   onClick={() => select(id)}
-                  className={`flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition ${
-                    selected
+                  className={`flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition ${selected
                       ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
                       : "text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-800/60"
-                  }`}
+                    }`}
                 >
                   <span className="text-[15px] leading-none" aria-hidden>
                     {option.flag}
