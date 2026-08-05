@@ -1,8 +1,16 @@
 # Patches
 
-Applied by `patch-package` from `postinstall`. If a patch fails to apply after a
-dependency bump, install fails loudly rather than silently reverting to the
-buggy behaviour.
+Applied by `patch-package` from `postinstall`. If a patch fails to apply, install
+fails loudly rather than silently reverting to the buggy behaviour.
+
+**Patched dependencies are pinned to an exact version in `package.json`, not a
+caret range.** A patch filename carries the version it was cut against, and on a
+mismatch `patch-package` only *warns* — so a range would let a minor bump quietly
+drop the fix. That matters more than usual here: the unpatched failure mode below
+is a silently truncated transcript, not an error. When bumping
+`@huggingface/transformers`, re-cut the patch (`npx patch-package
+@huggingface/transformers`) and re-run the CrisperWhisper models against a clip
+containing a filler.
 
 ## `@huggingface/transformers` — bound the Whisper timestamp-token range
 

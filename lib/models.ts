@@ -1,5 +1,3 @@
-import type { TranscriptLanguage } from "./languages";
-
 /** Local speech models offered on the upload screen. */
 export type WhisperModel =
   | "base"
@@ -33,41 +31,6 @@ export type WhisperModelInfo = ModelDisplay & {
     wasm: Record<string, DType>;
   };
   /**
-   * When true, condition Whisper on a short filler-rich initial prompt so
-   * "Remove fillers" has tokens to act on. See {@link whisperFillerPrompt}.
-   *
-   * **Currently unset on every model — the prompt does more harm than good.**
-   * Measured on an 11.5 s clip, decoding each VAD segment the way the worker
-   * does, Whisper Small with the prompt attached:
-   *
-   * | slice        | plain                       | + prompt              |
-   * |--------------|-----------------------------|-----------------------|
-   * | full 11.5 s  | complete, includes "uh"     | "Nice. How does it, uh," |
-   * | 2.5–5.0 s    | "Nice. How does it work?"   | "Nice. How does it"   |
-   * | 5.0–11.5 s   | complete sentence           | **"Um,"**             |
-   *
-   * The long tail segment collapses into an echo of the prompt. Medium behaves
-   * the same way, and Base is only marginally more robust. This is the
-   * truncation {@link MAX_VERBATIM_PROMPT_LENGTH} was meant to bound, but the
-   * length cap does not prevent it — a 20-character prompt still triggers it.
-   *
-   * Little is lost by dropping it: plain decoding already yields "uh" on this
-   * clip, and anything the model does swallow is still recovered as a timed
-   * `...` placeholder by {@link insertDisfluencyPlaceholders}, so it stays
-   * cuttable. Kept as a one-flag switch for re-testing on other material.
-   */
-  keepFillers?: boolean;
-  /**
-   * CrisperWhisper mode prefix: how many `[verbatim_N]` tags to prime the
-   * decoder with. CrisperWhisper 2.0 picks verbatim vs. intended output purely
-   * from this prefix — the encoder output is identical either way — and unlike
-   * Whisper's initial prompt there is no `<|startofprev|>`; the tags come
-   * first and the standard prefix follows. Verbatim output spells fillers as
-   * `[UM]` / `[UH]`, which `lib/fillers.ts` already matches once punctuation is
-   * stripped. Source: `crisperwhisper==2.0.1`, `crisperwhisper/prompt.py`.
-   */
-  verbatimTags?: number;
-  /**
    * A CrisperWhisper checkpoint, whose vocabulary extends past Whisper's
    * timestamp block: `[UM]`, `[UH]`, vocal events and the prompt scaffolding all
    * sit above it.
@@ -80,9 +43,8 @@ export type WhisperModelInfo = ModelDisplay & {
    * the transcript off mid-sentence with no error. See patches/README.md.
    *
    * The flag itself drives `markCrisperPromptTokensSpecial`, keeping the mode
-   * tags out of transcript text. Deliberately separate from
-   * {@link WhisperModelInfo.verbatimTags} so it still applies to a CrisperWhisper
-   * model decoded without the mode prefix.
+   * tags out of transcript text even though we never send them — see the note on
+   * decoder-prefix conditioning above {@link MODELS}.
    */
   crisper?: boolean;
   /**
@@ -111,32 +73,6 @@ export const MODEL_ORDER: ModelId[] = [
   "crisperSmall",
   "crisperTurbo",
 ];
-
-/**
- * Short, language-specific filler prompts for Whisper. Deliberately tiny and
- * free of "I'm …" openers (those seeded "I'm sorry" hallucination loops).
- * The classic OpenAI example prompt is too long for our chunked decoder path.
- */
-const WHISPER_FILLER_PROMPTS: Record<TranscriptLanguage, string> = {
-  en: "Um, uh, hmm, er, ah.",
-  es: "Em, emm, eee.",
-  fr: "Euh, heu, euhm.",
-  de: "Äh, ähm, öhm, mhh.",
-  zh: "嗯, 呃, 额, 唔.",
-};
-
-/**
- * Filler-bias prompt for Whisper when the selected model opts into
- * {@link WhisperModelInfo.keepFillers}. Returns null when prompting is off.
- */
-export function whisperFillerPrompt(
-  model: ModelId,
-  language: TranscriptLanguage
-): string | null {
-  const info = MODELS[model];
-  if (info.backend !== "whisper" || !info.keepFillers) return null;
-  return WHISPER_FILLER_PROMPTS[language];
-}
 
 const WHISPER_DTYPE = {
   // q4 decoder: q8 fails session creation on onnxruntime-web 1.26
@@ -191,9 +127,54 @@ const CRISPER_TURBO_DTYPE = {
 } satisfies WhisperModelInfo["dtype"];
 
 /**
+ * No model conditions the decoder on a prefix, and that is a measured decision
+ * rather than an omission. Two mechanisms were tried and both were removed:
+ *
+ * **Whisper's `<|startofprev|>` filler prompt** (a short filler list — "Um, uh,
+ * hmm, er, ah." — forced via `decoder_input_ids` to give "Remove fillers"
+ * something to act on). Measured on an 11.5 s clip, decoding each VAD segment
+ * the way the worker does, Whisper Small:
+ *
+ * | slice       | plain                     | + prompt                 |
+ * |-------------|---------------------------|--------------------------|
+ * | full 11.5 s | complete, includes "uh"   | "Nice. How does it, uh," |
+ * | 2.5–5.0 s   | "Nice. How does it work?" | "Nice. How does it"      |
+ * | 5.0–11.5 s  | complete sentence         | **"Um,"**                |
+ *
+ * The long tail segment collapses into an echo of the prompt. Medium is worse
+ * (the whole clip truncates to "Nice. How does it, uh…"), Base only marginally
+ * more robust. A length cap was tried first and does not help — a 20-character
+ * prompt still triggers it.
+ *
+ * **CrisperWhisper's `[verbatim_N]` mode prefix** (its trained-in verbatim
+ * selector, from `crisperwhisper==2.0.1`, `crisperwhisper/prompt.py`). Same
+ * failure, same cause — the worker decodes short VAD segments, and prefix
+ * conditioning collapses them. Measured against the fp32 checkpoints:
+ *
+ * | slice       | plain                       | + [verbatim_1..5]      |
+ * |-------------|-----------------------------|------------------------|
+ * | full 11.5 s | complete, includes "[UH]"   | Turbo drops "Nice."    |
+ * | 2.5–5.0 s   | "Nice. How does it work?"   | "Nice. How does it-"   |
+ *
+ * On Small the prefix also emitted `[breath]` where the speaker hesitated while
+ * plain decoding kept it as "uh".
+ *
+ * If either is ever re-attempted: do **not** copy upstream's `<|notimestamps|>`
+ * along with the mode tags. Upstream can suppress timestamps because it derives
+ * word timings itself via Viterbi over the space token's cross-attention;
+ * transformers.js instead splits chunked audio *on* timestamp tokens, so
+ * suppressing them accumulates one unsegmented run whose stride-overlap merge
+ * can resolve to nothing — surfacing mid-transcription as "token_ids must be a
+ * non-empty array of integers".
+ *
+ * Nothing is lost either way: every checkpoint emits its fillers unprompted
+ * ("uh" on stock Whisper, `[UH]` on CrisperWhisper), and whatever a model does
+ * swallow is still recovered as a timed `...` placeholder by
+ * `insertDisfluencyPlaceholders`, so it stays cuttable.
+ *
  * Local speech models that can run in the transcription worker.
  * Shared display fields live on every entry; backend-specific knobs
- * (`dtype` / `keepFillers` vs `repoId`) are gated by `backend`.
+ * (`dtype` / `crisper` vs `repoId`) are gated by `backend`.
  */
 export const MODELS: {
   base: WhisperModelInfo;
@@ -228,13 +209,6 @@ export const MODELS: {
     // WASM int8 encoder + q4 decoder ~780 MB; WebGPU fp16 encoder ~1.1 GB.
     size: "~1.1 GB",
     dtype: WHISPER_MEDIUM_DTYPE,
-    // No filler prompt, unlike Base and Small. Medium is far more sensitive to
-    // <|startofprev|> conditioning than they are: measured on an 11.5 s clip,
-    // both dtype configs transcribe it in full unprompted, and both collapse to
-    // the fragment "Nice. How does it, uh..." with the prompt attached — the
-    // truncation failure {@link MAX_VERBATIM_PROMPT_LENGTH} describes, except
-    // triggered by a prompt already inside that cap. It costs nothing here:
-    // Medium emits "uh" on its own, which is all the prompt was there to buy.
   },
   parakeet: {
     backend: "parakeet",
@@ -259,10 +233,6 @@ export const MODELS: {
     size: "~324 MB",
     dtype: CRISPER_SMALL_DTYPE,
     crisper: true,
-    // No `verbatimTags` — see the note on crisperTurbo. Measured against the
-    // fp32 checkpoint on an 11.5 s clip, the mode prefix drops "Nice. How does
-    // it," and emits [breath] where the speaker hesitated, while plain decoding
-    // keeps the hesitation as "uh".
   },
   crisperTurbo: {
     backend: "whisper",
@@ -274,35 +244,16 @@ export const MODELS: {
     size: "~900 MB",
     dtype: CRISPER_TURBO_DTYPE,
     crisper: true,
-    // No `verbatimTags`, for the same reason Medium carries no filler prompt:
-    // prefix conditioning collapses short segments, and the worker decodes VAD
-    // segments rather than whole files. Measured on an 11.5 s clip against the
-    // fp32 checkpoint, one segment at a time:
-    //
-    //   slice       | plain                       | + [verbatim_1..5]
-    //   ------------|-----------------------------|---------------------
-    //   full 11.5 s | complete, includes "[UH]"   | drops "Nice."
-    //   2.5–5.0 s   | "Nice. How does it work?"   | "Nice. How does it-"
-    //
-    // Nothing is lost by dropping it: this checkpoint emits `[UH]` unprompted,
-    // so plain decoding is both more complete and still verbatim.
   },
 };
 
 /**
  * Whether `model` is a CrisperWhisper checkpoint, and so needs the tokenizer
- * repair in {@link WhisperModelInfo.crisper}. Independent of whether it is
- * decoded with a mode prefix.
+ * repair in {@link WhisperModelInfo.crisper}.
  */
 export function isCrisperModel(model: ModelId): boolean {
   const info = MODELS[model];
   return info.backend === "whisper" && info.crisper === true;
-}
-
-/** Whether `model` is steered with CrisperWhisper's `[verbatim_N]` prefix. */
-export function verbatimTagCount(model: ModelId): number | null {
-  const info = MODELS[model];
-  return info.backend === "whisper" ? (info.verbatimTags ?? null) : null;
 }
 
 /** Whether `model` loads from public/models rather than the Hub. */

@@ -14,11 +14,6 @@ import {
   speechSegmentsFromFrames,
   VAD_SAMPLE_RATE,
 } from "../lib/vad";
-import { MODELS, whisperFillerPrompt } from "../lib/models";
-import {
-  TRANSCRIPT_LANGUAGE_ORDER,
-  type TranscriptLanguage,
-} from "../lib/languages";
 
 const wav = path.join(
   process.cwd(),
@@ -34,55 +29,21 @@ function ffmpegAvailable(): boolean {
   return probe.status === 0;
 }
 
-/**
- * Longest `<|startofprev|>` filler prompt considered safe. Lived in lib/models
- * until every model stopped opting in; kept here because the constraint is
- * still real for anything that opts back in, and prod no longer reads it.
- *
- * Note the cap is necessary but not sufficient — Whisper Small collapses a long
- * VAD segment to a bare "Um," with a 20-character prompt, well inside it. That
- * is why `keepFillers` is unset everywhere rather than merely bounded.
- */
-const MAX_VERBATIM_PROMPT_LENGTH = 32;
-
-// Short filler prompts are OK; long ones truncate multi-speaker / long-form ASR.
-// Not every Whisper model opts in: Medium truncates to a fragment even inside
-// the length cap, and the CrisperWhisper checkpoints transcribe fillers without
-// prompting. Those are checked in models-test.ts; here we only constrain the
-// prompts that do get sent.
-let promptedModels = 0;
-for (const id of Object.keys(MODELS) as (keyof typeof MODELS)[]) {
-  const info = MODELS[id];
-  if (info.backend !== "whisper" || !info.keepFillers) continue;
-  promptedModels++;
-  for (const language of TRANSCRIPT_LANGUAGE_ORDER) {
-    const prompt = whisperFillerPrompt(id, language);
-    assert(!!prompt, `${id}/${language} must resolve a filler prompt`);
-    assert(
-      prompt!.length <= MAX_VERBATIM_PROMPT_LENGTH,
-      `${id}/${language} filler prompt too long (${prompt!.length} > ${MAX_VERBATIM_PROMPT_LENGTH})`
-    );
-    assert(
-      !/\bI'm\b/i.test(prompt!),
-      `${id}/${language} filler prompt must not contain "I'm" (seeds hallucination loops)`
-    );
-  }
-}
-// Currently zero: the prompt truncates long segments badly enough that every
-// model opts out (see WhisperModelInfo.keepFillers). The loop above is a
-// standing constraint on anything that opts back in, not a claim that something
-// does — so it is deliberately allowed to be empty.
-void promptedModels;
-assert(
-  whisperFillerPrompt("parakeet", "en" as TranscriptLanguage) === null,
-  "parakeet must not use Whisper filler prompts"
-);
-console.log("whisper filler prompts stay short: ok");
-
 const workerSrc = fs.readFileSync(
   path.join(process.cwd(), "workers/transcription.worker.ts"),
   "utf8"
 );
+
+// No decoder-prefix conditioning. Both mechanisms tried — Whisper's
+// <|startofprev|> filler prompt and CrisperWhisper's [verbatim_N] mode tags —
+// collapse short VAD segments: Small's longest slice decoded to a bare "Um,",
+// Medium truncated to a fragment, Turbo dropped a leading clause. See the note
+// above MODELS in lib/models.ts for the measurements.
+assert(
+  !/decoder_input_ids/.test(workerSrc),
+  "worker must not force decoder_input_ids (prefix conditioning truncates VAD segments)"
+);
+console.log("no decoder-prefix conditioning: ok");
 
 // High repetition_penalty truncates this clip mid-utterance even on full audio.
 const penaltyMatch = workerSrc.match(/repetition_penalty:\s*([0-9.]+)/);

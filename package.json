@@ -37,7 +37,7 @@
     "@ffmpeg/ffmpeg": "^0.12.15",
     "@ffmpeg/util": "^0.12.2",
     "@floating-ui/react": "^0.27.20",
-    "@huggingface/transformers": "^4.2.0",
+    "@huggingface/transformers": "4.2.0",
     "@next/third-parties": "^16.2.12",
     "@sentry/electron": "^7.16.0",
     "@sentry/react": "^10.69.0",

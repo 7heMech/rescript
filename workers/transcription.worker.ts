@@ -33,8 +33,6 @@ import {
   isParakeetModel,
   isWhisperModel,
   isCrisperModel,
-  verbatimTagCount,
-  whisperFillerPrompt,
   type ModelId,
   type WhisperModel,
 } from "@/lib/models";
@@ -411,96 +409,6 @@ async function fallbackAsrToWasm() {
     message: "GPU interrupted — continuing on CPU…",
     value: null,
   });
-}
-
-/**
- * Build decoder input tokens for CrisperWhisper's verbatim mode:
- * `[verbatim_1]…[verbatim_N] <|startoftranscript|> <|lang|> <|transcribe|>`.
- *
- * From `crisperwhisper/prompt.py` (PyPI `crisperwhisper==2.0.1`), with one
- * deliberate deviation:
- *
- * - No `<|startofprev|>`. The tags lead and the standard prefix follows; this
- *   is a trained-in mode selector, not Whisper's initial-prompt conditioning.
- * - Each tag is a single vocabulary token (51880–51884 for verbatim in the
- *   small checkpoint), absent from `added_tokens.json`, so the stock tokenizer
- *   encodes the five-tag string to exactly five ids.
- * - **`<|notimestamps|>` is omitted, though upstream includes it.** Upstream can
- *   afford to, because it derives word timings itself via Viterbi over the
- *   space token's cross-attention. We go through transformers.js, whose
- *   `_decode_asr` splits chunked audio *on timestamp tokens*: suppress them and
- *   a long transcript accumulates into one unsegmented run whose
- *   stride-overlap merge can resolve to nothing, surfacing mid-transcription as
- *   "token_ids must be a non-empty array of integers". Timestamps are
- *   orthogonal to mode selection, so leaving them on costs nothing here.
- *
- * Substituting `[intended_N]` would request the cleaned-up transcript instead;
- * this editor always wants verbatim.
- */
-function buildVerbatimDecoderIds(
-  transcriber: AutomaticSpeechRecognitionPipeline,
-  tagCount: number,
-  language: string
-): number[] | null {
-  try {
-    /* eslint-disable @typescript-eslint/no-explicit-any */
-    const tokenizer = transcriber.tokenizer as any;
-    const genCfg = (transcriber.model as any).generation_config;
-    /* eslint-enable @typescript-eslint/no-explicit-any */
-    const tags = Array.from(
-      { length: tagCount },
-      (_, i) => `[verbatim_${i + 1}]`
-    ).join("");
-    const tagIds = tokenizer.encode(tags, { add_special_tokens: false });
-    const startId = genCfg?.decoder_start_token_id;
-    const langId = genCfg?.lang_to_id?.[`<|${language}|>`];
-    const taskId = genCfg?.task_to_id?.["transcribe"];
-    if (!tagIds?.length || startId == null || langId == null || taskId == null) {
-      return null;
-    }
-    return [...tagIds, startId, langId, taskId];
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Build decoder input tokens implementing Whisper's "initial prompt"
- * conditioning: `<|startofprev|> …prompt… <|startoftranscript|> <|lang|>
- * <|transcribe|>`. transformers.js documents `prompt_ids` but does not
- * implement it, so the tokens are constructed manually and passed as
- * `decoder_input_ids` (which `generate` honors for every chunk). Returns
- * null if any required token cannot be resolved.
- */
-function buildPromptedDecoderIds(
-  transcriber: AutomaticSpeechRecognitionPipeline,
-  prompt: string,
-  language: string
-): number[] | null {
-  try {
-    // Tokenizer/config internals are untyped in transformers.js.
-    /* eslint-disable @typescript-eslint/no-explicit-any */
-    const tokenizer = transcriber.tokenizer as any;
-    const genCfg = (transcriber.model as any).generation_config;
-    /* eslint-enable @typescript-eslint/no-explicit-any */
-    const startOfPrev = tokenizer.encode("<|startofprev|>", { add_special_tokens: false });
-    const promptIds = tokenizer.encode(" " + prompt.trim(), { add_special_tokens: false });
-    const startId = genCfg?.decoder_start_token_id;
-    const langId = genCfg?.lang_to_id?.[`<|${language}|>`];
-    const taskId = genCfg?.task_to_id?.["transcribe"];
-    if (
-      startOfPrev?.length !== 1 ||
-      !promptIds?.length ||
-      startId == null ||
-      langId == null ||
-      taskId == null
-    ) {
-      return null;
-    }
-    return [startOfPrev[0], ...promptIds, startId, langId, taskId];
-  } catch {
-    return null;
-  }
 }
 
 interface DiarizationSegment {
@@ -880,28 +788,6 @@ async function runWhisper(
   const { segments: speechSegments, frames: speechFrames } =
     await detectSpeechSegments(audio, vad);
 
-  // Two different ways of asking for disfluencies, depending on the model.
-  // CrisperWhisper was trained verbatim and selects it with a mode prefix;
-  // stock Whisper was not, and only gets a nudge from a filler-rich
-  // <|startofprev|> prompt (kept short — long prompts truncate multi-speaker
-  // clips, see whisperFillerPrompt).
-  const tagCount = verbatimTagCount(choice);
-  const fillerPrompt = tagCount ? null : whisperFillerPrompt(choice, transcriptLanguage);
-  const promptedIds = tagCount
-    ? buildVerbatimDecoderIds(transcriber, tagCount, transcriptLanguage)
-    : fillerPrompt
-      ? buildPromptedDecoderIds(transcriber, fillerPrompt, transcriptLanguage)
-      : null;
-  if (tagCount && !promptedIds) {
-    // Falling through to plain decoding would silently produce a non-verbatim
-    // transcript, which is the entire reason for picking this model.
-    console.warn(
-      "Could not build CrisperWhisper verbatim prefix; output will not be verbatim."
-    );
-  } else if (fillerPrompt && !promptedIds) {
-    console.warn("Could not build filler prompt tokens; using default decoding.");
-  }
-
   const speechSamples = speechSegments.reduce(
     (n, s) => n + (s.endSample - s.startSample),
     0
@@ -969,9 +855,11 @@ async function runWhisper(
     // mid-utterance (second speaker dropped on continuous speech).
     no_repeat_ngram_size: 4,
     repetition_penalty: 1.05,
-    ...(promptedIds
-      ? { decoder_input_ids: promptedIds }
-      : { language: transcriptLanguage }),
+    // Plain decoding — no forced decoder prefix. Priming the decoder collapses
+    // short VAD segments on every model here, whether with Whisper's
+    // <|startofprev|> filler prompt or CrisperWhisper's mode tags. See the note
+    // above MODELS in lib/models.ts; vad-regression-test.ts guards it.
+    language: transcriptLanguage,
   };
 
   const rawWords: Word[] = [];
