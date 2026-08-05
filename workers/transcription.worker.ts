@@ -339,30 +339,19 @@ const CRISPER_PROMPT_TOKENS = [
 ];
 
 /**
- * Register CrisperWhisper's prompt tokens as special, working around a
- * transformers.js assumption that otherwise crashes every verbatim transcript.
+ * Register CrisperWhisper's prompt scaffolding as special so it can never
+ * surface as literal text in a transcript.
  *
- * WhisperTokenizer decides what counts as a timestamp token in two different,
- * disagreeing ways. `_decode_asr` reads the real boundary
- * (`token_to_id("<|notimestamps|>") + 1`, and an upper bound 1500 tokens
- * above), but `decodeWithTimestamps` — reached through `collateWordTimestamps`
- * when `return_timestamps: "word"` — infers it as `all_special_ids.at(-1) + 1`
- * and applies no upper bound at all.
+ * These are the `[verbatim_N]` / `[intended_N]` mode tags and the
+ * verbatimize / hotword / context markers — decoder-prompt machinery, not
+ * speech. `_decode_asr` skips anything in `all_special_ids`, which is the only
+ * hook for keeping them out of the output.
  *
- * That is fine for stock Whisper, whose vocabulary ends at the timestamp block.
- * CrisperWhisper appends 31 tokens past it — `[UM]`, `[UH]`, vocal events, and
- * this scaffolding. Each one is above the inferred threshold, so
- * `decodeWithTimestamps` treats it as a timestamp, emits a `<|…|>` marker, and
- * starts a fresh empty token bucket; that empty array then reaches `decode([])`
- * and throws "token_ids must be a non-empty array of integers". In other words
- * it crashed on the first `[UM]` — precisely the token the model is here for.
- *
- * Marking only the scaffolding special raises `all_special_ids.at(-1)` to the
- * top of the vocabulary, so nothing below it is mistaken for a timestamp:
- * `[UM]`, `[UH]` and the vocal events decode as ordinary text. `_decode_asr` is
- * unaffected because its boundary comes from that independent getter, and it
- * additionally skips these ids now — which stops the forced `[verbatim_N]`
- * prefix from leaking into the transcript.
+ * This used to carry a second job: raising `all_special_ids.at(-1)` above the
+ * whole vocabulary so `decodeWithTimestamps` would stop mistaking `[UM]` and
+ * `[UH]` for timestamps. That was a workaround for an upstream bug, now fixed
+ * properly in patches/@huggingface+transformers+4.2.0.patch — see
+ * patches/README.md. Only the narrow purpose above remains.
  *
  * Idempotent, so re-running it after a WebGPU-to-WASM reload is harmless.
  */
@@ -1056,7 +1045,23 @@ async function runWhisper(
       chunks = await runSlice();
     }
 
-    rawWords.push(...wordsFromChunks(chunks, offsetS, sliceDuration, duration));
+    const words = wordsFromChunks(chunks, offsetS, sliceDuration, duration);
+    // A segment that decodes to nothing is the signature of a model or prompt
+    // that has collapsed on this slice — the timeline fills with "..." VAD
+    // placeholders and the transcript silently loses a stretch of speech. It is
+    // indistinguishable from genuine silence downstream, so say so here, and
+    // report enough to tell "ASR returned nothing" apart from "words were
+    // produced and then dropped in post-processing".
+    if (chunks.length === 0 || words.length === 0) {
+      console.warn(
+        `[asr] ${choice}: segment ${offsetS.toFixed(2)}s +${sliceDuration.toFixed(2)}s ` +
+          `produced ${chunks.length} chunk(s) → ${words.length} word(s).`,
+        chunks.length > 0
+          ? { text: chunks.map((c) => c.text).join(""), chunks }
+          : "(model returned no chunks)"
+      );
+    }
+    rawWords.push(...words);
     speechDone += segmentSamples;
     reportProgress(0, 0);
   }

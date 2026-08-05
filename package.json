@@ -19,7 +19,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "postinstall": "node scripts/copy-assets.mjs",
+    "postinstall": "patch-package && node scripts/copy-assets.mjs",
     "build:electron": "node scripts/build-electron.mjs",
     "typecheck:electron": "tsc -p electron/tsconfig.json --noEmit",
     "electron:dev": "npm run build:electron && concurrently -k -n next,electron -c cyan,magenta \"next dev\" \"node scripts/electron-dev.mjs\"",
@@ -68,6 +68,7 @@
     "esbuild": "^0.28.1",
     "eslint": "^9",
     "eslint-config-next": "16.2.12",
+    "patch-package": "^8.0.1",
     "tailwindcss": "^4",
     "tsx": "^4.22.4",
     "typescript": "^5"

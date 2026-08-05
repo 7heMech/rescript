@@ -70,15 +70,19 @@ export type WhisperModelInfo = ModelDisplay & {
   /**
    * A CrisperWhisper checkpoint, whose vocabulary extends past Whisper's
    * timestamp block: `[UM]`, `[UH]`, vocal events and the prompt scaffolding all
-   * sit above it. transformers.js's `decodeWithTimestamps` infers the timestamp
-   * boundary as `all_special_ids.at(-1) + 1` with no upper bound, so every one of
-   * those tokens is mistaken for a timestamp and word-timestamp collation dies on
-   * the first filler. The worker repairs this per model — see
-   * `markCrisperPromptTokensSpecial`.
+   * sit above it.
    *
-   * Deliberately separate from {@link WhisperModelInfo.verbatimTags}: the repair
-   * is required by the vocabulary layout, so it must keep running even for a
-   * CrisperWhisper model decoded without the mode prefix.
+   * These models only work at all because of
+   * patches/@huggingface+transformers+4.2.0.patch, which bounds the timestamp
+   * range at both ends. Unpatched, transformers.js reads every token above the
+   * block as a timestamp: word-timestamp collation crashes on the first `[UM]`,
+   * and the logits processor suppresses all text after the first `[UH]`, cutting
+   * the transcript off mid-sentence with no error. See patches/README.md.
+   *
+   * The flag itself drives `markCrisperPromptTokensSpecial`, keeping the mode
+   * tags out of transcript text. Deliberately separate from
+   * {@link WhisperModelInfo.verbatimTags} so it still applies to a CrisperWhisper
+   * model decoded without the mode prefix.
    */
   crisper?: boolean;
   /**
