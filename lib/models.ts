@@ -87,10 +87,10 @@ const WHISPER_DTYPE = {
  * {@link MODELS.parakeet} already does — fp16 encoder on WebGPU, int8 on WASM —
  * and keeps the q4 merged decoder that Base and Small are proven on.
  */
-const WHISPER_MEDIUM_DTYPE = {
-  webgpu: { encoder_model: "fp16", decoder_model_merged: "q4" },
-  wasm: { encoder_model: "int8", decoder_model_merged: "q4" },
-} satisfies WhisperModelInfo["dtype"];
+// const WHISPER_MEDIUM_DTYPE = {
+//   webgpu: { encoder_model: "fp16", decoder_model_merged: "q4" },
+//   wasm: { encoder_model: "int8", decoder_model_merged: "q4" },
+// } satisfies WhisperModelInfo["dtype"];
 
 /**
  * The local Small export ships only q4 for the merged decoder: int8 cannot
@@ -100,10 +100,10 @@ const WHISPER_MEDIUM_DTYPE = {
  * combination verified end-to-end — encoder and decoder loaded in onnxruntime,
  * cross-attentions returned at the right shape.
  */
-const CRISPER_SMALL_DTYPE = {
-  webgpu: { encoder_model: "q4", decoder_model_merged: "q4" },
-  wasm: { encoder_model: "q4", decoder_model_merged: "q4" },
-} satisfies WhisperModelInfo["dtype"];
+// const CRISPER_SMALL_DTYPE = {
+//   webgpu: { encoder_model: "q4", decoder_model_merged: "q4" },
+//   wasm: { encoder_model: "q4", decoder_model_merged: "q4" },
+// } satisfies WhisperModelInfo["dtype"];
 
 /**
  * Turbo takes fp16 for the decoder rather than q4.
@@ -121,10 +121,10 @@ const CRISPER_SMALL_DTYPE = {
  * transformers.js only fetches when `use_external_data_format` is declared, and
  * this repo's config.json does not declare it.
  */
-const CRISPER_TURBO_DTYPE = {
-  webgpu: { encoder_model: "q4", decoder_model_merged: "fp16" },
-  wasm: { encoder_model: "q4", decoder_model_merged: "fp16" },
-} satisfies WhisperModelInfo["dtype"];
+// const CRISPER_TURBO_DTYPE = {
+//   webgpu: { encoder_model: "q4", decoder_model_merged: "fp16" },
+//   wasm: { encoder_model: "q4", decoder_model_merged: "fp16" },
+// } satisfies WhisperModelInfo["dtype"];
 
 /**
  * No model conditions the decoder on a prefix, and that is a measured decision

@@ -35,7 +35,6 @@ import {
   MODELS,
   isModelId,
   isWhisperModel,
-  type ModelId,
 } from "@/lib/models";
 import type { TranscriptSource } from "@/lib/source";
 import {
@@ -313,17 +312,19 @@ export default function ModelSelector({
   );
 }
 
-/** Signal bars stand in for relative model strength on the default rows. */
-const MODEL_ICONS: Record<ModelId, IconComponent> = {
+/**
+ * Signal bars stand in for relative model strength on the default rows.
+ *
+ * A plain lookup rather than a `iconForSource(id)` helper: the row renders this
+ * value as JSX, and react-hooks/static-components reads any call result used as
+ * a component type as a component created during render.
+ */
+const SOURCE_ICONS: Record<TranscriptSource, IconComponent> = {
   base: SignalBarsLow,
   small: SignalBarsMedium,
   parakeet: SignalBarsHigh,
+  import: FileText,
 };
-
-function iconForSource(id: TranscriptSource): IconComponent {
-  if (isModelId(id)) return MODEL_ICONS[id];
-  return id === "import" ? FileText : AudioLines;
-}
 
 /** Default option row: icon + label + optional meta. ASR ids fill in from MODELS. */
 export function ModelOption({
@@ -347,7 +348,7 @@ export function ModelOption({
   const selector = useSelectorCtx();
   const selected = selector.value === id;
 
-  const Icon = icon ?? iconForSource(id);
+  const Icon = icon ?? SOURCE_ICONS[id];
   const resolvedLabel = label ?? (isModelId(id) ? MODELS[id].label : id);
   const resolvedMeta = meta ?? (isModelId(id) ? MODELS[id].size : undefined);
 
