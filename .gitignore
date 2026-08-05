@@ -21,6 +21,11 @@
 /electron-dist/
 /dist/
 
+# Locally-served speech models (tools/crisperwhisper-onnx/install_local.py).
+# Hundreds of MB of ONNX weights, reproducible from the export tooling, and
+# non-commercially licensed — they must not be committed.
+/public/models/
+
 # misc
 .DS_Store
 *.pem

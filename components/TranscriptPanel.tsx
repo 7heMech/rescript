@@ -419,7 +419,7 @@ export default function TranscriptPanel() {
           )}
 
           {status === "error" && (
-            <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-600 dark:border-red-900 dark:bg-red-950/40 dark:text-red-400">
+            <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-600 dark:border-red-900/30 dark:bg-red-950/30 dark:text-red-900">
               {error}
             </div>
           )}

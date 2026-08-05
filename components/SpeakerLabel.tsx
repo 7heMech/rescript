@@ -275,7 +275,7 @@ export default function SpeakerLabel({
                       ? "Find a speaker…"
                       : "Search or create…"
                 }
-                className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-2 py-1.5 text-[13px] text-zinc-800 outline-none focus:border-zinc-400 focus:bg-white dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-zinc-500"
+                className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-2 py-1.5 text-[13px] text-zinc-800 outline-none focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-zinc-500"
               />
             </div>
 
@@ -481,7 +481,7 @@ export function SelectionSpeakerPopover({
               else if (canCreate) apply("new", trimmedQuery);
             }}
             placeholder="Search or create…"
-            className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-2 py-1.5 text-[13px] text-zinc-800 outline-none focus:border-zinc-400 focus:bg-white dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100 dark:focus:border-zinc-400"
+            className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-2 py-1.5 text-[13px] text-zinc-800 outline-none focus:border-zinc-400 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100 dark:focus:bg-zinc-900 dark:focus:border-zinc-400"
           />
         </div>
         <div className="max-h-56 overflow-y-auto py-1">

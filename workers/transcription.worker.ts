@@ -32,7 +32,7 @@ import {
   MODELS,
   isParakeetModel,
   isWhisperModel,
-  whisperFillerPrompt,
+  isCrisperModel,
   type ModelId,
   type WhisperModel,
 } from "@/lib/models";
@@ -49,12 +49,39 @@ import {
 import { isWebGpuDeviceLostError } from "@/lib/webgpu";
 
 env.allowLocalModels = false;
+/**
+ * Where {@link MODELS} entries flagged `local` are served from — an export that
+ * has not been published to the Hub yet, sitting in public/models/<id>/.
+ * Enabled only for the duration of such a load (see `servedLocally`), because
+ * `allowLocalModels` is global: left on, every Hub model would probe this path
+ * and 404 for each of its files before falling back.
+ */
+const LOCAL_MODEL_PATH = "/models/";
 const ORT_WASM_PATHS = "/vendor/ort/";
 /** Parakeet.js pins onnxruntime-web@1.24.1 — keep its WASM on a separate path. */
 const PARAKEET_ORT_WASM_PATHS = "/vendor/ort-parakeet/";
 // Serve onnxruntime-web WASM from our own origin (offline friendly).
 if (env.backends?.onnx?.wasm) {
   env.backends.onnx.wasm.wasmPaths = ORT_WASM_PATHS;
+}
+
+/**
+ * WebKit — Safari everywhere, plus every browser on iOS — kills the tab for
+ * memory far sooner than Chromium ("This webpage was reloaded because it was
+ * using significant memory"), and onnxruntime's WebGPU path is what pushes it
+ * over. That path loads the JSEP build (26 MB of wasm against 13 MB for the
+ * plain threaded one, all compiled up front by JSC) and then uploads every
+ * weight into Metal buffers during session creation, which is precisely where
+ * the reload lands. Staying on WASM costs throughput but is the difference
+ * between finishing a transcript and losing the tab mid-run.
+ *
+ * Sniffed rather than feature-detected on purpose: there is nothing to detect.
+ * WebGPU is present and functional here — it is the memory ceiling around it
+ * that differs, and no API reports that. `vendor` is frozen to Apple's string
+ * across WebKit, which is the exact set of engines affected.
+ */
+if (/apple/i.test(navigator.vendor)) {
+  fallbackDevicePolicy.preferWasm();
 }
 
 const DIARIZATION_MODEL = "onnx-community/pyannote-segmentation-3.0";
@@ -166,21 +193,35 @@ function parakeetModel(): ModelDefinition<ParakeetInstance> {
         });
       };
       const common = {
-        preprocessorBackend: "js" as const,
+        // nemo128.onnx is NeMo's own featurisation graph (0.1 MB). The "js"
+        // alternative is a hand-written mel — its own FFT and slaney filterbank —
+        // and any drift from NeMo's exact features degrades every prediction in
+        // a way that reads as "the model is just worse".
+        preprocessorBackend: "onnx" as const,
         progress: onProgress,
         wasmPaths: PARAKEET_ORT_WASM_PATHS,
       };
 
-      // WebGPU cannot run the int8 encoder; fp16 (~1.2 GB) is the practical
-      // WebGPU path. WASM int8 (~670 MB) is the compatibility / size fallback.
+      /**
+       * Encoder quantisation is a size decision; decoder quantisation is not.
+       *
+       * In a TDT model the decoder/joint network is what emits tokens, so
+       * quantising it lands directly on word accuracy — and it is tiny next to
+       * the encoder (fp32 72 MB, fp16 36 MB, int8 18 MB, against 1239 MB for
+       * the fp16 encoder). parakeet.js defaults both to int8; taking that
+       * default for the decoder traded measurable accuracy for ~1% of the
+       * download, so it is set explicitly here instead.
+       */
       const device = await fallbackDevicePolicy.pickDevice();
       if (device === "webgpu") {
         try {
+          // fp16 encoder + fp32 decoder ≈ 1.31 GB. WebGPU cannot run the int8
+          // encoder at all, so fp16 is the only practical encoder here.
           const model = await fromHub(MODELS.parakeet.id, {
             ...common,
             backend: "webgpu",
             encoderQuant: "fp16",
-            decoderQuant: "int8",
+            decoderQuant: "fp32",
           });
           asrDevice = "webgpu";
           return model as ParakeetInstance;
@@ -193,15 +234,48 @@ function parakeetModel(): ModelDefinition<ParakeetInstance> {
         }
       }
 
+      // int8 encoder + fp16 decoder ≈ 690 MB: the compatibility / size fallback,
+      // keeping the decoder off int8 for the reason above.
       const model = await fromHub(MODELS.parakeet.id, {
         ...common,
         backend: "wasm",
         encoderQuant: "int8",
-        decoderQuant: "int8",
+        decoderQuant: "fp16",
       });
       asrDevice = "wasm";
       return model as ParakeetInstance;
     },
+  };
+}
+
+/**
+ * Flip `env.allowLocalModels` on for one model's load and back afterwards.
+ *
+ * transformers.js resolves local-vs-Hub from global state, so a model served
+ * from public/models can only be reached by enabling it — but leaving it
+ * enabled makes every Hub model try the local path first and 404 once per
+ * file. Scoping it to the load keeps both paths clean.
+ */
+function servedLocally<T>(definition: ModelDefinition<T>): ModelDefinition<T> {
+  const withLocalPath = async <R,>(fn: () => Promise<R>): Promise<R> => {
+    const previousAllow = env.allowLocalModels;
+    const previousPath = env.localModelPath;
+    env.allowLocalModels = true;
+    env.localModelPath = LOCAL_MODEL_PATH;
+    try {
+      return await fn();
+    } finally {
+      env.allowLocalModels = previousAllow;
+      env.localModelPath = previousPath;
+    }
+  };
+
+  return {
+    ...definition,
+    load: (ctx) => withLocalPath(() => definition.load(ctx)),
+    ...(definition.isCached
+      ? { isCached: () => withLocalPath(async () => definition.isCached!()) }
+      : {}),
   };
 }
 
@@ -217,19 +291,17 @@ const models = new ModelManager({
       if (info.backend === "parakeet") {
         return [info.id, parakeetModel()];
       }
-      return [
-        info.id,
-        transformersModel<AutomaticSpeechRecognitionPipeline>({
-          pipeline,
-          task: "automatic-speech-recognition",
-          modelId: info.id,
-          dtype: info.dtype,
-          cacheKey: env.cacheKey ?? "transformers-cache",
-          onDevice: (device) => {
-            asrDevice = device;
-          },
-        }),
-      ];
+      const definition = transformersModel<AutomaticSpeechRecognitionPipeline>({
+        pipeline,
+        task: "automatic-speech-recognition",
+        modelId: info.id,
+        dtype: info.dtype,
+        cacheKey: env.cacheKey ?? "transformers-cache",
+        onDevice: (device) => {
+          asrDevice = device;
+        },
+      });
+      return [info.id, info.local ? servedLocally(definition) : definition];
     })
   ),
 });
@@ -248,8 +320,75 @@ models.subscribe((snap) => {
   });
 });
 
+/**
+ * CrisperWhisper's prompt scaffolding: mode tags plus the verbatimize / hotword
+ * / continuation markers. All sit at the very top of the vocabulary, above the
+ * timestamp block.
+ */
+const CRISPER_PROMPT_TOKENS = [
+  ...[1, 2, 3, 4, 5].map((i) => `[verbatim_${i}]`),
+  ...[1, 2, 3, 4, 5].map((i) => `[intended_${i}]`),
+  "<vtx>",
+  "<evtx>",
+  "<ctx>",
+  "<ectx>",
+  "<htx>",
+  "<ehtx>",
+];
+
+/**
+ * Register CrisperWhisper's prompt scaffolding as special so it can never
+ * surface as literal text in a transcript.
+ *
+ * These are the `[verbatim_N]` / `[intended_N]` mode tags and the
+ * verbatimize / hotword / context markers — decoder-prompt machinery, not
+ * speech. `_decode_asr` skips anything in `all_special_ids`, which is the only
+ * hook for keeping them out of the output.
+ *
+ * This used to carry a second job: raising `all_special_ids.at(-1)` above the
+ * whole vocabulary so `decodeWithTimestamps` would stop mistaking `[UM]` and
+ * `[UH]` for timestamps. That was a workaround for an upstream bug, now fixed
+ * properly in patches/@huggingface+transformers+4.2.0.patch — see
+ * patches/README.md. Only the narrow purpose above remains.
+ *
+ * Idempotent, so re-running it after a WebGPU-to-WASM reload is harmless.
+ */
+function markCrisperPromptTokensSpecial(
+  transcriber: AutomaticSpeechRecognitionPipeline
+): void {
+  try {
+    // Tokenizer internals are untyped in transformers.js.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const tokenizer = transcriber.tokenizer as any;
+    const ids = new Set<number>(tokenizer.all_special_ids ?? []);
+    const before = ids.size;
+    for (const token of CRISPER_PROMPT_TOKENS) {
+      const encoded = tokenizer.encode(token, { add_special_tokens: false });
+      // Anything that does not map to exactly one id is not the atomic token we
+      // are looking for — skip rather than guess.
+      if (encoded?.length === 1) ids.add(encoded[0]);
+    }
+    if (ids.size === before) return;
+    // Sorted because the workaround depends on `.at(-1)` being the maximum.
+    tokenizer.all_special_ids = [...ids].sort((a, b) => a - b);
+  } catch {
+    console.warn(
+      "Could not mark CrisperWhisper prompt tokens as special; " +
+        "word timestamps may fail on the first filler token."
+    );
+  }
+}
+
 async function getAsr(choice: WhisperModel) {
-  return models.load<AutomaticSpeechRecognitionPipeline>(MODELS[choice].id);
+  const transcriber = await models.load<AutomaticSpeechRecognitionPipeline>(
+    MODELS[choice].id
+  );
+  // Keyed on the checkpoint, not on the prefix: the repair is required by
+  // CrisperWhisper's vocabulary layout, so it applies even without one.
+  if (isCrisperModel(choice)) {
+    markCrisperPromptTokensSpecial(transcriber);
+  }
+  return transcriber;
 }
 
 async function getParakeet() {
@@ -270,45 +409,6 @@ async function fallbackAsrToWasm() {
     message: "GPU interrupted — continuing on CPU…",
     value: null,
   });
-}
-
-/**
- * Build decoder input tokens implementing Whisper's "initial prompt"
- * conditioning: `<|startofprev|> …prompt… <|startoftranscript|> <|lang|>
- * <|transcribe|>`. transformers.js documents `prompt_ids` but does not
- * implement it, so the tokens are constructed manually and passed as
- * `decoder_input_ids` (which `generate` honors for every chunk). Returns
- * null if any required token cannot be resolved.
- */
-function buildPromptedDecoderIds(
-  transcriber: AutomaticSpeechRecognitionPipeline,
-  prompt: string,
-  language: string
-): number[] | null {
-  try {
-    // Tokenizer/config internals are untyped in transformers.js.
-    /* eslint-disable @typescript-eslint/no-explicit-any */
-    const tokenizer = transcriber.tokenizer as any;
-    const genCfg = (transcriber.model as any).generation_config;
-    /* eslint-enable @typescript-eslint/no-explicit-any */
-    const startOfPrev = tokenizer.encode("<|startofprev|>", { add_special_tokens: false });
-    const promptIds = tokenizer.encode(" " + prompt.trim(), { add_special_tokens: false });
-    const startId = genCfg?.decoder_start_token_id;
-    const langId = genCfg?.lang_to_id?.[`<|${language}|>`];
-    const taskId = genCfg?.task_to_id?.["transcribe"];
-    if (
-      startOfPrev?.length !== 1 ||
-      !promptIds?.length ||
-      startId == null ||
-      langId == null ||
-      taskId == null
-    ) {
-      return null;
-    }
-    return [startOfPrev[0], ...promptIds, startId, langId, taskId];
-  } catch {
-    return null;
-  }
 }
 
 interface DiarizationSegment {
@@ -688,16 +788,6 @@ async function runWhisper(
   const { segments: speechSegments, frames: speechFrames } =
     await detectSpeechSegments(audio, vad);
 
-  // Short filler-rich <|startofprev|> prompt so um/uh survive for "Remove
-  // fillers". Long prompts truncate multi-speaker clips — see whisperFillerPrompt.
-  const fillerPrompt = whisperFillerPrompt(choice, transcriptLanguage);
-  const promptedIds = fillerPrompt
-    ? buildPromptedDecoderIds(transcriber, fillerPrompt, transcriptLanguage)
-    : null;
-  if (fillerPrompt && !promptedIds) {
-    console.warn("Could not build filler prompt tokens; using default decoding.");
-  }
-
   const speechSamples = speechSegments.reduce(
     (n, s) => n + (s.endSample - s.startSample),
     0
@@ -765,9 +855,11 @@ async function runWhisper(
     // mid-utterance (second speaker dropped on continuous speech).
     no_repeat_ngram_size: 4,
     repetition_penalty: 1.05,
-    ...(promptedIds
-      ? { decoder_input_ids: promptedIds }
-      : { language: transcriptLanguage }),
+    // Plain decoding — no forced decoder prefix. Priming the decoder collapses
+    // short VAD segments on every model here, whether with Whisper's
+    // <|startofprev|> filler prompt or CrisperWhisper's mode tags. See the note
+    // above MODELS in lib/models.ts; vad-regression-test.ts guards it.
+    language: transcriptLanguage,
   };
 
   const rawWords: Word[] = [];
@@ -841,7 +933,23 @@ async function runWhisper(
       chunks = await runSlice();
     }
 
-    rawWords.push(...wordsFromChunks(chunks, offsetS, sliceDuration, duration));
+    const words = wordsFromChunks(chunks, offsetS, sliceDuration, duration);
+    // A segment that decodes to nothing is the signature of a model or prompt
+    // that has collapsed on this slice — the timeline fills with "..." VAD
+    // placeholders and the transcript silently loses a stretch of speech. It is
+    // indistinguishable from genuine silence downstream, so say so here, and
+    // report enough to tell "ASR returned nothing" apart from "words were
+    // produced and then dropped in post-processing".
+    if (chunks.length === 0 || words.length === 0) {
+      console.warn(
+        `[asr] ${choice}: segment ${offsetS.toFixed(2)}s +${sliceDuration.toFixed(2)}s ` +
+          `produced ${chunks.length} chunk(s) → ${words.length} word(s).`,
+        chunks.length > 0
+          ? { text: chunks.map((c) => c.text).join(""), chunks }
+          : "(model returned no chunks)"
+      );
+    }
+    rawWords.push(...words);
     speechDone += segmentSamples;
     reportProgress(0, 0);
   }

@@ -14,15 +14,6 @@ import {
   speechSegmentsFromFrames,
   VAD_SAMPLE_RATE,
 } from "../lib/vad";
-import {
-  MAX_VERBATIM_PROMPT_LENGTH,
-  MODELS,
-  whisperFillerPrompt,
-} from "../lib/models";
-import {
-  TRANSCRIPT_LANGUAGE_ORDER,
-  type TranscriptLanguage,
-} from "../lib/languages";
 
 const wav = path.join(
   process.cwd(),
@@ -38,34 +29,21 @@ function ffmpegAvailable(): boolean {
   return probe.status === 0;
 }
 
-// Short filler prompts are OK; long ones truncate multi-speaker / long-form ASR.
-for (const id of Object.keys(MODELS) as (keyof typeof MODELS)[]) {
-  const info = MODELS[id];
-  if (info.backend !== "whisper") continue;
-  assert(info.keepFillers === true, `${id} should keep fillers via a short prompt`);
-  for (const language of TRANSCRIPT_LANGUAGE_ORDER) {
-    const prompt = whisperFillerPrompt(id, language);
-    assert(!!prompt, `${id}/${language} must resolve a filler prompt`);
-    assert(
-      prompt!.length <= MAX_VERBATIM_PROMPT_LENGTH,
-      `${id}/${language} filler prompt too long (${prompt!.length} > ${MAX_VERBATIM_PROMPT_LENGTH})`
-    );
-    assert(
-      !/\bI'm\b/i.test(prompt!),
-      `${id}/${language} filler prompt must not contain "I'm" (seeds hallucination loops)`
-    );
-  }
-}
-assert(
-  whisperFillerPrompt("parakeet", "en" as TranscriptLanguage) === null,
-  "parakeet must not use Whisper filler prompts"
-);
-console.log("whisper filler prompts stay short: ok");
-
 const workerSrc = fs.readFileSync(
   path.join(process.cwd(), "workers/transcription.worker.ts"),
   "utf8"
 );
+
+// No decoder-prefix conditioning. Both mechanisms tried — Whisper's
+// <|startofprev|> filler prompt and CrisperWhisper's [verbatim_N] mode tags —
+// collapse short VAD segments: Small's longest slice decoded to a bare "Um,",
+// Medium truncated to a fragment, Turbo dropped a leading clause. See the note
+// above MODELS in lib/models.ts for the measurements.
+assert(
+  !/decoder_input_ids/.test(workerSrc),
+  "worker must not force decoder_input_ids (prefix conditioning truncates VAD segments)"
+);
+console.log("no decoder-prefix conditioning: ok");
 
 // High repetition_penalty truncates this clip mid-utterance even on full audio.
 const penaltyMatch = workerSrc.match(/repetition_penalty:\s*([0-9.]+)/);
