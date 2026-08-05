@@ -452,7 +452,7 @@ export default function TranscriptScrollIndicator({
       <div ref={gradientRef} className="absolute pointer-events-none right-0 bottom-0 w-12 h-8 bg-gradient-to-t from-white to-transparent dark:from-zinc-900" />
       <div
         ref={thumbRef}
-        className={`absolute top-0 right-0.5 w-1 rounded-full transition-colors ${active ? "bg-zinc-400 dark:bg-zinc-500" : "bg-zinc-300 dark:bg-zinc-600 opacity-20"
+        className={`absolute top-0 right-0.5 w-1 rounded-full transition-colors ${active ? "bg-zinc-400 dark:bg-zinc-500 opacity-90" : "bg-zinc-300 dark:bg-zinc-600 opacity-0"
           }`}
       />
       <span
