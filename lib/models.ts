@@ -58,35 +58,13 @@ export type WhisperModelInfo = ModelDisplay & {
    */
   keepFillers?: boolean;
   /**
-   * A CrisperWhisper checkpoint. Its vocabulary extends 31 tokens past
-   * Whisper's timestamp block (`[UM]`, `[UH]`, vocal events, prompt
-   * scaffolding), which transformers.js misreads as timestamps unless the
-   * tokenizer is patched at load — see `markCrisperPromptTokensSpecial` in the
-   * transcription worker. Independent of {@link WhisperModelInfo.verbatimTags},
-   * because the extra tokens can be emitted whether or not a mode prefix is
-   * sent.
-   */
-  crisper?: boolean;
-  /**
    * CrisperWhisper mode prefix: how many `[verbatim_N]` tags to prime the
-   * decoder with. Verbatim vs. intended is selected purely by this prefix — the
-   * encoder output is identical either way — and unlike Whisper's initial
-   * prompt there is no `<|startofprev|>`; the tags lead and the standard prefix
-   * follows. Source: `crisperwhisper==2.0.1`, `crisperwhisper/prompt.py`.
-   *
-   * Currently unset on both CrisperWhisper entries, deliberately. Measured
-   * against the PyTorch checkpoint on an 11.5 s two-speaker clip:
-   *
-   * - verbatim prefix → dropped a whole clause ("Nice. How does it,") and
-   *   emitted `[breath]` where the speaker hesitated
-   * - intended prefix → complete, but no disfluencies at all
-   * - **no prefix → complete _and_ kept the "uh"**, beating every other model
-   *   tested including Whisper Small and Parakeet
-   *
-   * Adding `<|notimestamps|>` to match upstream exactly changed nothing. The
-   * plumbing is verified — the tags do reach the decoder as ids 51880–51884 —
-   * so this is the mode itself underperforming, not a wiring bug. Kept as a
-   * one-line switch because the finding rests on a single clip.
+   * decoder with. CrisperWhisper 2.0 picks verbatim vs. intended output purely
+   * from this prefix — the encoder output is identical either way — and unlike
+   * Whisper's initial prompt there is no `<|startofprev|>`; the tags come
+   * first and the standard prefix follows. Verbatim output spells fillers as
+   * `[UM]` / `[UH]`, which `lib/fillers.ts` already matches once punctuation is
+   * stripped. Source: `crisperwhisper==2.0.1`, `crisperwhisper/prompt.py`.
    */
   verbatimTags?: number;
   /**
@@ -115,13 +93,6 @@ export const MODEL_ORDER: ModelId[] = [
   "crisperSmall",
   "crisperTurbo",
 ];
-
-/**
- * Hard cap for Whisper filler prompts. Longer `<|startofprev|>` strings
- * forced via `decoder_input_ids` have truncated multi-speaker / long-form
- * transcripts (second speaker dropped). Keep prompts to a short filler list.
- */
-export const MAX_VERBATIM_PROMPT_LENGTH = 32;
 
 /**
  * Short, language-specific filler prompts for Whisper. Deliberately tiny and
@@ -243,22 +214,22 @@ export const MODELS: {
     local: true,
     label: "CrisperWhisper Small (local)",
     description:
-      "Keeps fillers other models drop, with clean punctuation. Self-exported, unpublished. Non-commercial licence.",
+      "Verbatim: transcribes fillers as [UM] / [UH] instead of dropping them. Self-exported, unpublished. Non-commercial licence.",
     // q4 encoder 66 MB + q4 merged decoder 258 MB.
     size: "~324 MB",
     dtype: CRISPER_DTYPE,
-    crisper: true,
+    verbatimTags: 5,
   },
   crisperTurbo: {
     backend: "whisper",
     id: "Masterx/CrisperWhisper2.0-turbo-ONNX",
     label: "CrisperWhisper Turbo",
     description:
-      "CrisperWhisper on a large-v3 encoder. Largest download. Non-commercial licence.",
+      "Verbatim, on a large-v3 encoder. The most accurate verbatim option, and the largest download. Non-commercial licence.",
     // q4 encoder 425 MB + q4 merged decoder 600 MB.
     size: "~1.0 GB",
     dtype: CRISPER_DTYPE,
-    crisper: true,
+    verbatimTags: 5,
   },
 };
 
@@ -266,16 +237,6 @@ export const MODELS: {
 export function verbatimTagCount(model: ModelId): number | null {
   const info = MODELS[model];
   return info.backend === "whisper" ? (info.verbatimTags ?? null) : null;
-}
-
-/**
- * Whether `model` is a CrisperWhisper checkpoint, and so needs the tokenizer
- * fix-up for its extended vocabulary. True regardless of whether a mode prefix
- * is sent: `[UM]`, `[UH]` and the vocal-event tokens can be emitted either way.
- */
-export function isCrisperModel(model: ModelId): boolean {
-  const info = MODELS[model];
-  return info.backend === "whisper" && info.crisper === true;
 }
 
 /** Whether `model` loads from public/models rather than the Hub. */

@@ -31,7 +31,6 @@ import type { Word, WorkerRequest, WorkerResponse } from "@/lib/types";
 import {
   MODELS,
   isParakeetModel,
-  isCrisperModel,
   isWhisperModel,
   verbatimTagCount,
   whisperFillerPrompt,
@@ -396,9 +395,7 @@ async function getAsr(choice: WhisperModel) {
   const transcriber = await models.load<AutomaticSpeechRecognitionPipeline>(
     MODELS[choice].id
   );
-  // Not gated on the mode prefix: the extended-vocabulary tokens that break
-  // word collation can be emitted with or without one.
-  if (isCrisperModel(choice)) {
+  if (verbatimTagCount(choice) !== null) {
     markCrisperPromptTokensSpecial(transcriber);
   }
   return transcriber;
