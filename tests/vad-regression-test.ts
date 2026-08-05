@@ -39,10 +39,15 @@ function ffmpegAvailable(): boolean {
 }
 
 // Short filler prompts are OK; long ones truncate multi-speaker / long-form ASR.
+// Not every Whisper model opts in: Medium truncates to a fragment even inside
+// the length cap, and the CrisperWhisper checkpoints transcribe fillers without
+// prompting. Those are checked in models-test.ts; here we only constrain the
+// prompts that do get sent.
+let promptedModels = 0;
 for (const id of Object.keys(MODELS) as (keyof typeof MODELS)[]) {
   const info = MODELS[id];
-  if (info.backend !== "whisper") continue;
-  assert(info.keepFillers === true, `${id} should keep fillers via a short prompt`);
+  if (info.backend !== "whisper" || !info.keepFillers) continue;
+  promptedModels++;
   for (const language of TRANSCRIPT_LANGUAGE_ORDER) {
     const prompt = whisperFillerPrompt(id, language);
     assert(!!prompt, `${id}/${language} must resolve a filler prompt`);
@@ -56,6 +61,11 @@ for (const id of Object.keys(MODELS) as (keyof typeof MODELS)[]) {
     );
   }
 }
+// Currently zero: the prompt truncates long segments badly enough that every
+// model opts out (see WhisperModelInfo.keepFillers). The loop above is a
+// standing constraint on anything that opts back in, not a claim that something
+// does — so it is deliberately allowed to be empty.
+void promptedModels;
 assert(
   whisperFillerPrompt("parakeet", "en" as TranscriptLanguage) === null,
   "parakeet must not use Whisper filler prompts"

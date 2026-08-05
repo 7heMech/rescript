@@ -1,0 +1,12 @@
+# Virtualenv and Python caches
+.venv/
+__pycache__/
+*.pyc
+
+# Export artefacts: multi-GB ONNX graphs, external weight blobs, and the staging
+# copy of the upstream checkpoint. All reproducible via export.py, and the
+# weights are non-commercially licensed — they must not be committed here.
+out/
+*.onnx
+*.onnx_data
+*.safetensors
