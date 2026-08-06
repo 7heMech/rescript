@@ -1,9 +1,11 @@
 import {
   alignBatch,
   ctcViterbi,
+  ctcVocabFromTokenizer,
   groupWordsForAlignment,
   normalizeForCtc,
   type CtcEmission,
+  type CtcTokenizerLike,
   type CtcVocab,
 } from "../lib/forcedAlign";
 import type { Word } from "../lib/types";
@@ -167,6 +169,60 @@ function word(id: number, text: string, start: number, end: number): Word {
   assert(flat.every((id, i) => id === i), "order is preserved across batches");
   assert(groupWordsForAlignment([], 10).length === 0, "no words -> no batches");
   console.log(`batching: ok (${many.length} words -> ${batches.length} batches)`);
+}
+
+/**
+ * Vocabulary reading, against fakes that reproduce what the three shipped
+ * aligners actually report. Both derivations have a plausible shortcut that is
+ * wrong on MMS and silent when it is wrong, so pin the real ids.
+ */
+{
+  /** Build a tokenizer stand-in from a token→id table. */
+  const fakeTokenizer = (
+    vocab: Record<string, number>,
+    padTokenId: number | undefined,
+    unkTokenId: number
+  ): CtcTokenizerLike => ({
+    pad_token_id: padTokenId,
+    unk_token_id: unkTokenId,
+    convert_tokens_to_ids: (tokens) => tokens.map((t) => vocab[t]),
+    // Character-level, mapping anything absent to unk — as Wav2Vec2CTCTokenizer does.
+    encode: (text) => text.split("").map((c) => vocab[c] ?? unkTokenId),
+  });
+
+  // <pad> is the blank and sits at 0; "|" is a real token.
+  const wav2vec2 = fakeTokenizer({ "<pad>": 0, "<s>": 1, "</s>": 2, "<unk>": 3, "|": 4 }, 0, 3);
+  const v1 = ctcVocabFromTokenizer(wav2vec2, "latin-upper");
+  assert(v1.blankId === 0, "wav2vec2 blank is <pad> at 0");
+  assert(v1.delimiterId === 4, "wav2vec2 delimiter is | at 4");
+  assert(v1.normalizeMode === "latin-upper", "normalize mode is carried through");
+
+  // MMS: <blank> and <pad> are distinct, and there is no "|" at all.
+  const mms = fakeTokenizer({ "<blank>": 0, "<pad>": 1, "</s>": 2, "<unk>": 3 }, 1, 3);
+  const v2 = ctcVocabFromTokenizer(mms, "latin-lower");
+  assert(v2.blankId === 0, "MMS blank is <blank> at 0, not pad_token_id (1)");
+  assert(
+    v2.delimiterId === undefined,
+    "MMS has no |; encode() would have returned <unk> here"
+  );
+
+  // A tokenizer with no vocabulary lookup at all still has to yield something.
+  const bare: CtcTokenizerLike = { pad_token_id: 0, encode: () => [] };
+  assert(ctcVocabFromTokenizer(bare).blankId === 0, "falls back to pad_token_id");
+  assert(ctcVocabFromTokenizer(bare).delimiterId === undefined, "no lookup -> no delimiter");
+  assert(ctcVocabFromTokenizer({ encode: () => [] }).blankId === 0, "last resort blank is 0");
+
+  // encode() skips specials and drops nothing else.
+  assert(
+    JSON.stringify(v1.encode("AB")) === JSON.stringify([3, 3]),
+    "encode passes through the tokenizer"
+  );
+  assert(v1.encode("").length === 0, "empty text encodes to nothing");
+
+  console.log(
+    `vocab from tokenizer: ok (wav2vec2 blank ${v1.blankId}/delim ${v1.delimiterId}, ` +
+      `MMS blank ${v2.blankId}/delim ${v2.delimiterId})`
+  );
 }
 
 console.log("ALL FORCED ALIGN TESTS PASSED");

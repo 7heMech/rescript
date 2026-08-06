@@ -55,7 +55,9 @@ import {
   alignBatch,
   expandToAcoustics,
   groupWordsForAlignment,
+  ctcVocabFromTokenizer,
   type CtcEmission,
+  type CtcTokenizerLike,
   type CtcVocab,
 } from "@/lib/forcedAlign";
 import type { TranscriptLanguage } from "@/lib/languages";
@@ -681,33 +683,14 @@ function alignerModel(info: AlignModelInfo): ModelDefinition<Aligner> {
         }),
         AutoTokenizer.from_pretrained(info.id, { progress_callback }),
       ]);
-      /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
-      const tok = tokenizer as any;
-      const vocab: CtcVocab = {
-        blankId: tok.pad_token_id ?? 0,
-        delimiterId: delimiterIdFromTokenizer(tok),
-        normalizeMode: info.normalize,
-        encode: (text) =>
-          text ? (tok.encode(text, { add_special_tokens: false }) as number[]) : [],
-      };
+      const vocab = ctcVocabFromTokenizer(
+        // Tokenizer internals are untyped in transformers.js.
+        tokenizer as unknown as CtcTokenizerLike,
+        info.normalize
+      );
       return { processor, model, vocab };
     },
   };
-}
-
-/** `|` word delimiter when the tokenizer has one (wav2vec2); MMS has none. */
-function delimiterIdFromTokenizer(tok: {
-  encode?: (text: string, opts?: { add_special_tokens?: boolean }) => number[];
-}): number | undefined {
-  try {
-    const ids = tok.encode?.("|", { add_special_tokens: false });
-    if (Array.isArray(ids) && ids.length === 1 && typeof ids[0] === "number") {
-      return ids[0];
-    }
-  } catch {
-    // tokenizer rejected "|"
-  }
-  return undefined;
 }
 
 function getAligner(language: TranscriptLanguage): Promise<Aligner> {

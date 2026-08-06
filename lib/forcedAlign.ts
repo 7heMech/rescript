@@ -47,6 +47,70 @@ export interface CtcVocab {
   normalizeMode?: CtcNormalizeMode;
 }
 
+/** The subset of a transformers.js tokenizer {@link ctcVocabFromTokenizer} reads. */
+export interface CtcTokenizerLike {
+  pad_token_id?: number;
+  unk_token_id?: number;
+  /** Vocabulary lookup. Yields `undefined` for tokens the vocab does not have. */
+  convert_tokens_to_ids?(tokens: string[]): (number | undefined)[];
+  encode(text: string, opts?: { add_special_tokens?: boolean }): number[];
+}
+
+/** First id in `tokens` that the vocabulary actually contains. */
+function lookup(
+  tok: CtcTokenizerLike,
+  tokens: string[]
+): number | undefined {
+  let ids: (number | undefined)[] | undefined;
+  try {
+    ids = tok.convert_tokens_to_ids?.(tokens);
+  } catch {
+    return undefined;
+  }
+  if (!Array.isArray(ids)) return undefined;
+  for (const id of ids) {
+    // An absent token yields undefined here rather than the unk id, which is
+    // the whole reason this goes through the vocabulary instead of `encode`.
+    if (typeof id === "number" && id >= 0 && id !== tok.unk_token_id) return id;
+  }
+  return undefined;
+}
+
+/**
+ * Read a {@link CtcVocab} off a loaded tokenizer.
+ *
+ * Both halves have to consult the vocabulary directly, because the two obvious
+ * shortcuts are wrong on exactly one of the three aligners we ship — and wrong
+ * silently, costing timing accuracy rather than raising.
+ *
+ * **Blank.** For wav2vec2 and XLS-R, `<pad>` *is* the CTC blank and sits at id 0,
+ * so `pad_token_id` happens to be right. The MMS forced-aligner declares them
+ * separately — `<blank>` at 0, `<pad>` at 1 — so taking `pad_token_id` there
+ * scores the lattice's blank states against a column the model never activates.
+ * Viterbi does not fail; it just avoids blank states, which smears every
+ * boundary. So prefer an explicit `<blank>` and fall back to `<pad>`.
+ *
+ * **Delimiter.** `encode("|")` cannot detect absence: a vocab without `|` maps it
+ * to `<unk>`, one id, indistinguishable from a real hit. MMS has no `|`, so that
+ * route threads `<unk>` between every pair of words. A vocabulary lookup returns
+ * undefined instead, which is what {@link buildTokens} wants.
+ *
+ * Measured ids: wav2vec2-base-960h and XLS-R-zh give blank 0 / delimiter 4;
+ * mms-300m-1130-forced-aligner gives blank 0 / no delimiter.
+ */
+export function ctcVocabFromTokenizer(
+  tok: CtcTokenizerLike,
+  normalizeMode: CtcNormalizeMode = "latin-upper"
+): CtcVocab {
+  return {
+    blankId: lookup(tok, ["<blank>"]) ?? tok.pad_token_id ?? 0,
+    delimiterId: lookup(tok, ["|"]),
+    normalizeMode,
+    encode: (text) =>
+      text ? tok.encode(text, { add_special_tokens: false }) : [],
+  };
+}
+
 /**
  * Keep only what a character-level CTC vocabulary can represent. Digits and
  * punctuation have no acoustic spelling here, so a word made only of those
