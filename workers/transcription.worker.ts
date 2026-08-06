@@ -44,7 +44,12 @@ import {
   type WhisperModel,
 } from "@/lib/models";
 import { cleanTranscript } from "@/lib/hallucinations";
-import { alignWordsToSpeech, speechEnvelope } from "@/lib/align";
+import {
+  ALIGN_LEAD_S,
+  alignWordsToSpeech,
+  applyAlignLead,
+  speechEnvelope,
+} from "@/lib/align";
 import {
   ALIGN_MODELS,
   alignModelFor,
@@ -830,7 +835,9 @@ async function refineWordTimestamps(
     }
   }
 
-  return insertDisfluencyPlaceholders(out, speechFrames, { duration });
+  const withPauses = insertDisfluencyPlaceholders(out, speechFrames, { duration });
+  // Last, so the placeholders move with the words around them.
+  return applyAlignLead(withPauses, ALIGN_LEAD_S, { duration });
 }
 
 async function diarize(audio: Float32Array): Promise<DiarizationSegment[]> {

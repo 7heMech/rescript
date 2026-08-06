@@ -1,5 +1,7 @@
 import {
+  ALIGN_LEAD_S,
   alignWordsToSpeech,
+  applyAlignLead,
   buildSpeechAnchors,
   correctionAt,
   estimateLagFromEnvelope,
@@ -393,6 +395,48 @@ function word(id: number, start: number, end: number): Word {
   console.log(
     `collapsed word re-split: ok (0.060s -> ${(fixed[1]!.end - fixed[1]!.start).toFixed(3)}s)`
   );
+}
+
+// The lead is a uniform shift, so every relative gap has to survive it.
+{
+  const words: Word[] = [
+    { id: 0, text: "one", start: 1.0, end: 1.4, speaker: 0, deleted: false },
+    { id: 1, text: "...", start: 1.4, end: 1.7, speaker: 0, deleted: false },
+    { id: 2, text: "two", start: 1.9, end: 2.3, speaker: 0, deleted: false },
+  ];
+  const led = applyAlignLead(words, ALIGN_LEAD_S, { duration: 10 });
+  assert(
+    led.every((w, i) => Math.abs(w.start - (words[i]!.start - ALIGN_LEAD_S)) < 1e-9),
+    "every start moves back by exactly the lead"
+  );
+  assert(
+    led.every((w, i) => Math.abs(w.end - (words[i]!.end - ALIGN_LEAD_S)) < 1e-9),
+    "ends move with starts, so durations are unchanged"
+  );
+  assert(
+    Math.abs((led[2]!.start - led[1]!.end) - (words[2]!.start - words[1]!.end)) < 1e-9,
+    "the gap before 'two' is preserved"
+  );
+  assert(words[0]!.start === 1.0, "input is not mutated");
+
+  // A word already at the very start cannot be dragged negative.
+  const atZero = applyAlignLead(
+    [{ id: 0, text: "go", start: 0.02, end: 0.3, speaker: 0, deleted: false }],
+    ALIGN_LEAD_S,
+    { duration: 10 }
+  );
+  assert(atZero[0]!.start === 0, "clamped to 0 rather than going negative");
+  assert(atZero[0]!.end > atZero[0]!.start, "clamping keeps the word non-empty");
+
+  assert(
+    applyAlignLead(words, 0, { duration: 10 })[0]!.start === 1.0,
+    "a zero lead is a no-op"
+  );
+  assert(applyAlignLead([], ALIGN_LEAD_S).length === 0, "empty input is fine");
+  // Deliberately a range, not an equality: the lead is a perceptual setting and
+  // gets tuned by ear. Anything past ~150 ms stops reading as "a hair early".
+  assert(ALIGN_LEAD_S > 0 && ALIGN_LEAD_S <= 0.15, "lead stays a small nudge");
+  console.log(`align lead: ok (${ALIGN_LEAD_S * 1000}ms, gaps and durations preserved)`);
 }
 
 console.log("ALL ALIGN TESTS PASSED");

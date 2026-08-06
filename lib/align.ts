@@ -732,3 +732,50 @@ export function alignWordsToSpeech(
   const snapped = snapWordsToSpeech(warped, speechFrames, resolved);
   return repairCollapsedWords(snapped, env, options);
 }
+
+/**
+ * Fixed lead subtracted from every word at the end of the timing pipeline.
+ *
+ * This is a perceptual nudge, not a measured correction — against acoustic
+ * ground truth it slightly *increases* absolute error. A highlight that lands a
+ * touch early reads as in sync; one that lands a touch late reads as lagging,
+ * and the two are not equally forgiving.
+ *
+ * It survived the move to CTC alignment: measurement removed the part of the old
+ * lead that compensated for a late reference (Silero raises its speech flag
+ * ~40 ms after speech starts), but not the asymmetry in how early and late read.
+ * Words still came back reading a hair late once alignment was doing its job.
+ *
+ * Tuned by ear, so expect this number to move — the VAD-only pipeline used 80 ms.
+ * It is applied uniformly, so raising it never breaks relative timing; it only
+ * trades "reads late" for "reads early", and the tests bound it rather than pin
+ * it for that reason.
+ */
+export const ALIGN_LEAD_S = 0.08;
+
+/**
+ * Shift every word earlier by `leadS`, uniformly.
+ *
+ * Applied last, after disfluency placeholders, for two reasons: a uniform shift
+ * over the finished list preserves every relative gap (placeholders included),
+ * and nothing downstream can snap the nudge back onto an onset the way it could
+ * when this lived inside {@link alignWordsToSpeech}.
+ *
+ * Both edges move together — leading only the starts would stretch every word by
+ * `leadS` and eventually overlap its neighbour.
+ */
+export function applyAlignLead(
+  words: Word[],
+  leadS = ALIGN_LEAD_S,
+  options: AlignOptions = {}
+): Word[] {
+  const { minWordS = 0.02, duration = 0 } = options;
+  const out = words.map((w) => ({ ...w }));
+  if (leadS === 0 || out.length === 0) return out;
+  for (const w of out) {
+    w.start -= leadS;
+    w.end -= leadS;
+  }
+  // Clamps starts back to 0 and keeps the ordering and minimum-length guards.
+  return normalizeWords(out, minWordS, duration);
+}
