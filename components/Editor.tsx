@@ -141,20 +141,15 @@ export default function Editor() {
   const wasIdle = useRef(status === "idle");
 
   // File › Open Project… reaches the same picker the upload screen uses, from
-  // anywhere in the app. The pipeline needs SharedArrayBuffer, so the menu can
-  // only load media once the page is confirmed cross-origin isolated.
+  // anywhere in the app.
   const menuInputRef = useRef<HTMLInputElement>(null);
   const isolation = useCrossOriginIsolated();
+  const isolated = isolation === "ready";
   const openFilePicker = useCallback(() => menuInputRef.current?.click(), []);
-  useDesktopMenu(openFilePicker, isolation === "ready");
+  useDesktopMenu(openFilePicker, isolated);
 
-  const handleMenuFile = useCallback(
-    (file: File | undefined) => {
-      if (!file) return;
-      if (!detectMediaKind(file)) {
-        alert("Please choose a video or audio file.");
-        return;
-      }
+  const startMenuFile = useCallback(
+    (file: File) => {
       const { source, pendingTranscript } = useEditorStore.getState();
       if (source === "import") {
         if (!pendingTranscript) {
@@ -170,6 +165,36 @@ export default function Editor() {
       loadVideo(file);
     },
     [loadVideo]
+  );
+
+  // The pipeline needs SharedArrayBuffer, so a file picked before the page is
+  // cross-origin isolated waits here instead of failing on load.
+  const deferredFile = useRef<File | null>(null);
+  const startMenuFileRef = useRef(startMenuFile);
+  useEffect(() => {
+    startMenuFileRef.current = startMenuFile;
+  }, [startMenuFile]);
+  useEffect(() => {
+    if (!isolated || !deferredFile.current) return;
+    const file = deferredFile.current;
+    deferredFile.current = null;
+    startMenuFileRef.current(file);
+  }, [isolated]);
+
+  const handleMenuFile = useCallback(
+    (file: File | undefined) => {
+      if (!file) return;
+      if (!detectMediaKind(file)) {
+        alert("Please choose a video or audio file.");
+        return;
+      }
+      if (!isolated) {
+        deferredFile.current = file;
+        return;
+      }
+      startMenuFile(file);
+    },
+    [isolated, startMenuFile]
   );
 
   // Daily-active signal: reports the launch, then again on each day rollover so

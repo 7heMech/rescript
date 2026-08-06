@@ -141,10 +141,23 @@ const windowModes = new WeakMap<BrowserWindow, WindowMode>();
 const readyRenderers = new WeakSet<WebContents>();
 const pendingCommands = new WeakMap<WebContents, MenuCommand[]>();
 
+function deliverMenuCommand(contents: WebContents, command: MenuCommand): void {
+  if (command.type === "open-file") {
+    // Chromium only opens a file chooser under user activation, which an IPC
+    // message doesn't carry — the click() is silently dropped. executeJavaScript
+    // can grant one, so the picker is driven that way instead.
+    void contents
+      .executeJavaScript("window.rescriptOpenFilePicker?.()", true)
+      .catch((err: unknown) => console.error("Failed to open the file picker.", err));
+    return;
+  }
+  contents.send("menu:command", command);
+}
+
 function flushPendingCommands(contents: WebContents): void {
   const queued = pendingCommands.get(contents);
   pendingCommands.delete(contents);
-  for (const command of queued ?? []) contents.send("menu:command", command);
+  for (const command of queued ?? []) deliverMenuCommand(contents, command);
 }
 
 /** Deliver a File-menu command, launching a window if the app is running
@@ -154,7 +167,7 @@ function dispatchMenuCommand(command: MenuCommand): void {
     BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0] ?? createWindow();
   const contents = win.webContents;
   if (readyRenderers.has(contents)) {
-    contents.send("menu:command", command);
+    deliverMenuCommand(contents, command);
     return;
   }
   const queued = pendingCommands.get(contents) ?? [];

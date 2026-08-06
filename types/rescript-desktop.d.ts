@@ -1,9 +1,10 @@
 /** Resting sizes the Electron shell switches between. */
 export type WindowMode = "compact" | "expanded";
 
-/** Actions the native File menu delegates to the renderer. */
+/** Actions the native File menu delegates to the renderer over IPC. Opening the
+ *  file picker isn't one of them — a file chooser needs user activation, so the
+ *  main process calls `window.rescriptOpenFilePicker` instead. */
 export type MenuCommand =
-  | { type: "open-file" }
   | { type: "open-project"; id: string }
   | { type: "clear-recents" }
   /** Leave the editor for the upload screen (an intercepted window close). */
@@ -33,6 +34,9 @@ export interface RescriptDesktop {
 declare global {
   interface Window {
     rescriptDesktop?: RescriptDesktop;
+    /** Opens the media picker. Set by the renderer, called by the main process
+     *  through executeJavaScript so the dialog gets a user activation. */
+    rescriptOpenFilePicker?: () => void;
   }
 }
 

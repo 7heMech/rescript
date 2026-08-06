@@ -14,12 +14,13 @@ import type { MenuCommand } from "@/types/rescript-desktop";
  * handle the commands the menu sends back (open a file, open/clear recents,
  * leave the editor on an intercepted window close).
  *
- * @param openFilePicker Opens the media picker — the caller owns the <input> so
- *   the click comes from a real element in the layout tree (detached inputs
- *   don't reliably open a picker in Chromium).
+ * @param openFilePicker Opens the media picker. Published on `window` because
+ *   the main process has to invoke it through executeJavaScript to give the
+ *   call the user activation a file chooser requires — over plain IPC Chromium
+ *   drops the dialog.
  * @param ready False until the page can accept media (cross-origin isolation).
- *   Commands that need media wait rather than getting dropped: the menu can
- *   open a window from scratch, and it lands long before isolation settles.
+ *   Opening a project waits rather than getting dropped: the menu can open a
+ *   window from scratch, and it lands long before isolation settles.
  */
 export function useDesktopMenu(openFilePicker: () => void, ready: boolean): void {
   const projectId = useEditorStore((s) => s.projectId);
@@ -78,12 +79,19 @@ export function useDesktopMenu(openFilePicker: () => void, ready: boolean): void
     await syncRecents();
   }, [syncRecents]);
 
+  // File › Open Project… reaches the picker here rather than over the command
+  // channel; see the note on the parameter.
+  useEffect(() => {
+    if (!isElectron) return;
+    window.rescriptOpenFilePicker = openFilePicker;
+    return () => {
+      delete window.rescriptOpenFilePicker;
+    };
+  }, [openFilePicker]);
+
   const run = useCallback(
     (command: MenuCommand) => {
       switch (command.type) {
-        case "open-file":
-          openFilePicker();
-          return;
         case "open-project":
           void useEditorStore
             .getState()
@@ -101,11 +109,11 @@ export function useDesktopMenu(openFilePicker: () => void, ready: boolean): void
           void closeProject();
       }
     },
-    [clearRecents, closeProject, openFilePicker, syncRecents]
+    [clearRecents, closeProject, syncRecents]
   );
 
-  // Commands that touch media can't run before the page is cross-origin
-  // isolated; hold the last one and replay it once it is.
+  // Opening a project can't run before the page is cross-origin isolated; hold
+  // the last such command and replay it once it is.
   const deferred = useRef<MenuCommand | null>(null);
   const runRef = useRef(run);
   const readyRef = useRef(ready);
@@ -128,8 +136,7 @@ export function useDesktopMenu(openFilePicker: () => void, ready: boolean): void
     const desktop = window.rescriptDesktop;
     if (!desktop) return;
     return desktop.onMenuCommand((command: MenuCommand) => {
-      const needsMedia = command.type === "open-file" || command.type === "open-project";
-      if (needsMedia && !readyRef.current) {
+      if (command.type === "open-project" && !readyRef.current) {
         deferred.current = command;
         return;
       }
