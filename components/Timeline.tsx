@@ -351,14 +351,23 @@ export default function Timeline() {
     dark,
   ]);
 
+  // Panning or zooming during playback hands the window to the user until the
+  // next play/pause: `scrollLeft` the follow effect did not write is theirs.
+  const userScrolledRef = useRef(false);
+  const autoScrollRef = useRef<number | null>(null);
+  useEffect(() => {
+    userScrolledRef.current = false;
+  }, [playing]);
+
   // Keep the playhead visible while playing.
   useEffect(() => {
-    if (!playing) return;
+    if (!playing || userScrolledRef.current) return;
     const el = scrollRef.current;
     if (!el) return;
     const px = currentTime * pps;
     if (px < el.scrollLeft + 24 || px > el.scrollLeft + width - 96) {
       el.scrollLeft = Math.max(0, px - 96);
+      autoScrollRef.current = el.scrollLeft;
     }
   }, [currentTime, playing, pps, width]);
 
@@ -786,7 +795,13 @@ export default function Timeline() {
 
         <div
           ref={scrollRef}
-          onScroll={(e) => setScrollLeft(e.currentTarget.scrollLeft)}
+          onScroll={(e) => {
+            const next = e.currentTarget.scrollLeft;
+            if (autoScrollRef.current == null || Math.abs(next - autoScrollRef.current) > 1)
+              userScrolledRef.current = true;
+            autoScrollRef.current = null;
+            setScrollLeft(next);
+          }}
           onPointerDown={onBackgroundPointerDown}
           onPointerMove={onPointerMove}
           onPointerLeave={onPointerLeave}
