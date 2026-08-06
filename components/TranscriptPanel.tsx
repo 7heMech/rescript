@@ -42,6 +42,7 @@ import { useTranscriptPlayheadFollow } from "@/hooks/useTranscriptPlayheadFollow
 import { useWordAnchorFloating } from "@/hooks/useWordAnchorFloating";
 import { useCutRanges } from "@/hooks/useCutRanges";
 import { findActiveWordId, groupWordsBySpeaker } from "@/lib/transcript";
+import { isTypingTarget } from "@/lib/keyboard";
 
 const WordSpan = memo(function WordSpan({
   word,
@@ -306,9 +307,7 @@ export default function TranscriptPanel() {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
-      const target = e.target as HTMLElement;
-      if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)
-        return;
+      if (isTypingTarget(e.target)) return;
       if (selectedWordIds.length === 0) return;
       e.preventDefault();
       clearSelection();
@@ -321,9 +320,7 @@ export default function TranscriptPanel() {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key !== "@" || e.metaKey || e.ctrlKey || e.altKey) return;
-      const target = e.target as HTMLElement;
-      if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)
-        return;
+      if (isTypingTarget(e.target)) return;
       if (!selection || assigningSpeaker || correcting) return;
       e.preventDefault();
       openSpeakerAssign();
