@@ -30,6 +30,7 @@ import ModelSelector, {
 } from "./ModelSelector";
 import ImportTranscriptOption from "./ImportTranscriptOption";
 import { MODEL_ORDER } from "@/lib/models";
+import { isTypingTarget } from "@/lib/keyboard";
 
 /** How long the desktop mode-change overlay stays up. Matches the macOS
  *  `setBounds(..., animate)` duration plus a small buffer so the layout
@@ -254,9 +255,7 @@ export default function Editor() {
   // (which would double-toggle playback and look like the hotkey "didn't work").
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement;
-      if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)
-        return;
+      if (isTypingTarget(e.target)) return;
       const s = useEditorStore.getState();
       if (e.code === "Space" && s.videoEl && !s.exportOpen) {
         e.preventDefault();
