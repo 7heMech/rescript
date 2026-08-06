@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Group, Panel, Separator, useDefaultLayout } from "react-resizable-panels";
 import { useEditorStore } from "@/lib/store";
 import { getCutRanges, isWordCutOut } from "@/lib/edits";
@@ -9,8 +9,11 @@ import { VAD_SAMPLE_RATE } from "@/lib/vad";
 import { isElectron } from "@/lib/platform";
 import { reportError } from "@/lib/sentry";
 import { startSessionReporting } from "@/lib/telemetry";
+import { useCrossOriginIsolated } from "@/hooks/useCrossOriginIsolated";
+import { useDesktopMenu } from "@/hooks/useDesktopMenu";
 import { useIsDesktopLayout } from "@/hooks/useIsDesktopLayout";
 import { useTranscriber } from "@/hooks/useTranscriber";
+import { detectMediaKind, MEDIA_ACCEPT } from "@/lib/media";
 import TopBar from "./TopBar";
 import UploadScreen from "./UploadScreen";
 import TranscriptPanel from "./TranscriptPanel";
@@ -136,6 +139,63 @@ export default function Editor() {
 
   const [modeTransitioning, setModeTransitioning] = useState(false);
   const wasIdle = useRef(status === "idle");
+
+  // File › Open Project… reaches the same picker the upload screen uses, from
+  // anywhere in the app.
+  const menuInputRef = useRef<HTMLInputElement>(null);
+  const isolation = useCrossOriginIsolated();
+  const isolated = isolation === "ready";
+  const openFilePicker = useCallback(() => menuInputRef.current?.click(), []);
+  useDesktopMenu(openFilePicker, isolated);
+
+  const startMenuFile = useCallback(
+    (file: File) => {
+      const { source, pendingTranscript } = useEditorStore.getState();
+      if (source === "import") {
+        if (!pendingTranscript) {
+          alert("Choose a transcript file from the source menu first.");
+          return;
+        }
+        loadVideo(file, {
+          words: pendingTranscript.words,
+          speakers: pendingTranscript.speakers,
+        });
+        return;
+      }
+      loadVideo(file);
+    },
+    [loadVideo]
+  );
+
+  // The pipeline needs SharedArrayBuffer, so a file picked before the page is
+  // cross-origin isolated waits here instead of failing on load.
+  const deferredFile = useRef<File | null>(null);
+  const startMenuFileRef = useRef(startMenuFile);
+  useEffect(() => {
+    startMenuFileRef.current = startMenuFile;
+  }, [startMenuFile]);
+  useEffect(() => {
+    if (!isolated || !deferredFile.current) return;
+    const file = deferredFile.current;
+    deferredFile.current = null;
+    startMenuFileRef.current(file);
+  }, [isolated]);
+
+  const handleMenuFile = useCallback(
+    (file: File | undefined) => {
+      if (!file) return;
+      if (!detectMediaKind(file)) {
+        alert("Please choose a video or audio file.");
+        return;
+      }
+      if (!isolated) {
+        deferredFile.current = file;
+        return;
+      }
+      startMenuFile(file);
+    },
+    [isolated, startMenuFile]
+  );
 
   // Daily-active signal: reports the launch, then again on each day rollover so
   // a long-running window doesn't look churned.
@@ -334,6 +394,21 @@ export default function Editor() {
         >
           <LogoLoader size={44} />
         </div>
+      )}
+      {isElectron && (
+        // Present in the layout tree (not display:none) so the native menu's
+        // click() reliably opens the picker.
+        <input
+          ref={menuInputRef}
+          type="file"
+          accept={MEDIA_ACCEPT}
+          className="sr-only"
+          onChange={(e) => {
+            handleMenuFile(e.target.files?.[0]);
+            // Allow re-picking the same file after a "start over".
+            e.target.value = "";
+          }}
+        />
       )}
       <ExportDialog />
     </div>

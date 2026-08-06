@@ -387,7 +387,8 @@ export default function UploadScreen({
             />
           </label>
 
-          {ready && (
+          {/* On desktop the recent list lives in the native File menu instead. */}
+          {ready && !isElectron && (
             <RecentProjects
               projects={projects}
               busyId={busyId}
