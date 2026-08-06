@@ -1,11 +1,16 @@
 import {
   ALIGN_LEAD_S,
   alignWordsToSpeech,
+  applyAlignLead,
   buildSpeechAnchors,
   correctionAt,
+  estimateLagFromEnvelope,
   estimateSpeechLag,
+  speechEnvelope,
   snapWordsToSpeech,
   speechEdgesFromFrames,
+  refineOnsets,
+  repairCollapsedWords,
 } from "../lib/align";
 import { VAD_FRAME_SIZE, VAD_SAMPLE_RATE } from "../lib/vad";
 import type { Word } from "../lib/types";
@@ -80,7 +85,7 @@ function word(id: number, start: number, end: number): Word {
     `expected lag ~${LATE}, got ${lag}`
   );
 
-  const fixed = alignWordsToSpeech(late, frames, { duration: 22, leadS: 0 });
+  const fixed = alignWordsToSpeech(late, frames, { duration: 22 });
   const errBefore =
     late.reduce((s, w, i) => s + Math.abs(w.start - truth[i]!.start), 0) / late.length;
   const errAfter =
@@ -109,7 +114,7 @@ function word(id: number, start: number, end: number): Word {
     ["all silence", framesFor([], 4)],
   ] as const) {
     assert(estimateSpeechLag(words, frames) === 0, `${label} frames should give lag 0`);
-    const out = alignWordsToSpeech(words, frames, { duration: 4, leadS: 0 });
+    const out = alignWordsToSpeech(words, frames, { duration: 4 });
     assert(
       out.every((w, i) => w.start === words[i]!.start && w.end === words[i]!.end),
       `${label} frames should leave timings untouched`
@@ -152,7 +157,7 @@ function word(id: number, start: number, end: number): Word {
   const late = correctionAt(anchors, 0, 20.5);
   assert(early > late + 0.1, `correction should decay: ${early} -> ${late}`);
 
-  const fixed = alignWordsToSpeech(drifted, frames, { duration: 23, leadS: 0 });
+  const fixed = alignWordsToSpeech(drifted, frames, { duration: 23 });
   const mae = (ws: Word[]) =>
     ws.reduce((s, w, i) => s + Math.abs(w.start - truth[i]!.start), 0) / ws.length;
   const flat = snapWordsToSpeech(
@@ -173,46 +178,6 @@ function word(id: number, start: number, end: number): Word {
     `drifting lag tracked: ok (correction ${early.toFixed(3)}s -> ${late.toFixed(3)}s; ` +
       `mean start error flat ${mae(flat).toFixed(3)}s vs warp ${mae(fixed).toFixed(3)}s)`
   );
-}
-
-{
-  // The perceptual lead: a flat extra shift on top of alignment. It must survive
-  // snapping (which would otherwise pull starts back onto the VAD onset) and must
-  // not break the ordering / length / range invariants.
-  const frames = framesFor(
-    [
-      [1, 2],
-      [2.5, 4],
-    ],
-    5
-  );
-  const words = [word(0, 1.2, 1.7), word(1, 1.7, 2.1), word(2, 2.7, 3.9)];
-  const plain = alignWordsToSpeech(words, frames, { duration: 5, leadS: 0 });
-  const led = alignWordsToSpeech(words, frames, { duration: 5, leadS: ALIGN_LEAD_S });
-  for (let i = 0; i < plain.length; i++) {
-    assert(
-      Math.abs(plain[i]!.start - ALIGN_LEAD_S - led[i]!.start) < 1e-9,
-      `word ${i} should lead by exactly ${ALIGN_LEAD_S}: ${plain[i]!.start} vs ${led[i]!.start}`
-    );
-    assert(
-      Math.abs((led[i]!.end - led[i]!.start) - (plain[i]!.end - plain[i]!.start)) < 1e-9,
-      `word ${i} duration should be unchanged by the lead`
-    );
-  }
-  for (let i = 0; i < led.length; i++) {
-    assert(led[i]!.end > led[i]!.start, `word ${i} positive length`);
-    assert(led[i]!.start >= 0, `word ${i} start within range`);
-    if (i > 0) assert(led[i]!.start >= led[i - 1]!.start, `order preserved at ${i}`);
-  }
-  assert(ALIGN_LEAD_S > 0 && ALIGN_LEAD_S < 0.2, "lead should stay small");
-
-  // A word already at t=0 cannot lead further, and must not go negative.
-  const atZero = alignWordsToSpeech([word(0, 0.02, 0.5)], framesFor([[0, 1]], 2), {
-    duration: 2,
-  });
-  assert(atZero[0]!.start === 0, `start clamped to 0, got ${atZero[0]!.start}`);
-  assert(atZero[0]!.end > 0, "end still positive at the clip start");
-  console.log(`lead of ${ALIGN_LEAD_S}s applied after snapping: ok`);
 }
 
 {
@@ -246,6 +211,232 @@ function word(id: number, start: number, end: number): Word {
   assert(out.every((w) => w.end > w.start), "every word keeps positive length");
   assert(out[1]!.end <= 2 + 0.02, `end clamped to duration, got ${out[1]!.end}`);
   console.log("clamping: ok", out.map((w) => [w.start, w.end]));
+}
+
+{
+  // Continuous speech: Whisper emits words back to back, so there are no pause
+  // landmarks and the VAD-mask score goes flat (a solid block of words inside a
+  // solid block of speech trades one edge mismatch for the other). The loudness
+  // envelope still votes with every word, so it stays sharp.
+  const SR = VAD_SAMPLE_RATE;
+  const TOTAL = 30;
+  const truth: Word[] = [];
+  for (let t = 1; t + 0.35 <= 29; t += 0.35) {
+    truth.push(word(truth.length, t, t + 0.35));
+  }
+  // A decaying burst per word, so every onset sits at a known time.
+  const audio = new Float32Array(Math.round(TOTAL * SR));
+  for (const w of truth) {
+    const s = Math.round(w.start * SR);
+    const e = Math.min(audio.length, Math.round(w.end * SR));
+    for (let i = s; i < e; i++) {
+      audio[i] += Math.sin(i / 12) * 0.35 * Math.exp((-(i - s) / SR) * 6);
+    }
+  }
+  const frames = framesFor([[1, 29]], TOTAL);
+
+  for (const LAG of [0.1, 0.25, 0.34]) {
+    const late = truth.map((w) => ({ ...w, start: w.start + LAG, end: w.end + LAG }));
+    const fromEnv = estimateLagFromEnvelope(late, speechEnvelope(audio, SR));
+    assert(
+      Math.abs(fromEnv - LAG) <= 0.02,
+      `envelope should recover lag ${LAG}, got ${fromEnv}`
+    );
+    // The VAD-only path is expected to miss this badly — that is why audio is passed.
+    const vadOnly = alignWordsToSpeech(late, frames, { duration: TOTAL });
+    const withAudio = alignWordsToSpeech(late, frames, {
+      duration: TOTAL,
+      audio,
+      sampleRate: SR,
+    });
+    const mae = (ws: Word[]) =>
+      ws.reduce((s, w, i) => s + Math.abs(w.start - truth[i]!.start), 0) / ws.length;
+    assert(
+      mae(withAudio) < 0.03,
+      `audio-anchored alignment should be tight, got ${mae(withAudio)} for lag ${LAG}`
+    );
+    assert(
+      mae(withAudio) < mae(vadOnly),
+      `audio should beat VAD-only on pauseless speech (${mae(withAudio)} vs ${mae(vadOnly)})`
+    );
+    for (let i = 1; i < withAudio.length; i++) {
+      assert(withAudio[i]!.start >= withAudio[i - 1]!.start, `order broken at ${i}`);
+      assert(withAudio[i]!.end > withAudio[i]!.start, `zero-length word at ${i}`);
+    }
+  }
+  // Silence in, nothing out: no rises means no estimate rather than a wrong one.
+  assert(
+    estimateLagFromEnvelope(truth, speechEnvelope(new Float32Array(SR * 5), SR)) === 0,
+    "silent audio should yield no lag estimate"
+  );
+  console.log("pauseless speech corrected via loudness envelope: ok");
+}
+
+{
+  // Unvoiced fricatives: Silero fires on voicing, so a word like "shot" gets its
+  // VAD onset on the vowel and the /S/ in front of it is missed. Broadband RMS
+  // makes the same mistake — the fricative is much quieter than the vowel — so the
+  // envelope splits into a high band that can mark it.
+  const SR = VAD_SAMPLE_RATE;
+  const TOTAL = 3;
+  const audio = new Float32Array(Math.round(TOTAL * SR));
+  const FRIC_START = 1.0, VOWEL_START = 1.22, VOWEL_END = 1.6;
+  // /S/: quiet, high frequency only.
+  for (let i = Math.round(FRIC_START * SR); i < Math.round(VOWEL_START * SR); i++) {
+    audio[i] = (Math.sin(i * 1.9) + Math.sin(i * 2.3)) * 0.03;
+  }
+  // vowel: loud, low frequency.
+  for (let i = Math.round(VOWEL_START * SR); i < Math.round(VOWEL_END * SR); i++) {
+    audio[i] = Math.sin(i / 40) * 0.3;
+  }
+  // VAD sees only the voiced part, exactly as Silero does.
+  const frames = framesFor([[VOWEL_START, VOWEL_END]], TOTAL);
+  const edges = speechEdgesFromFrames(frames);
+  const env = speechEnvelope(audio, SR);
+  const refined = refineOnsets(edges.onsets, env);
+  assert(refined.length >= 1, "refinement keeps at least one onset");
+  assert(
+    Math.abs(refined[0]! - FRIC_START) < 0.05,
+    `onset should move back to the fricative at ${FRIC_START}, got ${refined[0]} (VAD said ${edges.onsets[0]})`
+  );
+
+
+  // Silero often splits a fricative-initial word into two runs (one for the /S/,
+  // one for the vowel). Both refine to real onsets, and anchor matching would then
+  // pick the later one — putting the word back on its vowel. They must collapse.
+  const split = framesFor(
+    [
+      [FRIC_START + 0.02, FRIC_START + 0.1],
+      [VOWEL_START, VOWEL_END],
+    ],
+    TOTAL
+  );
+  const splitEdges = speechEdgesFromFrames(split);
+  assert(splitEdges.onsets.length === 2, "fixture should give two VAD runs");
+  const merged = refineOnsets(splitEdges.onsets, env);
+  assert(
+    merged.length === 1,
+    `two runs of one sound should collapse to one onset, got ${merged.length}: ${merged}`
+  );
+  assert(
+    Math.abs(merged[0]! - FRIC_START) < 0.05,
+    `the surviving onset should be the earliest, got ${merged[0]}`
+  );
+
+  // No gap inside the look-back means no evidence of a distinct onset, so the VAD
+  // time must be kept rather than dragged an arbitrary distance backwards.
+  const solid = new Float32Array(Math.round(TOTAL * SR));
+  for (let i = 0; i < solid.length; i++) solid[i] = Math.sin(i / 40) * 0.3;
+  const solidEnv = speechEnvelope(solid, SR);
+  const mid = 1.5;
+  const kept = refineOnsets([mid], solidEnv);
+  assert(
+    kept.length === 1 && Math.abs(kept[0]! - mid) < 1e-9,
+    `continuous sound should keep its VAD onset, got ${kept}`
+  );
+
+  // Results stay ordered whatever the input.
+  const twoRuns = framesFor([[0.3, 0.7], [VOWEL_START, VOWEL_END]], TOTAL);
+  const twoEdges = speechEdgesFromFrames(twoRuns);
+  const bounded = refineOnsets(twoEdges.onsets, env);
+  for (let i = 1; i < bounded.length; i++) {
+    assert(bounded[i]! > bounded[i - 1]!, `refined onsets must stay ordered at ${i}`);
+  }
+  console.log(
+    `fricative onset recovered: ok (VAD ${edges.onsets[0]!.toFixed(3)} -> ${refined[0]!.toFixed(3)}, true ${FRIC_START})`
+  );
+}
+
+{
+  // Time mis-distributed between neighbours, not shifted: Whisper gave "evening"
+  // 0.06 s while "and" took 0.40 s and 0.34 s went to no word at all, with both
+  // ends of the region correctly placed. Only re-splitting can fix that.
+  const words = [
+    word(0, 20.0, 20.4),   // "and" - over-long
+    word(1, 20.4, 20.46),  // "evening" - collapsed to a sliver
+    word(2, 20.8, 21.2),   // "bell" - correctly placed, must not move
+  ];
+  words[0]!.text = "and";
+  words[1]!.text = "evening";
+  words[2]!.text = "bell";
+  const fixed = repairCollapsedWords(words, null, { duration: 24 });
+  assert(
+    fixed[1]!.end - fixed[1]!.start > 0.4,
+    `collapsed word should regain real duration, got ${(fixed[1]!.end - fixed[1]!.start).toFixed(3)}s`
+  );
+  assert(fixed[2]!.start === 20.8, `the next word must not move, got ${fixed[2]!.start}`);
+  assert(fixed[0]!.start === 20.0, `the region start must not move, got ${fixed[0]!.start}`);
+  assert(
+    fixed[0]!.end < words[0]!.end,
+    "the over-long neighbour should give time back"
+  );
+  for (let i = 1; i < fixed.length; i++) {
+    assert(fixed[i]!.start >= fixed[i - 1]!.start, `order broken at ${i}`);
+    assert(fixed[i]!.end > fixed[i]!.start, `zero-length word at ${i}`);
+  }
+
+  // Single-syllable function words really can be brief - leave them alone.
+  const brief = [word(0, 1.0, 1.4), word(1, 1.4, 1.44), word(2, 2.0, 2.4)];
+  brief[1]!.text = "a";
+  const untouched = repairCollapsedWords(brief, null, { duration: 5 });
+  assert(
+    untouched[1]!.start === 1.4 && untouched[1]!.end === 1.44,
+    "a one-syllable word must not be re-split"
+  );
+
+  // Nothing unassigned to reclaim -> no change.
+  const packed = [word(0, 1.0, 1.4), word(1, 1.4, 1.46), word(2, 1.46, 1.9)];
+  packed[1]!.text = "evening";
+  const same = repairCollapsedWords(packed, null, { duration: 5 });
+  assert(
+    same[1]!.end - same[1]!.start < 0.1,
+    "with no spare room the word must be left as decoded"
+  );
+  console.log(
+    `collapsed word re-split: ok (0.060s -> ${(fixed[1]!.end - fixed[1]!.start).toFixed(3)}s)`
+  );
+}
+
+// The lead is a uniform shift, so every relative gap has to survive it.
+{
+  const words: Word[] = [
+    { id: 0, text: "one", start: 1.0, end: 1.4, speaker: 0, deleted: false },
+    { id: 1, text: "...", start: 1.4, end: 1.7, speaker: 0, deleted: false },
+    { id: 2, text: "two", start: 1.9, end: 2.3, speaker: 0, deleted: false },
+  ];
+  const led = applyAlignLead(words, ALIGN_LEAD_S, { duration: 10 });
+  assert(
+    led.every((w, i) => Math.abs(w.start - (words[i]!.start - ALIGN_LEAD_S)) < 1e-9),
+    "every start moves back by exactly the lead"
+  );
+  assert(
+    led.every((w, i) => Math.abs(w.end - (words[i]!.end - ALIGN_LEAD_S)) < 1e-9),
+    "ends move with starts, so durations are unchanged"
+  );
+  assert(
+    Math.abs((led[2]!.start - led[1]!.end) - (words[2]!.start - words[1]!.end)) < 1e-9,
+    "the gap before 'two' is preserved"
+  );
+  assert(words[0]!.start === 1.0, "input is not mutated");
+
+  // A word already at the very start cannot be dragged negative.
+  const atZero = applyAlignLead(
+    [{ id: 0, text: "go", start: 0.02, end: 0.3, speaker: 0, deleted: false }],
+    ALIGN_LEAD_S,
+    { duration: 10 }
+  );
+  assert(atZero[0]!.start === 0, "clamped to 0 rather than going negative");
+  assert(atZero[0]!.end > atZero[0]!.start, "clamping keeps the word non-empty");
+
+  assert(
+    applyAlignLead(words, 0, { duration: 10 })[0]!.start === 1.0,
+    "a zero lead is a no-op"
+  );
+  assert(applyAlignLead([], ALIGN_LEAD_S).length === 0, "empty input is fine");
+  // Deliberately a range, not an equality: the lead is a perceptual setting and
+  // gets tuned by ear. Anything past ~150 ms stops reading as "a hair early".
+  assert(ALIGN_LEAD_S > 0 && ALIGN_LEAD_S <= 0.15, "lead stays a small nudge");
+  console.log(`align lead: ok (${ALIGN_LEAD_S * 1000}ms, gaps and durations preserved)`);
 }
 
 console.log("ALL ALIGN TESTS PASSED");
