@@ -133,6 +133,78 @@ type AsrChunk = { text: string; timestamp: [number, number | null] };
 const post = (msg: WorkerResponse, transfer: Transferable[] = []) =>
   (self as unknown as Worker).postMessage(msg, transfer);
 
+/**
+ * Live progress / partial-text updates are coalesced onto a timer.
+ *
+ * Both fire once per decoded token — tens of thousands of times on a long
+ * recording — and each one costs a structured clone across the worker
+ * boundary plus a store write and a React render on the main thread. For the
+ * partial text that clone is of the whole transcript so far, so the cost grows
+ * with the transcript and the total work is quadratic: an hour of speech moved
+ * hundreds of megabytes of short-lived strings for a preview nobody can read
+ * at that rate. 10 updates a second looks identical and is O(n).
+ */
+const LIVE_POST_INTERVAL_MS = 100;
+/**
+ * The preview is a "something is happening" affordance pinned above the
+ * progress bar, not a readable document — only the last few lines are ever on
+ * screen. Sending the tail keeps each message a fixed size no matter how long
+ * the recording is.
+ */
+const PARTIAL_TAIL_CHARS = 1200;
+
+let pendingProgress: WorkerResponse | null = null;
+let pendingPartial: WorkerResponse | null = null;
+let liveTimer: ReturnType<typeof setTimeout> | null = null;
+
+function flushLive() {
+  if (liveTimer !== null) {
+    clearTimeout(liveTimer);
+    liveTimer = null;
+  }
+  if (pendingProgress) {
+    post(pendingProgress);
+    pendingProgress = null;
+  }
+  if (pendingPartial) {
+    post(pendingPartial);
+    pendingPartial = null;
+  }
+}
+
+/**
+ * Drop queued updates without sending them. Used before a terminal message,
+ * which supersedes anything still in flight.
+ */
+function cancelLive() {
+  if (liveTimer !== null) {
+    clearTimeout(liveTimer);
+    liveTimer = null;
+  }
+  pendingProgress = null;
+  pendingPartial = null;
+}
+
+/** Queue a coalescing update; the newest value for each type wins. */
+function postLive(msg: WorkerResponse) {
+  if (msg.type === "partial") pendingPartial = msg;
+  else pendingProgress = msg;
+  if (liveTimer === null) {
+    liveTimer = setTimeout(flushLive, LIVE_POST_INTERVAL_MS);
+  }
+}
+
+/** Queue the streaming transcript preview, trimmed to its tail. */
+function postPartial(text: string) {
+  postLive({
+    type: "partial",
+    text:
+      text.length > PARTIAL_TAIL_CHARS
+        ? `…${text.slice(-PARTIAL_TAIL_CHARS)}`
+        : text,
+  });
+}
+
 /** Device the current ASR pipeline is running on. */
 let asrDevice: "webgpu" | "wasm" = "wasm";
 
@@ -1005,13 +1077,13 @@ async function runParakeet(
     const piece = (result.utterance_text ?? "").trim();
     if (piece) {
       partial = partial ? `${partial} ${piece}` : piece;
-      post({ type: "partial", text: partial });
+      postPartial(partial);
     }
 
     speechDone += segmentSamples;
     const value =
       speechSamples > 0 ? Math.min(1, speechDone / speechSamples) : 1;
-    post({ type: "progress", message: "Transcribing…", value });
+    postLive({ type: "progress", message: "Transcribing…", value });
   }
 
   const cleaned = cleanTranscript(rawWords);
@@ -1085,7 +1157,7 @@ async function runWhisper(
     chunkFloor = next;
     chunkTokens = 0;
     transcribed = next;
-    post({ type: "progress", message: "Transcribing…", value: transcribed });
+    postLive({ type: "progress", message: "Transcribing…", value: transcribed });
   };
 
   /** Nudge the bar forward between chunk boundaries as tokens stream in. */
@@ -1097,7 +1169,7 @@ async function runWhisper(
     const interpolated = Math.min(0.999, chunkFloor + frac * avgChunkDelta);
     if (interpolated > transcribed) {
       transcribed = interpolated;
-      post({ type: "progress", message: "Transcribing…", value: transcribed });
+      postLive({ type: "progress", message: "Transcribing…", value: transcribed });
     }
   };
 
@@ -1159,7 +1231,7 @@ async function runWhisper(
         },
         callback_function: (text: string) => {
           partial += text;
-          post({ type: "partial", text: partial });
+          postPartial(partial);
           interpolateProgress();
         },
       });
@@ -1183,7 +1255,7 @@ async function runWhisper(
       transcribed = progressBefore.transcribed;
       chunkFloor = progressBefore.chunkFloor;
       chunkTokens = progressBefore.chunkTokens;
-      post({ type: "partial", text: partial });
+      postPartial(partial);
       await fallbackAsrToWasm();
       transcriber = await getAsr(choice);
       chunks = await runSlice();
@@ -1239,9 +1311,13 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
       throw new Error(`Unknown speech model: ${String(choice)}`);
     }
 
+    // Drop anything still queued: a stale "Transcribing… 99%" landing after
+    // "complete" would put the UI back into its busy state.
+    cancelLive();
     post({ type: "complete", words });
   } catch (err) {
     console.error(err);
+    cancelLive();
     post({
       type: "error",
       message: isWebGpuDeviceLostError(err)
