@@ -57,6 +57,12 @@ import {
 } from "@/lib/alignModels";
 import { insertDisfluencyPlaceholders } from "@/lib/disfluencies";
 import {
+  diarizationWindows,
+  stitchDiarizationWindows,
+  type DiarizationSegment,
+  type DiarizationWindow,
+} from "@/lib/diarize";
+import {
   alignBatch,
   expandToAcoustics,
   groupWordsForAlignment,
@@ -132,6 +138,78 @@ type AsrChunk = { text: string; timestamp: [number, number | null] };
 
 const post = (msg: WorkerResponse, transfer: Transferable[] = []) =>
   (self as unknown as Worker).postMessage(msg, transfer);
+
+/**
+ * Live progress / partial-text updates are coalesced onto a timer.
+ *
+ * Both fire once per decoded token — tens of thousands of times on a long
+ * recording — and each one costs a structured clone across the worker
+ * boundary plus a store write and a React render on the main thread. For the
+ * partial text that clone is of the whole transcript so far, so the cost grows
+ * with the transcript and the total work is quadratic: an hour of speech moved
+ * hundreds of megabytes of short-lived strings for a preview nobody can read
+ * at that rate. 10 updates a second looks identical and is O(n).
+ */
+const LIVE_POST_INTERVAL_MS = 50;
+/**
+ * The preview is a "something is happening" affordance pinned above the
+ * progress bar, not a readable document — only the last few lines are ever on
+ * screen. Sending the tail keeps each message a fixed size no matter how long
+ * the recording is.
+ */
+const PARTIAL_TAIL_CHARS = 550;
+
+let pendingProgress: WorkerResponse | null = null;
+let pendingPartial: WorkerResponse | null = null;
+let liveTimer: ReturnType<typeof setTimeout> | null = null;
+
+function flushLive() {
+  if (liveTimer !== null) {
+    clearTimeout(liveTimer);
+    liveTimer = null;
+  }
+  if (pendingProgress) {
+    post(pendingProgress);
+    pendingProgress = null;
+  }
+  if (pendingPartial) {
+    post(pendingPartial);
+    pendingPartial = null;
+  }
+}
+
+/**
+ * Drop queued updates without sending them. Used before a terminal message,
+ * which supersedes anything still in flight.
+ */
+function cancelLive() {
+  if (liveTimer !== null) {
+    clearTimeout(liveTimer);
+    liveTimer = null;
+  }
+  pendingProgress = null;
+  pendingPartial = null;
+}
+
+/** Queue a coalescing update; the newest value for each type wins. */
+function postLive(msg: WorkerResponse) {
+  if (msg.type === "partial") pendingPartial = msg;
+  else pendingProgress = msg;
+  if (liveTimer === null) {
+    liveTimer = setTimeout(flushLive, LIVE_POST_INTERVAL_MS);
+  }
+}
+
+/** Queue the streaming transcript preview, trimmed to its tail. */
+function postPartial(text: string) {
+  postLive({
+    type: "partial",
+    text:
+      text.length > PARTIAL_TAIL_CHARS
+        ? `…${text.slice(-PARTIAL_TAIL_CHARS)}`
+        : text,
+  });
+}
 
 /** Device the current ASR pipeline is running on. */
 let asrDevice: "webgpu" | "wasm" = "wasm";
@@ -472,13 +550,6 @@ async function fallbackAsrToWasm() {
     message: "GPU interrupted — continuing on CPU…",
     value: null,
   });
-}
-
-interface DiarizationSegment {
-  id: number;
-  start: number;
-  end: number;
-  confidence: number;
 }
 
 type Diarizer = {
@@ -840,10 +911,17 @@ async function refineWordTimestamps(
   return applyAlignLead(withPauses, ALIGN_LEAD_S, { duration });
 }
 
+/**
+ * Segment the whole recording, one bounded window at a time.
+ *
+ * Feeding the model the entire file was the app's largest allocation by a wide
+ * margin — see the note at the top of lib/diarize.ts. Windowing keeps every
+ * forward pass the same size whatever the duration; the price is that pyannote's
+ * class indices are only meaningful within a pass, which is what the overlap and
+ * `stitchDiarizationWindows` are for.
+ */
 async function diarize(audio: Float32Array): Promise<DiarizationSegment[]> {
   const { processor, model } = await getDiarizer();
-  const inputs = await processor(audio);
-  const { logits } = await model(inputs);
   // post_process_speaker_diarization is specific to the PyAnnote processor
   // and is not part of the generic Processor typings.
   const pyannote = processor as unknown as {
@@ -852,8 +930,28 @@ async function diarize(audio: Float32Array): Promise<DiarizationSegment[]> {
       numSamples: number
     ) => DiarizationSegment[][];
   };
-  const result = pyannote.post_process_speaker_diarization(logits, audio.length);
-  return result[0] ?? [];
+
+  const spans = diarizationWindows(audio.length, VAD_SAMPLE_RATE);
+  const windows: DiarizationWindow[] = [];
+  for (let i = 0; i < spans.length; i++) {
+    const { startSample, endSample } = spans[i];
+    // Fresh buffer rather than a subarray: non-zero byteOffset views have
+    // produced wrong results from onnxruntime-web elsewhere in this worker.
+    const slice = audio.slice(startSample, endSample);
+    const inputs = await processor(slice);
+    const { logits } = await model(inputs);
+    windows.push({
+      offsetS: startSample / VAD_SAMPLE_RATE,
+      durationS: slice.length / VAD_SAMPLE_RATE,
+      segments: pyannote.post_process_speaker_diarization(logits, slice.length)[0] ?? [],
+    });
+    postLive({
+      type: "progress",
+      message: "Identifying speakers…",
+      value: (i + 1) / spans.length,
+    });
+  }
+  return stitchDiarizationWindows(windows);
 }
 
 /** Assign a speaker to each word from the diarization segments. */
@@ -864,19 +962,34 @@ function assignSpeakers(words: Word[], segments: DiarizationSegment[]) {
     for (const w of words) w.speaker = 0;
     return;
   }
+  // Both lists run in time order, so a single cursor walks them together.
+  // Rescanning every segment per word is O(words x segments) — fine on a clip,
+  // but an hour of speech is thousands of each and this used to be unreachable
+  // only because diarizing a file that long failed outright.
+  const byStart = [...speech].sort((a, b) => a.start - b.start);
+  let cursor = 0;
+
   const idMap = new Map<number, number>(); // pyannote id -> sequential index
   for (const w of words) {
     const mid = (w.start + w.end) / 2;
-    let seg = speech.find((s) => mid >= s.start && mid < s.end);
-    if (!seg) {
-      // Fall back to the nearest speech segment.
-      let best = Infinity;
-      for (const s of speech) {
-        const d = mid < s.start ? s.start - mid : mid - s.end;
-        if (d < best) {
-          best = d;
-          seg = s;
-        }
+    // Advance past segments that end before this word and can no longer be the
+    // containing one. Words are in time order, so this never rewinds.
+    while (cursor + 1 < byStart.length && byStart[cursor].end <= mid) cursor++;
+
+    let seg: DiarizationSegment | undefined;
+    let best = Infinity;
+    // The containing segment, or failing that the nearest, is at the cursor or
+    // immediately beside it — a constant-size neighbourhood, not a full scan.
+    for (let i = Math.max(0, cursor - 1); i < byStart.length && i <= cursor + 1; i++) {
+      const s = byStart[i];
+      if (mid >= s.start && mid < s.end) {
+        seg = s;
+        break;
+      }
+      const d = mid < s.start ? s.start - mid : mid - s.end;
+      if (d < best) {
+        best = d;
+        seg = s;
       }
     }
     const raw = seg ? seg.id : -1;
@@ -933,7 +1046,7 @@ async function finishWithDiarization(
   audio: Float32Array
 ): Promise<Word[]> {
   try {
-    post({ type: "progress", message: "Identifying speakers…", value: null });
+    post({ type: "progress", message: "Identifying speakers…", value: 0 });
     const segments = await diarize(audio);
     assignSpeakers(words, segments);
   } catch (err) {
@@ -1005,13 +1118,13 @@ async function runParakeet(
     const piece = (result.utterance_text ?? "").trim();
     if (piece) {
       partial = partial ? `${partial} ${piece}` : piece;
-      post({ type: "partial", text: partial });
+      postPartial(partial);
     }
 
     speechDone += segmentSamples;
     const value =
       speechSamples > 0 ? Math.min(1, speechDone / speechSamples) : 1;
-    post({ type: "progress", message: "Transcribing…", value });
+    postLive({ type: "progress", message: "Transcribing…", value });
   }
 
   const cleaned = cleanTranscript(rawWords);
@@ -1085,7 +1198,7 @@ async function runWhisper(
     chunkFloor = next;
     chunkTokens = 0;
     transcribed = next;
-    post({ type: "progress", message: "Transcribing…", value: transcribed });
+    postLive({ type: "progress", message: "Transcribing…", value: transcribed });
   };
 
   /** Nudge the bar forward between chunk boundaries as tokens stream in. */
@@ -1097,7 +1210,7 @@ async function runWhisper(
     const interpolated = Math.min(0.999, chunkFloor + frac * avgChunkDelta);
     if (interpolated > transcribed) {
       transcribed = interpolated;
-      post({ type: "progress", message: "Transcribing…", value: transcribed });
+      postLive({ type: "progress", message: "Transcribing…", value: transcribed });
     }
   };
 
@@ -1159,7 +1272,7 @@ async function runWhisper(
         },
         callback_function: (text: string) => {
           partial += text;
-          post({ type: "partial", text: partial });
+          postPartial(partial);
           interpolateProgress();
         },
       });
@@ -1183,7 +1296,7 @@ async function runWhisper(
       transcribed = progressBefore.transcribed;
       chunkFloor = progressBefore.chunkFloor;
       chunkTokens = progressBefore.chunkTokens;
-      post({ type: "partial", text: partial });
+      postPartial(partial);
       await fallbackAsrToWasm();
       transcriber = await getAsr(choice);
       chunks = await runSlice();
@@ -1239,9 +1352,13 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
       throw new Error(`Unknown speech model: ${String(choice)}`);
     }
 
+    // Drop anything still queued: a stale "Transcribing… 99%" landing after
+    // "complete" would put the UI back into its busy state.
+    cancelLive();
     post({ type: "complete", words });
   } catch (err) {
     console.error(err);
+    cancelLive();
     post({
       type: "error",
       message: isWebGpuDeviceLostError(err)

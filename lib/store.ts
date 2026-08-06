@@ -37,6 +37,7 @@ import {
   type TranscriptLanguage,
 } from "./languages";
 import { detectMediaKind, type MediaKind } from "./media";
+import { buildWaveformPeaks, type WaveformPeaks } from "./waveform";
 import {
   deleteProject,
   fileFromProject,
@@ -66,8 +67,16 @@ interface EditorState {
   /** Whether the loaded file is video or audio-only. */
   mediaKind: MediaKind | null;
   duration: number;
-  /** Mono 16 kHz PCM of the media's audio track (used for waveform + ASR). */
-  audio: Float32Array | null;
+  /**
+   * Min/max envelope of the media's audio track, for the timeline waveform.
+   *
+   * The decoded PCM itself is deliberately not kept: it is hundreds of
+   * megabytes on a long recording and the worker takes ownership of it (see
+   * useTranscriber). Null when the file has no audio track.
+   */
+  waveform: WaveformPeaks | null;
+  /** Whether the media has an audio track at all. */
+  hasAudio: boolean;
   /** Transcript source selected on the upload screen (speech model or import). */
   source: TranscriptSource;
   /** Language hint sent to Whisper when transcribing (Parakeet auto-detects). */
@@ -144,6 +153,11 @@ interface EditorState {
   setTranscriptLanguage: (language: TranscriptLanguage) => void;
   setPendingTranscript: (t: PendingTranscript | null) => void;
   setDuration: (d: number) => void;
+  /**
+   * Hand the decoded PCM to the store. Only the waveform envelope is retained;
+   * the caller keeps ownership of the buffer itself (and transfers it to the
+   * transcription worker).
+   */
   setAudio: (a: Float32Array | null) => void;
   setStatus: (s: EditorStatus) => void;
   setProgress: (p: ProgressInfo) => void;
@@ -228,6 +242,23 @@ function bumpAutosave() {
   void import("./autosave").then((m) => m.scheduleProjectAutosave());
 }
 
+/**
+ * How many undo steps to keep.
+ *
+ * Snapshots share structure with the live state, but every edit replaces the
+ * words array wholesale, so each entry pins a distinct copy — on an hour-long
+ * transcript that is a few megabytes per step. Unbounded, a long editing
+ * session grows without limit and never gives any of it back. A hundred steps
+ * is far more than anyone walks back through interactively.
+ */
+const MAX_UNDO_STEPS = 100;
+
+/** Append to the undo stack, dropping the oldest entries past the cap. */
+function pushHistory(past: EditSnapshot[], entry: EditSnapshot): EditSnapshot[] {
+  const next = [...past, entry];
+  return next.length > MAX_UNDO_STEPS ? next.slice(next.length - MAX_UNDO_STEPS) : next;
+}
+
 function snapshotOf(s: {
   words: Word[];
   speakers: SpeakerInfo[];
@@ -283,7 +314,7 @@ function pushEdit(
     set({ future: [], ...next });
   } else {
     set({
-      past: [...s.past, snapshotOf(s)],
+      past: pushHistory(s.past, snapshotOf(s)),
       future: [],
       ...next,
     });
@@ -296,7 +327,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   mediaUrl: null,
   mediaKind: null,
   duration: 0,
-  audio: null,
+  waveform: null,
+  hasAudio: false,
   source: "base",
   transcriptLanguage: DEFAULT_TRANSCRIPT_LANGUAGE,
   pendingTranscript: null,
@@ -369,7 +401,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       error: null,
       currentTime: 0,
       exportUrl: null,
-      audio: null,
+      waveform: null,
+      hasAudio: false,
       duration: 0,
     });
     // Funnel step between opening the app and getting a transcript. `kind` and
@@ -421,7 +454,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       playing: false,
       exportUrl: null,
       exportOpen: false,
-      audio: null,
+      waveform: null,
+      hasAudio: false,
     });
   },
 
@@ -449,7 +483,11 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set({ duration });
     if (get().status === "ready") bumpAutosave();
   },
-  setAudio: (audio) => set({ audio }),
+  setAudio: (audio) =>
+    set({
+      waveform: audio && audio.length > 0 ? buildWaveformPeaks(audio) : null,
+      hasAudio: audio !== null,
+    }),
   setStatus: (status) => {
     set({ status });
     if (status === "ready") bumpAutosave();
@@ -836,7 +874,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     if (s.gestureActive) return;
     set({
       gestureActive: true,
-      past: [...s.past, snapshotOf(s)],
+      past: pushHistory(s.past, snapshotOf(s)),
       future: [],
     });
   },
@@ -886,7 +924,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       manualCuts: next.manualCuts,
       sceneBoundaries: next.sceneBoundaries,
       future: future.slice(1),
-      past: [...past, { words, speakers, manualCuts, sceneBoundaries }],
+      past: pushHistory(past, { words, speakers, manualCuts, sceneBoundaries }),
       selectedClipIndex: null,
       selectedCutIndex: null,
       selectedWordIds: [],
@@ -933,7 +971,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       mediaUrl: null,
       mediaKind: null,
       duration: 0,
-      audio: null,
+      waveform: null,
+      hasAudio: false,
       source: loadModelPreference(),
       transcriptLanguage: loadTranscriptLanguagePreference(),
       pendingTranscript: null,

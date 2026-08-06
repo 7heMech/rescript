@@ -101,24 +101,39 @@ export function stripHallucinationPhrases(words: Word[]): Word[] {
 /**
  * Drop a trailing run of near-identical short words that often appears when
  * Whisper loops at the end of a clip (e.g. a dozen "um" / "you" / "." tokens).
+ *
+ * The run must reach the *last* word. An earlier version scanned backwards for
+ * the first degenerate window anywhere in the transcript and cut from there,
+ * which is only a tail trim when the transcript happens to end in a loop: on a
+ * verbatim transcript a mid-conversation "um uh um uh um uh" matched at minute
+ * three and took the remaining forty minutes with it.
  */
 export function trimTrailingDegenerateTail(words: Word[]): Word[] {
   if (words.length < 8) return words;
   const keys = words.map(wordKey);
   const window = 6;
-  let cutFrom = words.length;
-
-  for (let i = words.length - 1; i >= window; i--) {
+  /** Distinct non-empty tokens in the window ending at `hi`, inclusive. */
+  const distinctAt = (hi: number) => {
     const unique = new Set<string>();
-    for (let j = i - window + 1; j <= i; j++) {
+    for (let j = hi - window + 1; j <= hi; j++) {
       if (keys[j]) unique.add(keys[j]!);
     }
-    // Degenerate: ≤2 distinct tokens in a 6-word window near the end.
-    if (unique.size > 0 && unique.size <= 2) {
-      cutFrom = i - window + 1;
-    } else if (cutFrom < words.length) {
-      break;
-    }
+    return unique.size;
+  };
+  /** Degenerate: ≤2 distinct tokens in a 6-word window. */
+  const degenerate = (hi: number) => {
+    const n = distinctAt(hi);
+    return n > 0 && n <= 2;
+  };
+
+  // Anchored at the end: if the transcript does not finish inside a loop there
+  // is no tail to trim, whatever happens earlier.
+  if (!degenerate(words.length - 1)) return words;
+
+  let cutFrom = words.length - window;
+  for (let i = words.length - 2; i >= window - 1; i--) {
+    if (!degenerate(i)) break;
+    cutFrom = i - window + 1;
   }
   // Only trim if we'd drop a meaningful chunk (≥6 words) of the tail.
   if (words.length - cutFrom >= 6) return words.slice(0, cutFrom);

@@ -85,11 +85,14 @@ export function useTranscriber() {
       );
     };
 
-    // Transfer a copy so the original stays available for the waveform.
-    const copy = audio.slice();
+    // Transfer, not copy: the worker takes ownership of the PCM and `audio` is
+    // detached here. Nothing on the main thread reads it afterwards — the
+    // waveform draws from the envelope the store built in setAudio — and on a
+    // long recording the copy this replaces was hundreds of megabytes held for
+    // the length of the run.
     workerRef.current.postMessage(
-      { audio: copy, duration, model, language: transcriptLanguage },
-      [copy.buffer]
+      { audio, duration, model, language: transcriptLanguage },
+      [audio.buffer]
     );
   }, []);
 

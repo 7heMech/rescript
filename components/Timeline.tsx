@@ -38,6 +38,7 @@ import {
 import type { ClipSegment, Word } from "@/lib/types";
 import { isDisfluencyPlaceholder } from "@/lib/disfluencies";
 import { VAD_SAMPLE_RATE } from "@/lib/vad";
+import { peakBetween } from "@/lib/waveform";
 import { useCutRanges } from "@/hooks/useCutRanges";
 import { useIsDark } from "@/hooks/useIsDark";
 
@@ -94,7 +95,7 @@ type DragKind =
   | { type: "trim"; edge: "in" | "out"; time: number; lo: number; hi: number };
 
 export default function Timeline() {
-  const audio = useEditorStore((s) => s.audio);
+  const waveform = useEditorStore((s) => s.waveform);
   const words = useEditorStore((s) => s.words);
   const sceneBoundaries = useEditorStore((s) => s.sceneBoundaries);
   const duration = useEditorStore((s) => s.duration);
@@ -319,32 +320,23 @@ export default function Timeline() {
       ctx.restore();
     });
 
-    // Waveform
-    if (!audio) return;
+    // Waveform. Drawn from the precomputed min/max envelope rather than the
+    // decoded PCM — see lib/waveform.ts. peakBetween already clamps the
+    // overshoot hot sources produce, so the bar cannot spill into the wordbar.
+    if (!waveform) return;
     const samplesPerPx = VAD_SAMPLE_RATE / pps;
-    const stride = Math.max(1, Math.floor(samplesPerPx / 40));
     for (let x = 0; x < width; x++) {
       const t = (scrollLeft + x) / pps;
       if (t > duration) break;
       const i0 = Math.floor(t * VAD_SAMPLE_RATE);
-      const i1 = Math.min(audio.length, Math.floor(i0 + samplesPerPx) + 1);
-      let min = 0;
-      let max = 0;
-      for (let i = i0; i < i1; i += stride) {
-        const v = audio[i];
-        if (v < min) min = v;
-        if (v > max) max = v;
-      }
+      const peak = peakBetween(waveform, i0, Math.floor(i0 + samplesPerPx) + 1);
       const inCut = cuts.some((c) => t >= c.start && t < c.end);
       ctx.fillStyle = inCut ? "#fca5a5" : "#818cf8";
-      // Resampling overshoot on hot sources puts samples past ±1, so clamp to
-      // full scale rather than letting the bar spill into the wordbar lane.
-      const peak = Math.min(1, (max - min) / 2);
       const h = Math.max(1, peak * trackH * WAVE_LANE_FILL);
       ctx.fillRect(x, midY - h / 2, 1, h);
     }
   }, [
-    audio,
+    waveform,
     cuts,
     clips,
     duration,
