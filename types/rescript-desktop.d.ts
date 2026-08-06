@@ -1,6 +1,14 @@
 /** Resting sizes the Electron shell switches between. */
 export type WindowMode = "compact" | "expanded";
 
+/** Actions the native File menu delegates to the renderer. */
+export type MenuCommand =
+  | { type: "open-file" }
+  | { type: "open-project"; id: string }
+  | { type: "clear-recents" }
+  /** Leave the editor for the upload screen (an intercepted window close). */
+  | { type: "close-project" };
+
 /** Desktop bridge exposed by electron/preload.ts when running inside Electron. */
 export interface RescriptDesktop {
   platform: NodeJS.Platform;
@@ -13,6 +21,10 @@ export interface RescriptDesktop {
   setWindowMode: (mode: WindowMode) => void;
   /** Mirror the telemetry opt-out to the main process, which gates its own reporting. */
   setTelemetryEnabled: (enabled: boolean) => void;
+  /** Publish the saved-project list (newest first) for File › Recent Projects. */
+  setRecentProjects: (projects: Array<{ id: string; name: string }>) => void;
+  /** Subscribe to File-menu actions; returns an unsubscribe function. */
+  onMenuCommand: (callback: (command: MenuCommand) => void) => () => void;
   isFullScreen: () => Promise<boolean>;
   /** Subscribe to full-screen changes; returns an unsubscribe function. */
   onFullScreenChange: (callback: (value: boolean) => void) => () => void;

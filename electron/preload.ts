@@ -24,6 +24,27 @@ contextBridge.exposeInMainWorld("rescriptDesktop", {
   setTelemetryEnabled: (enabled: boolean) => {
     ipcRenderer.send("telemetry:set-enabled", enabled);
   },
+  /**
+   * Publish the saved-project list (newest first) so the main process can draw
+   * it under File › Recent Projects. Only id + name are sent.
+   */
+  setRecentProjects: (projects: Array<{ id: string; name: string }>) => {
+    ipcRenderer.send(
+      "menu:set-recents",
+      projects.map(({ id, name }) => ({ id, name }))
+    );
+  },
+  /** Subscribe to File-menu actions; returns an unsubscribe function. */
+  onMenuCommand: (callback: (command: unknown) => void) => {
+    const listener = (_event: IpcRendererEvent, command: unknown) => callback(command);
+    ipcRenderer.on("menu:command", listener);
+    // Tell the main process the page is listening, so commands fired at a
+    // window that was opened *by* the menu aren't lost before mount.
+    ipcRenderer.send("menu:renderer-ready");
+    return () => {
+      ipcRenderer.off("menu:command", listener);
+    };
+  },
   isFullScreen: (): Promise<boolean> => ipcRenderer.invoke("window:is-full-screen"),
   onFullScreenChange: (callback: (value: boolean) => void) => {
     const listener = (_event: IpcRendererEvent, value: boolean) => callback(value);

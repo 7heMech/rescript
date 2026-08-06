@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Group, Panel, Separator, useDefaultLayout } from "react-resizable-panels";
 import { useEditorStore } from "@/lib/store";
 import { getCutRanges, isWordCutOut } from "@/lib/edits";
@@ -9,8 +9,11 @@ import { VAD_SAMPLE_RATE } from "@/lib/vad";
 import { isElectron } from "@/lib/platform";
 import { reportError } from "@/lib/sentry";
 import { startSessionReporting } from "@/lib/telemetry";
+import { useCrossOriginIsolated } from "@/hooks/useCrossOriginIsolated";
+import { useDesktopMenu } from "@/hooks/useDesktopMenu";
 import { useIsDesktopLayout } from "@/hooks/useIsDesktopLayout";
 import { useTranscriber } from "@/hooks/useTranscriber";
+import { detectMediaKind, MEDIA_ACCEPT } from "@/lib/media";
 import TopBar from "./TopBar";
 import UploadScreen from "./UploadScreen";
 import TranscriptPanel from "./TranscriptPanel";
@@ -136,6 +139,38 @@ export default function Editor() {
 
   const [modeTransitioning, setModeTransitioning] = useState(false);
   const wasIdle = useRef(status === "idle");
+
+  // File › Open Project… reaches the same picker the upload screen uses, from
+  // anywhere in the app. The pipeline needs SharedArrayBuffer, so the menu can
+  // only load media once the page is confirmed cross-origin isolated.
+  const menuInputRef = useRef<HTMLInputElement>(null);
+  const isolation = useCrossOriginIsolated();
+  const openFilePicker = useCallback(() => menuInputRef.current?.click(), []);
+  useDesktopMenu(openFilePicker, isolation === "ready");
+
+  const handleMenuFile = useCallback(
+    (file: File | undefined) => {
+      if (!file) return;
+      if (!detectMediaKind(file)) {
+        alert("Please choose a video or audio file.");
+        return;
+      }
+      const { source, pendingTranscript } = useEditorStore.getState();
+      if (source === "import") {
+        if (!pendingTranscript) {
+          alert("Choose a transcript file from the source menu first.");
+          return;
+        }
+        loadVideo(file, {
+          words: pendingTranscript.words,
+          speakers: pendingTranscript.speakers,
+        });
+        return;
+      }
+      loadVideo(file);
+    },
+    [loadVideo]
+  );
 
   // Daily-active signal: reports the launch, then again on each day rollover so
   // a long-running window doesn't look churned.
@@ -334,6 +369,21 @@ export default function Editor() {
         >
           <LogoLoader size={44} />
         </div>
+      )}
+      {isElectron && (
+        // Present in the layout tree (not display:none) so the native menu's
+        // click() reliably opens the picker.
+        <input
+          ref={menuInputRef}
+          type="file"
+          accept={MEDIA_ACCEPT}
+          className="sr-only"
+          onChange={(e) => {
+            handleMenuFile(e.target.files?.[0]);
+            // Allow re-picking the same file after a "start over".
+            e.target.value = "";
+          }}
+        />
       )}
       <ExportDialog />
     </div>

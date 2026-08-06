@@ -1,9 +1,24 @@
-import { app, BrowserWindow, ipcMain, protocol, screen, shell, net } from "electron";
+import {
+  app,
+  BrowserWindow,
+  ipcMain,
+  protocol,
+  screen,
+  shell,
+  net,
+  type WebContents,
+} from "electron";
 import { join, normalize, extname } from "node:path";
 import { pathToFileURL } from "node:url";
 import { existsSync, statSync } from "node:fs";
 import { initMainSentry, setMainTelemetryEnabled } from "./sentry";
 import { initAutoUpdater } from "./updater";
+import {
+  buildAppMenu,
+  setRecentProjects,
+  type MenuCommand,
+  type RecentProject,
+} from "./menu";
 
 const isDev = !app.isPackaged;
 const DEV_SERVER_URL = process.env.ELECTRON_START_URL ?? "http://localhost:3000";
@@ -121,6 +136,32 @@ function registerAppProtocol(): void {
 /** Tracks each window's current mode so repeated requests are no-ops. */
 const windowModes = new WeakMap<BrowserWindow, WindowMode>();
 
+/** Renderers that have mounted and subscribed to menu commands. A freshly
+ *  created (or reloading) window isn't listening yet, so its commands wait. */
+const readyRenderers = new WeakSet<WebContents>();
+const pendingCommands = new WeakMap<WebContents, MenuCommand[]>();
+
+function flushPendingCommands(contents: WebContents): void {
+  const queued = pendingCommands.get(contents);
+  pendingCommands.delete(contents);
+  for (const command of queued ?? []) contents.send("menu:command", command);
+}
+
+/** Deliver a File-menu command, launching a window if the app is running
+ *  window-less (macOS keeps the menu bar after the last window closes). */
+function dispatchMenuCommand(command: MenuCommand): void {
+  const win =
+    BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0] ?? createWindow();
+  const contents = win.webContents;
+  if (readyRenderers.has(contents)) {
+    contents.send("menu:command", command);
+    return;
+  }
+  const queued = pendingCommands.get(contents) ?? [];
+  queued.push(command);
+  pendingCommands.set(contents, queued);
+}
+
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
@@ -160,6 +201,10 @@ function applyWindowMode(win: BrowserWindow, mode: WindowMode): void {
   );
 }
 
+/** Set once the app is really terminating, so the close interception below
+ *  doesn't swallow the quit. */
+let quitting = false;
+
 function createWindow(): BrowserWindow {
   const win = new BrowserWindow({
     ...WINDOW_SIZES.compact,
@@ -191,6 +236,25 @@ function createWindow(): BrowserWindow {
   windowModes.set(win, "compact");
 
   win.once("ready-to-show", () => win.show());
+
+  // A reload tears down the listener the renderer registered; make it re-announce.
+  win.webContents.on("did-start-navigation", (event) => {
+    if (event.isSameDocument) return;
+    readyRenderers.delete(win.webContents);
+    pendingCommands.delete(win.webContents);
+  });
+
+  // Closing while the editor is open drops the project rather than the window:
+  // the renderer returns to the upload screen and the shell shrinks back. The
+  // next close (already on the upload screen) is a real close. Guarded on the
+  // renderer being live, so an unresponsive page can still be closed.
+  win.on("close", (event) => {
+    if (quitting) return;
+    if (windowModes.get(win) !== "expanded") return;
+    if (!readyRenderers.has(win.webContents)) return;
+    event.preventDefault();
+    win.webContents.send("menu:command", { type: "close-project" } satisfies MenuCommand);
+  });
 
   // The page pads its top bar for the traffic lights, which macOS hides in
   // full screen; tell it when that changes so the gap can collapse.
@@ -257,9 +321,33 @@ if (!gotLock) {
   ipcMain.on("telemetry:set-enabled", (_event, value: unknown) => {
     setMainTelemetryEnabled(value === true);
   });
+  // The saved projects live in the renderer's IndexedDB; it pushes a snapshot
+  // whenever the list changes so the File menu can list them.
+  ipcMain.on("menu:set-recents", (_event, value: unknown) => {
+    if (!Array.isArray(value)) return;
+    const recents: RecentProject[] = [];
+    for (const entry of value) {
+      if (!entry || typeof entry !== "object") continue;
+      const { id, name } = entry as { id?: unknown; name?: unknown };
+      if (typeof id !== "string" || typeof name !== "string") continue;
+      recents.push({ id, name });
+    }
+    setRecentProjects(recents);
+  });
+  // The renderer announces itself once it is listening for menu commands; until
+  // then anything the menu fired at a just-opened window is held.
+  ipcMain.on("menu:renderer-ready", (event) => {
+    readyRenderers.add(event.sender);
+    flushPendingCommands(event.sender);
+  });
+
+  app.on("before-quit", () => {
+    quitting = true;
+  });
 
   app.whenReady().then(() => {
     if (!isDev) registerAppProtocol();
+    buildAppMenu(dispatchMenuCommand);
     createWindow();
     initAutoUpdater();
 
