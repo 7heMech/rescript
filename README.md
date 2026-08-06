@@ -7,9 +7,9 @@
 [![Join the Discord](https://img.shields.io/badge/Discord-Join%20the%20server-5865F2?logo=discord&logoColor=white)](https://discord.gg/qJAhYFydat)
 [![Follow @wassgha on X](https://img.shields.io/badge/Follow%20@wassgha-000000?logo=x&logoColor=white)](https://x.com/wassgha)
 
-**✨ Try it in the browser [app.getrescript.com](https://app.getrescript.com/)** or download the [Desktop App](#download)
+**✨ Try it in the browser [getrescript.com](https://getrescript.com/)** or download the [Desktop App](#download)
 
-[![Rescript Demo](./screenshots/rescript.png)](https://app.getrescript.com/)
+[![Rescript Demo](./screenshots/rescript.png)](https://getrescript.com/)
 
 Rescript is an open-source, transcript-based media editor. Drop in a video or
 audio file and it is transcribed locally with per-word timestamps and speaker
@@ -20,13 +20,13 @@ the media. Export the final cut — without your file ever leaving your device.
 
 <div align="center">
 
-<a href="https://github.com/wassgha/rescript/releases/latest/download/Rescript-mac-arm64.dmg"><img src="assets/download/download-macos-arm64.svg" alt="Download for macOS — Apple Silicon" height="48"></a> &nbsp; <a href="https://github.com/wassgha/rescript/releases/latest/download/Rescript-mac-x64.dmg"><img src="assets/download/download-macos-x64.svg" alt="Download for macOS — Intel" height="48"></a> &nbsp; <a href="https://github.com/wassgha/rescript/releases/latest/download/Rescript-Setup.exe"><img src="assets/download/download-windows.svg" alt="Download for Windows" height="48"></a> &nbsp; <a href="https://github.com/wassgha/rescript/releases/latest/download/Rescript-linux.AppImage"><img src="assets/download/download-linux-appimage.svg" alt="Download the AppImage for Linux" height="48"></a>
+<a href="https://www.getrescript.com/download?platform=mac-arm"><img src="assets/download/download-macos-arm64.svg" alt="Download for macOS — Apple Silicon" height="48"></a> &nbsp; <a href="https://www.getrescript.com/download?platform=mac-intel"><img src="assets/download/download-macos-x64.svg" alt="Download for macOS — Intel" height="48"></a> &nbsp; <a href="https://www.getrescript.com/download?platform=windows"><img src="assets/download/download-windows.svg" alt="Download for Windows" height="48"></a> &nbsp; <a href="https://www.getrescript.com/download?platform=linux"><img src="assets/download/download-linux-appimage.svg" alt="Download the AppImage for Linux" height="48"></a> &nbsp; <a href="https://www.getrescript.com/download?platform=linux-deb"><img src="assets/download/download-debian-deb.svg" alt="Download the .deb for Linux" height="48"></a>
 
 </div>
 
 See the [Releases](https://github.com/wassgha/rescript/releases) page. Desktop
 builds auto-update from GitHub Releases. Prefer the browser? Use the
-[web app](https://app.getrescript.com/) — same editor, no install.
+[web app](https://getrescript.com/) — same editor, no install.
 
 - 🔒 **Private by design** — no auth, no uploads; all media processing happens on-device
 - 📝 **Word-level editing** — select words, press ⌫, the cut follows the text
@@ -69,22 +69,12 @@ npm run dist    # unsigned desktop installers into dist/
 npm run lint    # eslint
 ```
 
-Open [http://localhost:3000](http://localhost:3000) and drop in a video with an
-audio track. For desktop packaging, signing, and cutting releases, see
+For desktop packaging, signing, and cutting releases, see
 [RELEASING.md](./RELEASING.md).
-
-> **Note on "offline":** the AI models (Whisper Base ~200 MB, or Small ~600 MB,
-> plus a small speaker model) are downloaded from the Hugging Face Hub the
-> *first* time you transcribe, then cached in browser / app storage. After that,
-> everything — transcription, editing, export — works with the network fully
-> disconnected. Your media and transcript never leave the device; the only
-> third-party requests the app makes are anonymous page analytics (Google
-> Analytics and Vercel Web Analytics — page views and app opens, nothing about
-> your media), which fail silently when offline.
 
 ## How it works
 
-[![Rescript Promo](./screenshots/rescript-2.png)](https://app.getrescript.com/)
+[![Rescript Promo](./screenshots/rescript-2.png)](https://getrescript.com/)
 
 1. **Extract** — ffmpeg.wasm decodes the audio track to mono 16 kHz PCM.
 2. **Transcribe** — Whisper runs in a Web Worker with `return_timestamps: "word"`,
