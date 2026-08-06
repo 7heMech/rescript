@@ -308,14 +308,41 @@ function landmarkScoreAtLag(
   let score = 0;
   const vote = (times: number[], candidates: number[]) => {
     for (const t of times) {
-      let bestDist = Infinity;
-      for (const c of candidates) bestDist = Math.min(bestDist, Math.abs(t - lag - c));
+      const bestDist = nearestDistance(candidates, t - lag);
       if (bestDist < tol) score += 1 - bestDist / tol;
     }
   };
   vote(landmarks.starts, edges.onsets);
   vote(landmarks.ends, edges.offsets);
   return score;
+}
+
+/**
+ * Index of the first element of `sorted` that is >= `target`, or `length`.
+ *
+ * The arrays this file searches — VAD edges, anchors — are all ascending and
+ * all get probed once per word, per lag candidate, or both. Scanning them
+ * linearly makes those passes quadratic in the length of the recording, which
+ * is unnoticeable on a clip and hundreds of milliseconds on an hour.
+ */
+function lowerBound(sorted: number[], target: number): number {
+  let lo = 0;
+  let hi = sorted.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (sorted[mid] < target) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
+/** Distance from `target` to the closest value in ascending `sorted`. */
+function nearestDistance(sorted: number[], target: number): number {
+  if (sorted.length === 0) return Infinity;
+  const i = lowerBound(sorted, target);
+  const after = i < sorted.length ? sorted[i] - target : Infinity;
+  const before = i > 0 ? target - sorted[i - 1] : Infinity;
+  return Math.min(after, before);
 }
 
 /** Candidate shifts, ordered outward from 0 so the smallest wins any tie. */
@@ -508,16 +535,23 @@ export function buildSpeechAnchors(
   const anchors: SpeechAnchor[] = [];
   words.forEach((w, i) => {
     if (i > 0 && w.start - words[i - 1].end < minGapS) return;
-    let onset: number | null = null;
-    let bestDist = Infinity;
-    for (const o of onsets) {
-      const d = Math.abs(w.start - lag - o);
-      if (d < bestDist) {
-        bestDist = d;
-        onset = o;
-      }
-    }
-    if (onset === null || bestDist > landmarkTolS) return;
+    // Nearest onset to the de-lagged word start. Ties go to the earlier onset,
+    // matching the linear scan this replaces (which kept its first best).
+    const target = w.start - lag;
+    const at = lowerBound(onsets, target);
+    const before = at > 0 ? onsets[at - 1] : null;
+    const after = at < onsets.length ? onsets[at] : null;
+    const onset =
+      before === null
+        ? after
+        : after === null
+          ? before
+          : after - target < target - before
+            ? after
+            : before;
+    if (onset === null) return;
+    const bestDist = Math.abs(target - onset);
+    if (bestDist > landmarkTolS) return;
 
     const prev = anchors[anchors.length - 1];
     if (!prev) {
@@ -545,14 +579,21 @@ export function correctionAt(anchors: SpeechAnchor[], fallbackLag: number, t: nu
   if (t <= first.from) return first.from - first.to;
   const last = anchors[anchors.length - 1];
   if (t >= last.from) return last.from - last.to;
-  for (let k = 0; k + 1 < anchors.length; k++) {
-    const a = anchors[k];
-    const b = anchors[k + 1];
-    if (t >= a.from && t <= b.from) {
-      const da = a.from - a.to;
-      const db = b.from - b.to;
-      return da + ((db - da) * (t - a.from)) / (b.from - a.from);
-    }
+  // Anchors are strictly increasing in `from` (buildSpeechAnchors guarantees
+  // it), so binary search the bracketing pair — this runs twice per word.
+  let lo = 0;
+  let hi = anchors.length - 1;
+  while (hi - lo > 1) {
+    const mid = (lo + hi) >> 1;
+    if (anchors[mid].from <= t) lo = mid;
+    else hi = mid;
+  }
+  const a = anchors[lo];
+  const b = anchors[hi];
+  if (t >= a.from && t <= b.from) {
+    const da = a.from - a.to;
+    const db = b.from - b.to;
+    return da + ((db - da) * (t - a.from)) / (b.from - a.from);
   }
   return fallbackLag;
 }
@@ -567,15 +608,20 @@ function nearestEdge(
 ): number | null {
   let best: number | null = null;
   let bestDist = Infinity;
-  for (const v of sorted) {
-    if (v < target - maxDist) continue;
-    if (v > target + maxDist) break; // sorted ascending
-    if (v < lo || v > hi) continue;
+  // Seek to the window rather than scanning from the start: only the handful of
+  // edges within `maxDist` can win, and `maxDist` is a snap tolerance of a few
+  // tens of milliseconds.
+  const consider = (v: number) => {
+    if (v < lo || v > hi) return;
     const d = Math.abs(v - target);
     if (d < bestDist) {
       bestDist = d;
       best = v;
     }
+  };
+  const at = lowerBound(sorted, target - maxDist);
+  for (let i = at; i < sorted.length && sorted[i] <= target + maxDist; i++) {
+    consider(sorted[i]);
   }
   return best;
 }

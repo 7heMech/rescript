@@ -93,20 +93,45 @@ export function insertDisfluencyPlaceholders(
   const runs = uncoveredSpeechRuns(sorted, speechFrames, frameS);
   if (runs.length === 0) return words;
 
+  const kept = sorted.filter((w) => !w.deleted);
+  // Ends, ascending, each tagged with its position in `kept`. Ends are not
+  // monotonic in start order — a long word can end after a shorter one that
+  // starts later — so finding "the last word ending by T" needs this second
+  // ordering rather than a scan of `kept`.
+  const byEnd = kept
+    .map((w, i) => ({ end: w.end, index: i }))
+    .sort((a, b) => a.end - b.end);
+
+  // `runs` is ascending and both thresholds below derive from it, so each
+  // lookup only ever moves forward: one pointer each, walked once across the
+  // transcript. Rescanning `kept` per run instead (a filter plus a find) is
+  // quadratic, and allocates a full-length array per run.
+  let endPtr = 0;
+  /** Greatest position in `kept` among words ending at or before the threshold. */
+  let prevIndex = -1;
+  let nextPtr = 0;
+
   const placeholders: Word[] = [];
   for (const run of runs) {
     let start = run.start;
     let end = Math.min(run.end, maxT);
 
     // Hangover after the preceding word is not a filled pause.
-    const prev = sorted.filter((w) => !w.deleted && w.end <= start + frameS).pop();
-    if (prev && start - prev.end <= frameS + 1e-4) {
+    const endLimit = start + frameS;
+    while (endPtr < byEnd.length && byEnd[endPtr].end <= endLimit) {
+      if (byEnd[endPtr].index > prevIndex) prevIndex = byEnd[endPtr].index;
+      endPtr++;
+    }
+    const prevEnd = prevIndex >= 0 ? kept[prevIndex].end : null;
+    if (prevEnd !== null && start - prevEnd <= frameS + 1e-4) {
       start = Math.min(end, start + HANGOVER_TRIM_S);
     }
 
-    // Don't spill into the next word (alignment / frame rounding).
-    const next = sorted.find((w) => !w.deleted && w.start >= start - frameS);
-    if (next) end = Math.min(end, next.start);
+    // Don't spill into the next word (alignment / frame rounding). `start` may
+    // have just moved later, which only ever advances this bound too.
+    const startLimit = start - frameS;
+    while (nextPtr < kept.length && kept[nextPtr].start < startLimit) nextPtr++;
+    if (nextPtr < kept.length) end = Math.min(end, kept[nextPtr].start);
 
     if (end - start < minDurationS - 1e-4) continue;
     if (start >= maxT - 1e-4) continue;

@@ -65,7 +65,7 @@ export default function ExportDialog() {
   const duration = useEditorStore((s) => s.duration);
   const words = useEditorStore((s) => s.words);
   const speakers = useEditorStore((s) => s.speakers);
-  const hasAudioTrack = useEditorStore((s) => s.audio !== null);
+  const hasAudioTrack = useEditorStore((s) => s.hasAudio);
   const status = useEditorStore((s) => s.status);
   const setStatus = useEditorStore((s) => s.setStatus);
   const exportUrl = useEditorStore((s) => s.exportUrl);
