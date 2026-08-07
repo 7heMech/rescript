@@ -87,7 +87,11 @@ export type WorkerResponse =
   | { type: "progress"; message: string; value: number | null }
   | { type: "partial"; text: string }
   | { type: "complete"; words: Word[] }
-  | { type: "error"; message: string };
+  /**
+   * `cause` marks failures whose origin is the user's environment rather than
+   * the app, so the main thread can skip crash reporting for them.
+   */
+  | { type: "error"; message: string; cause?: "network" };
 
 export interface WorkerRequest {
   audio: Float32Array;

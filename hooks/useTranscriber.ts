@@ -69,9 +69,14 @@ export function useTranscriber() {
           break;
         case "error":
           s.setError(msg.message);
-          // Worker errors cross a postMessage boundary, so the original stack is
-          // already gone by here — send the message with a stage tag instead.
-          reportError(new Error(msg.message), "transcription");
+          // A connection that dropped mid-download is the user's network, and
+          // the worker already retried it. There is no stack to act on, so
+          // reporting it only spends quota on an issue we cannot fix.
+          if (msg.cause !== "network") {
+            // Worker errors cross a postMessage boundary, so the original stack
+            // is already gone by here — send the message with a stage tag.
+            reportError(new Error(msg.message), "transcription");
+          }
           break;
       }
     };

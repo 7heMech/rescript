@@ -79,7 +79,20 @@ import {
   speechSegmentsFromFrames,
   type SpeechSegment,
 } from "@/lib/vad";
+import { isNetworkError, installFetchRetry } from "@/lib/network";
 import { isWebGpuDeviceLostError } from "@/lib/webgpu";
+
+/**
+ * Weight downloads are the longest-running fetches in the app (over a gigabyte
+ * for Parakeet on WebGPU), so a momentary drop anywhere in one used to fail the
+ * whole transcription with a bare "Failed to fetch". Retry them.
+ *
+ * parakeet.js and onnxruntime call the global, which the install replaces.
+ * transformers.js does not: it binds `globalThis.fetch` into `env.fetch` when its
+ * module is first evaluated — which, imports being hoisted, is already done by
+ * the time this line runs — so it has to be pointed at the wrapper by hand.
+ */
+env.fetch = installFetchRetry(self as unknown as { fetch: typeof fetch });
 
 env.allowLocalModels = false;
 /**
@@ -1359,6 +1372,22 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
   } catch (err) {
     console.error(err);
     cancelLive();
+    if (isNetworkError(err)) {
+      // The retries in installFetchRetry are already spent by here, so this is
+      // a connection that stayed down. "Failed to fetch" is what the browser
+      // says and it means nothing to the person waiting on a transcript — name
+      // the download, and say that the finished files are kept so a retry
+      // resumes rather than starting the gigabyte over.
+      post({
+        type: "error",
+        message:
+          "Couldn't finish downloading the speech model — the connection " +
+          "dropped. Check your internet and try again; the parts that " +
+          "finished downloading are kept.",
+        cause: "network",
+      });
+      return;
+    }
     post({
       type: "error",
       message: isWebGpuDeviceLostError(err)
