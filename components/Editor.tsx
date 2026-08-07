@@ -6,6 +6,7 @@ import { useEditorStore } from "@/lib/store";
 import { getCutRanges, isWordCutOut } from "@/lib/edits";
 import { extractAudio, getFFmpeg, releaseFFmpeg } from "@/lib/ffmpeg";
 import { VAD_SAMPLE_RATE } from "@/lib/vad";
+import { isNetworkError } from "@/lib/network";
 import { isElectron } from "@/lib/platform";
 import { reportError } from "@/lib/sentry";
 import { startSessionReporting } from "@/lib/telemetry";
@@ -15,6 +16,7 @@ import { useIsDesktopLayout } from "@/hooks/useIsDesktopLayout";
 import { useTranscriber } from "@/hooks/useTranscriber";
 import { detectMediaKind, MEDIA_ACCEPT } from "@/lib/media";
 import TopBar from "./TopBar";
+import DesktopAppBanner from "./DesktopAppBanner";
 import UploadScreen from "./UploadScreen";
 import TranscriptPanel from "./TranscriptPanel";
 import MediaPreview from "./MediaPreview";
@@ -229,6 +231,16 @@ export default function Editor() {
         }
       } catch (err) {
         console.error("Processing pipeline failed:", err);
+        // Same reasoning as the worker's error path: a dropped connection while
+        // pulling the media engine is the user's network, not a bug, and
+        // "Failed to fetch" tells them nothing about what to do next.
+        if (isNetworkError(err)) {
+          s.setError(
+            "Couldn't load the media engine — the connection dropped. " +
+              "Check your internet and try again."
+          );
+          return;
+        }
         reportError(err, "media-pipeline");
         s.setError(err instanceof Error ? err.message : "Failed to process this file.");
       }
@@ -333,6 +345,7 @@ export default function Editor() {
 
   return (
     <div className="relative flex h-dvh flex-col overflow-hidden bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
+      <DesktopAppBanner />
       {status === "idle" ? (
         <>
           {isElectron && <TopBar>

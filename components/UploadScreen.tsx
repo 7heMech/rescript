@@ -277,7 +277,7 @@ export default function UploadScreen({
               </a>
               <div className="flex flex-wrap items-center gap-2 sm:justify-end">
                 <SettingsMenu />
-                <div className="h-5 w-px bg-zinc-200 dark:bg-zinc-700" />
+                <div className="h-5 w-px bg-zinc-200 dark:bg-zinc-700 mr-1" />
                 <ModelSelector groupLabel="Transcript source">
                   {MODEL_ORDER.map((id) => (
                     <ModelOption key={id} id={id} />
