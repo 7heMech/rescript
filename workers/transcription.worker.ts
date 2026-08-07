@@ -227,6 +227,9 @@ function postPartial(text: string) {
 /** Device the current ASR pipeline is running on. */
 let asrDevice: "webgpu" | "wasm" = "wasm";
 
+/** The part of an onnxruntime InferenceSession we need to free one. */
+type OrtSessionLike = { release?: () => Promise<void> };
+
 type ParakeetInstance = {
   transcribe: (
     audio: Float32Array,
@@ -239,6 +242,14 @@ type ParakeetInstance = {
     utterance_text: string;
     words: Array<{ text: string; start_time: number; end_time: number }>;
   }>;
+  /**
+   * parakeet.js has no dispose() of its own — it disposes per-call tensors but
+   * never the sessions — so unloading it means releasing these by hand. Optional
+   * because they are internals, not part of its public surface.
+   */
+  encoderSession?: OrtSessionLike;
+  joinerSession?: OrtSessionLike;
+  _onnxPreprocessor?: { session?: OrtSessionLike | null } | null;
 };
 
 const PARAKEET_CACHE_DB = "parakeet-cache-db";
@@ -303,6 +314,13 @@ async function isParakeetCached(): Promise<boolean> {
 function parakeetModel(): ModelDefinition<ParakeetInstance> {
   return {
     isCached: isParakeetCached,
+    dispose: async (model) => {
+      await Promise.all([
+        model.encoderSession?.release?.(),
+        model.joinerSession?.release?.(),
+        model._onnxPreprocessor?.session?.release?.(),
+      ]);
+    },
     load: async ({ progress }) => {
       const { fromHub } = await import("parakeet.js");
       const onProgress = (p: { loaded: number; total: number; file: string }) => {
@@ -422,6 +440,10 @@ const models = new ModelManager({
         onDevice: (device) => {
           asrDevice = device;
         },
+        // Without this, unload() drops the JS reference and nothing else: the
+        // ORT sessions — the weights, and on WebGPU the GPU buffers holding
+        // them — stay alive with no way left to reach them. See releaseAsr().
+        dispose: (transcriber) => transcriber.dispose(),
       });
       return [info.id, info.local ? servedLocally(definition) : definition];
     })
@@ -563,6 +585,31 @@ async function fallbackAsrToWasm() {
     message: "GPU interrupted — continuing on CPU…",
     value: null,
   });
+}
+
+/**
+ * Free the ASR model once the last segment has been decoded.
+ *
+ * Nothing downstream touches it, but forced alignment and diarization both run
+ * their own ONNX sessions after this point — so holding the transcriber through
+ * them makes the peak the sum of the two rather than the larger. That peak is
+ * what WebKit kills the tab over (see the note above `preferWasm()`), and the
+ * transcriber is the heaviest thing in the worker by an order of magnitude:
+ * Parakeet's fp16 encoder alone is 1.31 GB, against ~240 MB for the largest
+ * aligner. On WebGPU those are GPU buffers and this genuinely hands them back.
+ * On WASM the heap cannot shrink, so the win is narrower — the aligner
+ * allocates into the freed arena instead of growing the heap past it.
+ *
+ * Losing the weights costs nothing: every transcription starts a fresh worker
+ * (see hooks/useTranscriber.ts), so they were never reused across runs anyway.
+ * Best-effort — a failure here is wasted memory, not a failed transcript.
+ */
+async function releaseAsr(choice: ModelId): Promise<void> {
+  try {
+    await models.unload(MODELS[choice].id);
+  } catch (err) {
+    console.warn("Could not release the speech model after transcription.", err);
+  }
 }
 
 type Diarizer = {
@@ -762,6 +809,10 @@ function alignerModel(info: AlignModelInfo): ModelDefinition<Aligner> {
       isTransformersModelCached(info.id, {
         cacheKey: env.cacheKey ?? "transformers-cache",
       }),
+    // Only the model owns ONNX sessions; the processor and vocab are plain JS.
+    dispose: async ({ model }) => {
+      await model.dispose();
+    },
     load: async ({ progress }) => {
       const progress_callback = transformersProgress(progress);
       const [processor, model, tokenizer] = await Promise.all([
@@ -1140,6 +1191,8 @@ async function runParakeet(
     postLive({ type: "progress", message: "Transcribing…", value });
   }
 
+  await releaseAsr("parakeet");
+
   const cleaned = cleanTranscript(rawWords);
   const words = await refineWordTimestamps(
     cleaned,
@@ -1335,6 +1388,8 @@ async function runWhisper(
     speechDone += segmentSamples;
     reportProgress(0, 0);
   }
+
+  await releaseAsr(choice);
 
   // Post-process: collapse leftover n-gram loops and drop known hallucination
   // phrases ("I'm sorry", "thanks for watching", …) that slip past decoding.
