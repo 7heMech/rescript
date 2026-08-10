@@ -43,6 +43,7 @@ import {
   useEditorStore,
 } from "@/lib/store";
 import Popover, { PopoverContent, PopoverTrigger } from "./Popover";
+import { useI18n } from "./I18nProvider";
 
 export type ModelOptionContextValue = {
   /** Currently selected source id. */
@@ -140,6 +141,7 @@ export default function ModelSelector({
   const source = useEditorStore((s) => s.source);
   const setSource = useEditorStore((s) => s.setSource);
   const transcriptLanguage = useEditorStore((s) => s.transcriptLanguage);
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const [triggers, setTriggers] = useState<Record<string, OptionTrigger>>({});
   const listId = useId();
@@ -205,7 +207,7 @@ export default function ModelSelector({
     (isModelId(source)
       ? MODELS[source].label
       : source === "import"
-        ? "Import transcript"
+        ? t("model.importTranscript")
         : String(source));
   const languageInfo = TRANSCRIPT_LANGUAGES[transcriptLanguage];
   const showLanguageInTrigger =
@@ -252,7 +254,7 @@ export default function ModelSelector({
               aria-controls={listId}
               aria-label={
                 showLanguageInTrigger
-                  ? `${typeof baseTriggerLabel === "string" ? baseTriggerLabel : "Transcript source"}, ${languageInfo.label}`
+                  ? `${typeof baseTriggerLabel === "string" ? baseTriggerLabel : t("model.transcriptSource")}, ${languageInfo.label}`
                   : undefined
               }
               onClick={() => setOpen((v) => !v)}
@@ -416,6 +418,7 @@ export function LanguageSection() {
   const selector = useSelectorCtx();
   const [submenuOpen, setSubmenuOpen] = useState(false);
   const submenuId = useId();
+  const { t } = useI18n();
   const active = TRANSCRIPT_LANGUAGES[language];
 
   const select = (next: TranscriptLanguage) => {
@@ -427,7 +430,7 @@ export function LanguageSection() {
   return (
     <div>
       <p className="px-2.5 pb-1 pt-1.5 text-[11px] font-medium tracking-wide text-zinc-400 dark:text-zinc-500">
-        Language
+        {t("model.language")}
       </p>
       {/* No portal: stay in the parent panel DOM so outside-click on the model
           menu still treats this flyout as inside the floating tree. */}
@@ -472,7 +475,7 @@ export function LanguageSection() {
           <PopoverContent
             id={submenuId}
             role="menu"
-            aria-label="Transcript language"
+            aria-label={t("model.transcriptLanguage")}
             className="z-50 w-44 overflow-hidden p-1"
           >
             {TRANSCRIPT_LANGUAGE_ORDER.map((id) => {

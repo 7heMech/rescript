@@ -19,6 +19,11 @@ import {
   type MenuCommand,
   type RecentProject,
 } from "./menu";
+import {
+  resolveDesktopLocale,
+  setDesktopLocale,
+  type DesktopLocale,
+} from "./locale";
 
 const isDev = !app.isPackaged;
 const DEV_SERVER_URL = process.env.ELECTRON_START_URL ?? "http://localhost:3000";
@@ -334,6 +339,11 @@ if (!gotLock) {
   ipcMain.on("telemetry:set-enabled", (_event, value: unknown) => {
     setMainTelemetryEnabled(value === true);
   });
+  ipcMain.on("ui:set-locale", (_event, value: unknown) => {
+    if (value !== "en" && value !== "zh-CN") return;
+    setDesktopLocale(value as DesktopLocale);
+    buildAppMenu();
+  });
   // The saved projects live in the renderer's IndexedDB; it pushes a snapshot
   // whenever the list changes so the File menu can list them.
   ipcMain.on("menu:set-recents", (_event, value: unknown) => {
@@ -359,6 +369,7 @@ if (!gotLock) {
   });
 
   app.whenReady().then(() => {
+    setDesktopLocale(resolveDesktopLocale(app.getLocale()));
     if (!isDev) registerAppProtocol();
     buildAppMenu(dispatchMenuCommand);
     createWindow();
