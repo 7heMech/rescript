@@ -24,6 +24,10 @@ contextBridge.exposeInMainWorld("rescriptDesktop", {
   setTelemetryEnabled: (enabled: boolean) => {
     ipcRenderer.send("telemetry:set-enabled", enabled);
   },
+  /** Keep native menus and dialogs in sync with the renderer preference. */
+  setUiLocale: (locale: "en" | "zh-CN") => {
+    ipcRenderer.send("ui:set-locale", locale);
+  },
   /**
    * Publish the saved-project list (newest first) so the main process can draw
    * it under File › Recent Projects. Only id + name are sent.

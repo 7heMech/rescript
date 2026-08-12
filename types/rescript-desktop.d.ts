@@ -22,6 +22,8 @@ export interface RescriptDesktop {
   setWindowMode: (mode: WindowMode) => void;
   /** Mirror the telemetry opt-out to the main process, which gates its own reporting. */
   setTelemetryEnabled: (enabled: boolean) => void;
+  /** Keep native menus and dialogs aligned with the resolved UI locale. */
+  setUiLocale: (locale: "en" | "zh-CN") => void;
   /** Publish the saved-project list (newest first) for File › Recent Projects. */
   setRecentProjects: (projects: Array<{ id: string; name: string }>) => void;
   /** Subscribe to File-menu actions; returns an unsubscribe function. */

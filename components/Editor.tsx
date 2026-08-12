@@ -33,6 +33,7 @@ import ModelSelector, {
 import ImportTranscriptOption from "./ImportTranscriptOption";
 import { MODEL_ORDER } from "@/lib/models";
 import { isTypingTarget } from "@/lib/keyboard";
+import { useI18n } from "./I18nProvider";
 
 /** How long the desktop mode-change overlay stays up. Matches the macOS
  *  `setBounds(..., animate)` duration plus a small buffer so the layout
@@ -128,6 +129,7 @@ function EditorWorkspace() {
 }
 
 export default function Editor() {
+  const { t } = useI18n();
   const status = useEditorStore((s) => s.status);
   const videoFile = useEditorStore((s) => s.videoFile);
   const skipTranscription = useEditorStore((s) => s.skipTranscription);
@@ -156,7 +158,7 @@ export default function Editor() {
       const { source, pendingTranscript } = useEditorStore.getState();
       if (source === "import") {
         if (!pendingTranscript) {
-          alert("Choose a transcript file from the source menu first.");
+          alert(t("editor.chooseTranscript"));
           return;
         }
         loadVideo(file, {
@@ -167,7 +169,7 @@ export default function Editor() {
       }
       loadVideo(file);
     },
-    [loadVideo]
+    [loadVideo, t]
   );
 
   // The pipeline needs SharedArrayBuffer, so a file picked before the page is
@@ -188,7 +190,7 @@ export default function Editor() {
     (file: File | undefined) => {
       if (!file) return;
       if (!detectMediaKind(file)) {
-        alert("Please choose a video or audio file.");
+        alert(t("editor.chooseMedia"));
         return;
       }
       if (!isolated) {
@@ -197,7 +199,7 @@ export default function Editor() {
       }
       startMenuFile(file);
     },
-    [isolated, startMenuFile]
+    [isolated, startMenuFile, t]
   );
 
   // Daily-active signal: reports the launch, then again on each day rollover so
@@ -349,7 +351,7 @@ export default function Editor() {
       {status === "idle" ? (
         <>
           {isElectron && <TopBar>
-            <ModelSelector groupLabel="Transcript source">
+            <ModelSelector groupLabel={t("model.transcriptSource")}>
               {MODEL_ORDER.map((id) => (
                 <ModelOption key={id} id={id} />
               ))}
@@ -369,7 +371,7 @@ export default function Editor() {
             <button
               onClick={undo}
               disabled={!canUndo}
-              title="Undo (⌘Z)"
+              title={t("editor.undo")}
               className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-800 cursor-pointer disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
             >
               <Undo2 size={16} />
@@ -377,7 +379,7 @@ export default function Editor() {
             <button
               onClick={redo}
               disabled={!canRedo}
-              title="Redo (⇧⌘Z)"
+              title={t("editor.redo")}
               className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-800 cursor-pointer disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
             >
               <Redo2 size={16} />
@@ -389,7 +391,7 @@ export default function Editor() {
               className="flex ml-1 h-8 items-center gap-1.5 rounded-full bg-zinc-900 px-4 text-[13px] font-medium text-white transition hover:bg-zinc-700 cursor-pointer disabled:cursor-not-allowed disabled:opacity-40 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
             >
               <Download size={14} />
-              Export
+              {t("editor.export")}
             </button>
             <div className="mx-1 h-5 w-px bg-zinc-200 dark:bg-zinc-700" />
             <SettingsMenu />

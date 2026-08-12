@@ -19,6 +19,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test:i18n": "tsx tests/i18n-test.ts",
     "postinstall": "patch-package && node scripts/copy-assets.mjs",
     "build:electron": "node scripts/build-electron.mjs",
     "typecheck:electron": "tsc -p electron/tsconfig.json --noEmit",
@@ -133,6 +134,11 @@
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
+      "installerLanguages": [
+        "en_US",
+        "zh_CN"
+      ],
+      "multiLanguageInstaller": true,
       "artifactName": "${productName}-Setup.${ext}"
     },
     "linux": {

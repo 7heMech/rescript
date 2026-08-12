@@ -38,6 +38,9 @@ jobs:
       - name: Typecheck (electron)
         run: npm run typecheck:electron
 
+      - name: UI localization tests
+        run: npm run test:i18n
+
       - name: Build Next.js
         run: npm run build
 
