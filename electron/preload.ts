@@ -25,7 +25,7 @@ contextBridge.exposeInMainWorld("rescriptDesktop", {
     ipcRenderer.send("telemetry:set-enabled", enabled);
   },
   /** Keep native menus and dialogs in sync with the renderer preference. */
-  setUiLocale: (locale: "en" | "zh-CN") => {
+  setUiLocale: (locale: string) => {
     ipcRenderer.send("ui:set-locale", locale);
   },
   /**

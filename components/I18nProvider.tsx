@@ -15,6 +15,7 @@ import {
   saveUiLocalePreference,
   systemLanguages,
   translate,
+  UI_LOCALE_META,
   UI_LOCALE_STORAGE_KEY,
   type MessageKey,
   type Translate,
@@ -58,7 +59,7 @@ export default function I18nProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    document.documentElement.lang = locale;
+    document.documentElement.lang = UI_LOCALE_META[locale].htmlLang;
     document.title = translate(locale, "app.title");
     window.rescriptDesktop?.setUiLocale(locale);
   }, [locale]);

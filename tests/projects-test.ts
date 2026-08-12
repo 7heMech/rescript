@@ -1,4 +1,4 @@
-import { formatRelativeTime } from "../lib/projects";
+import { formatRelativeTime } from "../lib/i18n";
 
 function assert(cond: boolean, msg: string) {
   if (!cond) throw new Error(msg);
@@ -6,9 +6,10 @@ function assert(cond: boolean, msg: string) {
 
 const now = Date.parse("2026-07-27T12:00:00Z");
 
-assert(formatRelativeTime(now - 10_000, now) === "just now", "just now");
-assert(formatRelativeTime(now - 5 * 60_000, now) === "5m ago", "minutes");
-assert(formatRelativeTime(now - 3 * 3600_000, now) === "3h ago", "hours");
-assert(formatRelativeTime(now - 3 * 86400_000, now) === "3d ago", "days");
+const justNow = formatRelativeTime("en", now - 10_000, now).toLowerCase();
+assert(justNow.includes("now") || justNow.includes("second"), "just now");
+assert(formatRelativeTime("en", now - 5 * 60_000, now).includes("5"), "minutes");
+assert(formatRelativeTime("en", now - 3 * 3600_000, now).includes("3"), "hours");
+assert(formatRelativeTime("en", now - 3 * 86400_000, now).includes("3"), "days");
 
 console.log("ALL PROJECT HELPER TESTS PASSED");

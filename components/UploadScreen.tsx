@@ -364,9 +364,10 @@ export default function UploadScreen({
             ) : ready ? (
               <>
                 <p className="text-[15px] font-medium text-zinc-800 dark:text-zinc-100">
-                  {t("upload.dropOrBrowse", {
-                    browse: t("upload.browse"),
-                  })}
+                  {t("upload.dropPrefix")}{" "}
+                  <span className="text-neutral-600 dark:text-neutral-300">
+                    {t("upload.browse")}
+                  </span>
                 </p>
                 <p className="mt-1 text-[13px] text-zinc-400 dark:text-zinc-500">
                   {source === "import"

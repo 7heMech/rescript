@@ -33,6 +33,7 @@ import ModelSelector, {
 import ImportTranscriptOption from "./ImportTranscriptOption";
 import { MODEL_ORDER } from "@/lib/models";
 import { isTypingTarget } from "@/lib/keyboard";
+import { en } from "@/lib/i18n/messages/en";
 import { useI18n } from "./I18nProvider";
 
 /** How long the desktop mode-change overlay stays up. Matches the macOS
@@ -216,9 +217,9 @@ export default function Editor() {
     (async () => {
       const s = useEditorStore.getState();
       try {
-        s.setProgress({ message: "Loading media engine…", value: null });
+        s.setProgress({ message: en["progress.loadingMediaEngine"], value: null });
         await getFFmpeg();
-        s.setProgress({ message: "Extracting audio…", value: null });
+        s.setProgress({ message: en["progress.extractingAudio"], value: null });
         const audio = await extractAudio(videoFile);
         s.setAudio(audio);
         // ffmpeg's gigabyte is pure overhead from here until the user exports,
@@ -237,14 +238,13 @@ export default function Editor() {
         // pulling the media engine is the user's network, not a bug, and
         // "Failed to fetch" tells them nothing about what to do next.
         if (isNetworkError(err)) {
-          s.setError(
-            "Couldn't load the media engine — the connection dropped. " +
-              "Check your internet and try again."
-          );
+          s.setError(en["error.mediaEngineNetwork"]);
           return;
         }
         reportError(err, "media-pipeline");
-        s.setError(err instanceof Error ? err.message : "Failed to process this file.");
+        s.setError(
+          err instanceof Error ? err.message : en["error.processFile"]
+        );
       }
     })();
   }, [videoFile, skipTranscription, transcribe]);

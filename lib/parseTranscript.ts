@@ -1,10 +1,11 @@
+import { en } from "@/lib/i18n/messages/en";
 import { defaultSpeakerName, speakersFromWords } from "./speakers";
 import type { SpeakerInfo, Word } from "./types";
 
 /** Caption / transcript files we can turn into timed words. */
 export const TRANSCRIPT_ACCEPT =
   ".srt,.vtt,.json,application/json,text/vtt,text/plain";
-export const TRANSCRIPT_FILE_ERROR = "Choose an SRT, VTT, or JSON file.";
+export const TRANSCRIPT_FILE_ERROR = en["transcript.invalidFile"];
 
 const TRANSCRIPT_EXT = /\.(srt|vtt|json)$/i;
 
@@ -38,7 +39,7 @@ export function parseTranscript(
   filename = ""
 ): ParsedTranscript {
   const trimmed = text.replace(/^\uFEFF/, "").trim();
-  if (!trimmed) throw new Error("That transcript file is empty.");
+  if (!trimmed) throw new Error(en["error.emptyTranscript"]);
 
   const lower = filename.toLowerCase();
   let parsed: ParsedTranscript;
@@ -62,7 +63,7 @@ export function parseTranscript(
   }
 
   if (parsed.words.length === 0) {
-    throw new Error("No timed words found in that transcript.");
+    throw new Error(en["error.noTimedWords"]);
   }
   return {
     words: parsed.words,
@@ -91,7 +92,7 @@ function wordsFromJson(text: string): ParsedTranscript {
   try {
     data = JSON.parse(text);
   } catch {
-    throw new Error("Could not parse that JSON transcript.");
+    throw new Error(en["error.parseJson"]);
   }
 
   const rows = Array.isArray(data)
@@ -102,7 +103,7 @@ function wordsFromJson(text: string): ParsedTranscript {
       ? (data as { words: unknown[] }).words
       : null;
   if (!rows) {
-    throw new Error('JSON must be a word array or { "words": [...] }.');
+    throw new Error(en["error.jsonShape"]);
   }
 
   const namedSpeakers = readSpeakerInfos(data);

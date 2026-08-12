@@ -1,6 +1,7 @@
 "use client";
 
 import type { FFmpeg } from "@ffmpeg/ffmpeg";
+import { en } from "@/lib/i18n/messages/en";
 import type { TimeRange } from "./types";
 
 const CORE_BASE = "/vendor/ffmpeg";
@@ -108,7 +109,7 @@ export async function extractAudio(file: File): Promise<Float32Array | null> {
   }
   if (code !== 0) {
     if (!sawAudioStream) return null;
-    throw new Error("Could not extract audio from this file.");
+    throw new Error(en["error.extractAudio"]);
   }
   const data = (await ffmpeg.readFile(out)) as Uint8Array;
   await ffmpeg.deleteFile(out);
@@ -174,7 +175,7 @@ export async function exportVideo(
   }: VideoExportOptions = {}
 ): Promise<Blob> {
   if (keepRanges.length === 0) {
-    throw new Error("Everything has been deleted — nothing to export.");
+    throw new Error(en["error.nothingToExport"]);
   }
   const ffmpeg = await getFFmpeg();
   const input = await ensureInput(ffmpeg, file);
@@ -236,7 +237,7 @@ export async function exportVideo(
       ...codecArgs,
       "-y", out,
     ]);
-    if (code !== 0) throw new Error("Export failed while rendering the video.");
+    if (code !== 0) throw new Error(en["error.videoExport"]);
     const data = (await ffmpeg.readFile(out)) as Uint8Array;
     await ffmpeg.deleteFile(out);
     const buf = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
@@ -260,7 +261,7 @@ export async function exportAudio(
   { format = "m4a" }: AudioExportOptions = {}
 ): Promise<Blob> {
   if (keepRanges.length === 0) {
-    throw new Error("Everything has been deleted — nothing to export.");
+    throw new Error(en["error.nothingToExport"]);
   }
   const ffmpeg = await getFFmpeg();
   const input = await ensureInput(ffmpeg, file);
@@ -299,7 +300,7 @@ export async function exportAudio(
       ...codecArgs,
       "-y", out,
     ]);
-    if (code !== 0) throw new Error("Export failed while rendering the audio.");
+    if (code !== 0) throw new Error(en["error.audioExport"]);
     const data = (await ffmpeg.readFile(out)) as Uint8Array;
     await ffmpeg.deleteFile(out);
     const buf = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);

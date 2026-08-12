@@ -20,9 +20,9 @@ import {
   type RecentProject,
 } from "./menu";
 import {
+  isDesktopLocale,
   resolveDesktopLocale,
   setDesktopLocale,
-  type DesktopLocale,
 } from "./locale";
 
 const isDev = !app.isPackaged;
@@ -340,8 +340,8 @@ if (!gotLock) {
     setMainTelemetryEnabled(value === true);
   });
   ipcMain.on("ui:set-locale", (_event, value: unknown) => {
-    if (value !== "en" && value !== "zh-CN") return;
-    setDesktopLocale(value as DesktopLocale);
+    if (!isDesktopLocale(value)) return;
+    setDesktopLocale(value);
     buildAppMenu();
   });
   // The saved projects live in the renderer's IndexedDB; it pushes a snapshot

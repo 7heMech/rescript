@@ -16,7 +16,11 @@ import { useTelemetryPref } from "@/hooks/useTelemetryPref";
 import Popover, { PopoverContent, PopoverTrigger } from "./Popover";
 import type { Appearance } from "@/lib/theme";
 import { useI18n } from "./I18nProvider";
-import type { UiLocalePreference } from "@/lib/i18n";
+import {
+  UI_LOCALES,
+  UI_LOCALE_META,
+  isUiLocalePreference,
+} from "@/lib/i18n";
 
 const MENU_LINKS = [
   { labelKey: "settings.support", href: DISCORD_INVITE_URL, Icon: DiscordIcon },
@@ -101,14 +105,18 @@ export default function SettingsMenu() {
               {t("settings.interfaceLanguage")}
               <select
                 value={preference}
-                onChange={(event) =>
-                  setPreference(event.target.value as UiLocalePreference)
-                }
+                onChange={(event) => {
+                  const next = event.target.value;
+                  if (isUiLocalePreference(next)) setPreference(next);
+                }}
                 className="mt-2 block h-8 w-full rounded-lg border border-zinc-200 bg-white px-2 text-[12px] text-zinc-700 outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200"
               >
                 <option value="system">{t("common.system")}</option>
-                <option value="en">{t("language.english")}</option>
-                <option value="zh-CN">{t("language.simplifiedChinese")}</option>
+                {UI_LOCALES.map((locale) => (
+                  <option key={locale} value={locale}>
+                    {UI_LOCALE_META[locale].nativeLabel}
+                  </option>
+                ))}
               </select>
             </label>
           </section>

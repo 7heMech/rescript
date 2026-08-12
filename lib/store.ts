@@ -36,6 +36,7 @@ import {
   saveTranscriptLanguagePreference,
   type TranscriptLanguage,
 } from "./languages";
+import { en } from "@/lib/i18n/messages/en";
 import { detectMediaKind, type MediaKind } from "./media";
 import { buildWaveformPeaks, type WaveformPeaks } from "./waveform";
 import {
@@ -382,7 +383,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       pendingTranscript: null,
       status: "preparing",
       progress: {
-        message: imported ? "Loading media…" : "Loading media engine…",
+        message: imported
+          ? en["progress.loadingMedia"]
+          : en["progress.loadingMediaEngine"],
         value: null,
       },
       words: imported ? imported : [],
@@ -415,7 +418,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
   openProject: async (id) => {
     const record = await getProject(id);
-    if (!record) throw new Error("That project is no longer saved.");
+    if (!record) throw new Error(en["error.projectMissing"]);
     const file = fileFromProject(record);
     const prev = get().mediaUrl;
     if (prev) URL.revokeObjectURL(prev);
@@ -435,7 +438,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       skipTranscription: true,
       pendingTranscript: null,
       status: "preparing",
-      progress: { message: "Loading media engine…", value: null },
+      progress: { message: en["progress.loadingMediaEngine"], value: null },
       words: record.words,
       speakers,
       manualCuts,
