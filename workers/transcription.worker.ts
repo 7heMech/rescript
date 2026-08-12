@@ -34,6 +34,7 @@ import {
   transformersModel,
   transformersProgress,
 } from "weightlift/transformers";
+import { en } from "@/lib/i18n/messages/en";
 import type { Word, WorkerRequest, WorkerResponse } from "@/lib/types";
 import {
   MODELS,
@@ -458,8 +459,8 @@ models.subscribe((snap) => {
     type: "progress",
     message:
       rec.fromCache === true
-        ? "Loading speech model from cache…"
-        : "Downloading speech model…",
+        ? en["progress.loadingSpeechCache"]
+        : en["progress.downloadingSpeech"],
     value: rec.indeterminate ? null : rec.percent,
   });
 });
@@ -582,7 +583,7 @@ async function fallbackAsrToWasm() {
   await models.unloadAll();
   post({
     type: "progress",
-    message: "GPU interrupted — continuing on CPU…",
+    message: en["progress.gpuFallback"],
     value: null,
   });
 }
@@ -674,7 +675,7 @@ async function speechFramesWithSilero(
     out[f] = Number(output.data[0] ?? 0) >= threshold;
 
     if (f > 0 && f % 512 === 0) {
-      post({ type: "progress", message: "Detecting speech…", value: f / n });
+      post({ type: "progress", message: en["progress.detectingSpeech"], value: f / n });
     }
   }
   return out;
@@ -891,8 +892,8 @@ async function forceAlign(
       type: "progress",
       message:
         rec.fromCache === true
-          ? "Loading alignment model from cache…"
-          : "Downloading alignment model…",
+          ? en["progress.loadingAlignCache"]
+          : en["progress.downloadingAlign"],
       value: rec.indeterminate ? null : rec.percent,
     });
   };
@@ -907,7 +908,7 @@ async function forceAlign(
     unsubscribe();
   }
   // Switch off the download label as soon as the weights are in hand.
-  post({ type: "progress", message: "Aligning words…", value: 0 });
+  post({ type: "progress", message: en["progress.aligning"], value: 0 });
   const batches = groupWordsForAlignment(words, ALIGN_BATCH_MAX_S);
   const out: Word[] = [];
   let done = 0;
@@ -935,7 +936,7 @@ async function forceAlign(
     }
     out.push(...(aligned ?? batch));
     done++;
-    post({ type: "progress", message: "Aligning words…", value: done / batches.length });
+    post({ type: "progress", message: en["progress.aligning"], value: done / batches.length });
   }
   return out;
 }
@@ -1011,7 +1012,7 @@ async function diarize(audio: Float32Array): Promise<DiarizationSegment[]> {
     });
     postLive({
       type: "progress",
-      message: "Identifying speakers…",
+      message: en["progress.speakers"],
       value: (i + 1) / spans.length,
     });
   }
@@ -1110,7 +1111,7 @@ async function finishWithDiarization(
   audio: Float32Array
 ): Promise<Word[]> {
   try {
-    post({ type: "progress", message: "Identifying speakers…", value: 0 });
+    post({ type: "progress", message: en["progress.speakers"], value: 0 });
     const segments = await diarize(audio);
     assignSpeakers(words, segments);
   } catch (err) {
@@ -1132,11 +1133,11 @@ async function runParakeet(
   const [loaded, vad] = await Promise.all([getParakeet(), getVad()]);
   let model = loaded;
 
-  post({ type: "progress", message: "Detecting speech…", value: 0 });
+  post({ type: "progress", message: en["progress.detectingSpeech"], value: 0 });
   const { segments: speechSegments, frames: speechFrames } =
     await detectSpeechSegments(audio, vad);
 
-  post({ type: "progress", message: "Transcribing…", value: 0 });
+  post({ type: "progress", message: en["progress.transcribing"], value: 0 });
   const speechSamples = speechSegments.reduce(
     (n, s) => n + (s.endSample - s.startSample),
     0
@@ -1188,7 +1189,7 @@ async function runParakeet(
     speechDone += segmentSamples;
     const value =
       speechSamples > 0 ? Math.min(1, speechDone / speechSamples) : 1;
-    postLive({ type: "progress", message: "Transcribing…", value });
+    postLive({ type: "progress", message: en["progress.transcribing"], value });
   }
 
   await releaseAsr("parakeet");
@@ -1219,7 +1220,7 @@ async function runWhisper(
   const [asr, vad] = await Promise.all([getAsr(choice), getVad()]);
   let transcriber = asr;
 
-  post({ type: "progress", message: "Detecting speech…", value: 0 });
+  post({ type: "progress", message: en["progress.detectingSpeech"], value: 0 });
   const { segments: speechSegments, frames: speechFrames } =
     await detectSpeechSegments(audio, vad);
 
@@ -1228,7 +1229,7 @@ async function runWhisper(
     0
   );
 
-  post({ type: "progress", message: "Transcribing…", value: 0 });
+  post({ type: "progress", message: en["progress.transcribing"], value: 0 });
 
   let partial = "";
   // Use 29s instead of 30: transformers.js has a known word-timestamp bug
@@ -1264,7 +1265,7 @@ async function runWhisper(
     chunkFloor = next;
     chunkTokens = 0;
     transcribed = next;
-    postLive({ type: "progress", message: "Transcribing…", value: transcribed });
+    postLive({ type: "progress", message: en["progress.transcribing"], value: transcribed });
   };
 
   /** Nudge the bar forward between chunk boundaries as tokens stream in. */
@@ -1276,7 +1277,7 @@ async function runWhisper(
     const interpolated = Math.min(0.999, chunkFloor + frac * avgChunkDelta);
     if (interpolated > transcribed) {
       transcribed = interpolated;
-      postLive({ type: "progress", message: "Transcribing…", value: transcribed });
+      postLive({ type: "progress", message: en["progress.transcribing"], value: transcribed });
     }
   };
 
@@ -1435,10 +1436,7 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
       // resumes rather than starting the gigabyte over.
       post({
         type: "error",
-        message:
-          "Couldn't finish downloading the speech model — the connection " +
-          "dropped. Check your internet and try again; the parts that " +
-          "finished downloading are kept.",
+        message: en["error.modelDownload"],
         cause: "network",
       });
       return;
@@ -1446,7 +1444,7 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
     post({
       type: "error",
       message: isWebGpuDeviceLostError(err)
-        ? "Transcription was interrupted when the GPU reset (often after locking the screen). Please try again."
+        ? en["error.gpuReset"]
         : err instanceof Error
           ? err.message
           : "Transcription failed.",

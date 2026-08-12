@@ -1,3 +1,4 @@
+import { en } from "@/lib/i18n/messages/en";
 import { getCutRanges, originalToEdited } from "./edits";
 import { speakerLabel, speakersFromWords } from "./speakers";
 import { groupWordsBySpeaker } from "./transcript";
@@ -75,7 +76,7 @@ export function serializeTranscript(
   const editedTimeline = options.editedTimeline !== false;
   const prepared = prepareCaptionWords(words, editedTimeline, options);
   if (prepared.length === 0) {
-    throw new Error("No words to export.");
+    throw new Error(en["error.noWords"]);
   }
   const cues = wordsToCues(prepared);
   return format === "vtt"
@@ -127,7 +128,7 @@ function serializeDocument(
   const editedTimeline = options.editedTimeline !== false;
   const prepared = prepareCaptionWords(words, editedTimeline, options);
   if (prepared.length === 0) {
-    throw new Error("No words to export.");
+    throw new Error(en["error.noWords"]);
   }
 
   const speakers = options.speakers ?? speakersFromWords(prepared);

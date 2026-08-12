@@ -27,6 +27,7 @@ import {
 import { useCutRanges } from "@/hooks/useCutRanges";
 import { useI18n } from "./I18nProvider";
 import { localizeRuntimeMessage } from "@/lib/i18n";
+import { en } from "@/lib/i18n/messages/en";
 
 type ExportTab = "video" | "audio" | "transcript" | "subtitles";
 
@@ -200,7 +201,7 @@ export default function ExportDialog() {
         ...(activeTab === "audio" ? {} : { resolution }),
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Export failed.");
+      setError(err instanceof Error ? err.message : en["error.export"]);
     } finally {
       setStatus("ready");
     }
@@ -232,7 +233,7 @@ export default function ExportDialog() {
         setError(null);
         trackEvent("export_completed", { kind, format });
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Export failed.");
+        setError(err instanceof Error ? err.message : en["error.export"]);
       }
     },
     [

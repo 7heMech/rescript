@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef } from "react";
+import { en } from "@/lib/i18n/messages/en";
 import { isModelId } from "@/lib/models";
 import { reportError } from "@/lib/sentry";
 import { useEditorStore } from "@/lib/store";
@@ -29,13 +30,13 @@ export function useTranscriber() {
   const transcribe = useCallback((audio: Float32Array, duration: number) => {
     const store = useEditorStore.getState();
     if (!isModelId(store.source)) {
-      store.setError("Select a speech model to transcribe.");
+      store.setError(en["error.selectModel"]);
       return;
     }
     const model = store.source;
     const transcriptLanguage = store.transcriptLanguage;
     store.setStatus("transcribing");
-    store.setProgress({ message: "Loading speech model…", value: null });
+    store.setProgress({ message: en["progress.loadingSpeechModel"], value: null });
 
     // Always start a fresh worker so a prior cancel can't leave us without one.
     cancelTranscription();
@@ -83,9 +84,9 @@ export function useTranscriber() {
     workerRef.current.onerror = (err) => {
       const s = useEditorStore.getState();
       if (s.skipTranscription) return;
-      s.setError(err.message || "Transcription worker crashed.");
+      s.setError(err.message || en["error.workerCrashed"]);
       reportError(
-        new Error(err.message || "Transcription worker crashed."),
+        new Error(err.message || en["error.workerCrashed"]),
         "transcription-worker"
       );
     };

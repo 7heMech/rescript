@@ -352,7 +352,12 @@ export default function TranscriptPanel() {
         <div className="ml-auto flex items-center gap-2">
           {deletedCount > 0 && (
             <span className="rounded-md bg-red-50 px-2 py-0.5 text-[9px] font-medium text-red-600 line-clamp-1 line-through dark:bg-red-950/40 dark:text-red-400">
-              {t("transcript.wordsDeleted", { count: deletedCount })}
+              {t(
+                deletedCount === 1
+                  ? "transcript.wordDeleted"
+                  : "transcript.wordsDeleted",
+                { count: deletedCount }
+              )}
             </span>
           )}
           {status === "ready" && <TranscriptToolsMenu />}
