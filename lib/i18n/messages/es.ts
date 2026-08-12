@@ -28,8 +28,6 @@ export const es: Record<MessageKey, string> = {
   "settings.homepage": "Página de inicio",
   "settings.github": "GitHub",
   "settings.followX": "Seguir en X",
-  "language.english": "English",
-  "language.simplifiedChinese": "简体中文",
   "model.transcriptSource": "Origen de la transcripción",
   "model.language": "Idioma",
   "model.transcriptLanguage": "Idioma de transcripción",

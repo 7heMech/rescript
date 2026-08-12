@@ -28,8 +28,6 @@ export const zhCN: Record<MessageKey, string> = {
   "settings.homepage": "主页",
   "settings.github": "GitHub",
   "settings.followX": "在 X 上关注",
-  "language.english": "English",
-  "language.simplifiedChinese": "简体中文",
   "model.transcriptSource": "转录来源",
   "model.language": "语言",
   "model.transcriptLanguage": "转录语言",

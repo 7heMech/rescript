@@ -1,3 +1,5 @@
+import type { UiLocale } from "@/lib/i18n/locales";
+
 /** Resting sizes the Electron shell switches between. */
 export type WindowMode = "compact" | "expanded";
 
@@ -23,7 +25,7 @@ export interface RescriptDesktop {
   /** Mirror the telemetry opt-out to the main process, which gates its own reporting. */
   setTelemetryEnabled: (enabled: boolean) => void;
   /** Keep native menus and dialogs aligned with the resolved UI locale. */
-  setUiLocale: (locale: "en" | "zh-CN") => void;
+  setUiLocale: (locale: UiLocale) => void;
   /** Publish the saved-project list (newest first) for File › Recent Projects. */
   setRecentProjects: (projects: Array<{ id: string; name: string }>) => void;
   /** Subscribe to File-menu actions; returns an unsubscribe function. */

@@ -27,8 +27,6 @@ export const en = {
   "settings.homepage": "Homepage",
   "settings.github": "GitHub",
   "settings.followX": "Follow on X",
-  "language.english": "English",
-  "language.simplifiedChinese": "简体中文",
   "model.transcriptSource": "Transcript source",
   "model.language": "Language",
   "model.transcriptLanguage": "Transcript language",

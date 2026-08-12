@@ -28,8 +28,6 @@ export const zhTW: Record<MessageKey, string> = {
   "settings.homepage": "首頁",
   "settings.github": "GitHub",
   "settings.followX": "在 X 上追蹤",
-  "language.english": "English",
-  "language.simplifiedChinese": "简体中文",
   "model.transcriptSource": "逐字稿來源",
   "model.language": "語言",
   "model.transcriptLanguage": "逐字稿語言",

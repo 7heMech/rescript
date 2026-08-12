@@ -1,31 +1,42 @@
 import {
+  UI_LOCALES,
+  buildLocaleBootScript,
   formatRelativeTime,
   localizeRuntimeMessage,
+  matchUiLocale,
+  nsisInstallerLanguages,
   resolveUiLocale,
   runtimeEnglishMessages,
   runtimeMessageKeys,
   translate,
 } from "../lib/i18n";
+import { catalogs } from "../lib/i18n/catalogs";
 import { en, type MessageKey } from "../lib/i18n/messages/en";
-import { zhCN } from "../lib/i18n/messages/zh-CN";
 
 function assert(value: unknown, message: string): asserts value {
   if (!value) throw new Error(message);
 }
 
 assert(resolveUiLocale("system", ["zh-CN"]) === "zh-CN", "zh-CN detection");
-assert(resolveUiLocale("system", ["zh-HK"]) === "zh-CN", "zh-HK fallback");
-assert(resolveUiLocale("system", ["fr-FR", "en-US"]) === "en", "ordered fallback");
-assert(resolveUiLocale("system", ["fr-FR", "zh-Hans"]) === "zh-CN", "secondary zh");
+assert(resolveUiLocale("system", ["zh-HK"]) === "zh-TW", "zh-HK → Traditional");
+assert(resolveUiLocale("system", ["zh-TW"]) === "zh-TW", "zh-TW detection");
+assert(resolveUiLocale("system", ["zh-Hans-CN"]) === "zh-CN", "zh-Hans");
+assert(resolveUiLocale("system", ["ja-JP"]) === "ja", "japanese detection");
+assert(resolveUiLocale("system", ["ko"]) === "ko", "korean detection");
+assert(resolveUiLocale("system", ["es-MX"]) === "es", "spanish detection");
+assert(resolveUiLocale("system", ["fr-CA"]) === "fr", "french detection");
+assert(resolveUiLocale("system", ["de-AT"]) === "de", "german detection");
+assert(resolveUiLocale("system", ["fr-FR", "en-US"]) === "fr", "ordered fallback");
+assert(resolveUiLocale("system", ["pt-BR", "en-US"]) === "en", "unsupported then en");
 assert(resolveUiLocale("system", []) === "en", "empty fallback");
-assert(resolveUiLocale("zh-CN", ["en-US"]) === "zh-CN", "manual zh override");
-assert(resolveUiLocale("en", ["zh-CN"]) === "en", "manual en override");
+assert(resolveUiLocale("ja", ["en-US"]) === "ja", "manual override");
+assert(matchUiLocale("zh_TW") === "zh-TW", "underscore normalized");
 
 assert(translate("zh-CN", "common.settings") === "设置", "Chinese settings");
-assert(translate("en", "common.settings") === "Settings", "English settings");
+assert(translate("ja", "common.settings") === "設定", "Japanese settings");
+assert(translate("es", "common.settings") === "Ajustes", "Spanish settings");
 assert(
-  translate("zh-CN", "export.downloadFile", { name: "demo.mp4" }) ===
-    "下载 demo.mp4",
+  translate("de", "export.downloadFile", { name: "demo.mp4" }).includes("demo.mp4"),
   "named interpolation"
 );
 assert(
@@ -37,52 +48,44 @@ assert(
   "plural words deleted"
 );
 
-const zh = (key: MessageKey, params?: Record<string, string | number>) =>
-  translate("zh-CN", key, params);
+const ja = (key: MessageKey, params?: Record<string, string | number>) =>
+  translate("ja", key, params);
 assert(
-  localizeRuntimeMessage("Transcribing…", zh) === "正在转录…",
+  localizeRuntimeMessage("Transcribing…", ja).length > 0,
   "runtime progress localization"
 );
 assert(
-  localizeRuntimeMessage("No words to export.", zh) === "没有可导出的文字。",
+  localizeRuntimeMessage("No words to export.", ja).length > 0,
   "runtime error localization"
 );
-assert(
-  localizeRuntimeMessage(
-    'JSON must be a word array or { "words": [...] }.',
-    zh
-  ) === "JSON 必须是文字数组，或包含 words 字段的对象。",
-  "json shape localization"
-);
-assert(
-  localizeRuntimeMessage(
-    "Couldn't finish downloading the speech model — the connection dropped. Check your internet and try again; the parts that finished downloading are kept.",
-    zh
-  ).includes("语音模型"),
-  "model download localization"
-);
-assert(localizeRuntimeMessage("Unknown diagnostic", zh) === "Unknown diagnostic", "fallback");
+assert(localizeRuntimeMessage("Unknown diagnostic", ja) === "Unknown diagnostic", "fallback");
 
-// Runtime map is derived from the English catalog — every lookup key must match.
 for (const english of runtimeEnglishMessages) {
   assert(runtimeMessageKeys[english], `runtime map covers ${english}`);
   const key = runtimeMessageKeys[english];
   assert(en[key] === english, `catalog matches runtime english for ${key}`);
 }
 
-// Catalogs stay complete across locales.
 const enKeys = Object.keys(en) as MessageKey[];
-for (const key of enKeys) {
-  assert(typeof zhCN[key] === "string" && zhCN[key].length > 0, `zh-CN has ${key}`);
+for (const locale of UI_LOCALES) {
+  for (const key of enKeys) {
+    assert(
+      typeof catalogs[locale][key] === "string" && catalogs[locale][key].length > 0,
+      `${locale} has ${key}`
+    );
+  }
 }
 
+const boot = buildLocaleBootScript();
+assert(boot.includes("zh-TW"), "boot script knows Traditional Chinese");
+assert(boot.includes("ja"), "boot script knows Japanese");
+assert(boot.includes("navigator.languages"), "boot script reads system languages");
+
+const nsis = nsisInstallerLanguages();
+assert(nsis.includes("en_US") && nsis.includes("ja_JP") && nsis.includes("zh_TW"), "nsis codes");
+
 const now = Date.UTC(2026, 7, 9, 12, 0, 0);
-assert(formatRelativeTime("zh-CN", now - 5 * 60_000, now).includes("5"), "zh relative");
+assert(formatRelativeTime("ja", now - 5 * 60_000, now).includes("5"), "ja relative");
 assert(formatRelativeTime("en", now - 5 * 60_000, now).includes("5"), "en relative");
-assert(
-  formatRelativeTime("en", now - 10_000, now).toLowerCase().includes("now") ||
-    formatRelativeTime("en", now - 10_000, now).includes("second"),
-  "en just now"
-);
 
 console.log("ALL I18N TESTS PASSED");

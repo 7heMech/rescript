@@ -1,5 +1,12 @@
-import { en, type MessageKey } from "./messages/en";
-import { zhCN } from "./messages/zh-CN";
+import { catalogs } from "./catalogs";
+import {
+  DEFAULT_UI_LOCALE_PREFERENCE,
+  UI_LOCALE_STORAGE_KEY,
+  isUiLocalePreference,
+  type UiLocale,
+  type UiLocalePreference,
+} from "./locales";
+import type { MessageKey } from "./messages/en";
 import { runtimeMessageKeys } from "./runtimeMessages";
 
 export type { MessageKey } from "./messages/en";
@@ -8,41 +15,27 @@ export {
   runtimeMessageKeys,
   type RuntimeMessageKey,
 } from "./runtimeMessages";
-
-export type UiLocale = "en" | "zh-CN";
-export type UiLocalePreference = "system" | UiLocale;
-
-export const DEFAULT_UI_LOCALE_PREFERENCE: UiLocalePreference = "system";
-export const UI_LOCALE_STORAGE_KEY = "rescript.ui-locale";
+export {
+  DEFAULT_UI_LOCALE,
+  DEFAULT_UI_LOCALE_PREFERENCE,
+  UI_LOCALES,
+  UI_LOCALE_META,
+  UI_LOCALE_STORAGE_KEY,
+  buildLocaleBootScript,
+  isUiLocale,
+  isUiLocalePreference,
+  matchUiLocale,
+  nsisInstallerLanguages,
+  resolveUiLocale,
+  type UiLocale,
+  type UiLocaleMeta,
+  type UiLocalePreference,
+} from "./locales";
 
 export type Translate = (
   key: MessageKey,
   params?: Record<string, string | number>
 ) => string;
-
-export function isUiLocalePreference(value: unknown): value is UiLocalePreference {
-  return value === "system" || value === "en" || value === "zh-CN";
-}
-
-/**
- * Resolve the effective UI locale.
- *
- * For `system`, the first supported language in the list wins. Any `zh*` tag
- * (including zh-HK / zh-TW) currently maps to Simplified Chinese — Traditional
- * Chinese is not a separate UI locale yet.
- */
-export function resolveUiLocale(
-  preference: UiLocalePreference,
-  systemLanguages: readonly string[]
-): UiLocale {
-  if (preference !== "system") return preference;
-  for (const raw of systemLanguages) {
-    const language = raw.toLowerCase();
-    if (language === "zh" || language.startsWith("zh-")) return "zh-CN";
-    if (language === "en" || language.startsWith("en-")) return "en";
-  }
-  return "en";
-}
 
 export function systemLanguages(): string[] {
   if (typeof navigator === "undefined") return [];
@@ -87,7 +80,7 @@ export function translate(
   key: MessageKey,
   params: Record<string, string | number> = {}
 ): string {
-  const template = (locale === "zh-CN" ? zhCN : en)[key] ?? en[key];
+  const template = catalogs[locale][key] ?? catalogs.en[key];
   return interpolate(template, params);
 }
 

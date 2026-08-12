@@ -28,8 +28,6 @@ export const ko: Record<MessageKey, string> = {
   "settings.homepage": "홈페이지",
   "settings.github": "GitHub",
   "settings.followX": "X에서 팔로우",
-  "language.english": "English",
-  "language.simplifiedChinese": "简体中文",
   "model.transcriptSource": "자막 원본",
   "model.language": "언어",
   "model.transcriptLanguage": "자막 언어",

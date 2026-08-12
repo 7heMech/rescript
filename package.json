@@ -136,7 +136,13 @@
       "allowToChangeInstallationDirectory": true,
       "installerLanguages": [
         "en_US",
-        "zh_CN"
+        "zh_CN",
+        "zh_TW",
+        "ja_JP",
+        "ko_KR",
+        "es_ES",
+        "fr_FR",
+        "de_DE"
       ],
       "multiLanguageInstaller": true,
       "artifactName": "${productName}-Setup.${ext}"

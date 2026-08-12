@@ -28,8 +28,6 @@ export const ja: Record<MessageKey, string> = {
   "settings.homepage": "ホームページ",
   "settings.github": "GitHub",
   "settings.followX": "X でフォロー",
-  "language.english": "English",
-  "language.simplifiedChinese": "简体中文",
   "model.transcriptSource": "文字起こしソース",
   "model.language": "言語",
   "model.transcriptLanguage": "文字起こし言語",
