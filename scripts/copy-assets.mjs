@@ -4,6 +4,7 @@
  *   - @ffmpeg/core-mt  -> public/vendor/ffmpeg/  (audio extraction + export)
  *   - onnxruntime-web  -> public/vendor/ort/     (transformers.js inference)
  *   - parakeet.js ORT  -> public/vendor/ort-parakeet/ (Parakeet TDT inference)
+ *   - assets/aaf       -> public/vendor/aaf/     (Pro Tools / Logic AAF scaffold)
  * Runs automatically on `npm install` (postinstall).
  */
 import {
@@ -102,4 +103,14 @@ function patchParakeetWasmPaths() {
 
 patchParakeetWasmPaths();
 
-console.log("[copy-assets] ffmpeg core + onnxruntime wasm copied to public/");
+// Metadata-only AAF scaffold for Pro Tools / Logic timeline export.
+const aafSrc = join(root, "assets/aaf");
+const aafDst = join(root, "public/vendor/aaf");
+mkdirSync(aafDst, { recursive: true });
+for (const f of readdirSync(aafSrc)) {
+  cpSync(join(aafSrc, f), join(aafDst, f));
+}
+
+console.log(
+  "[copy-assets] ffmpeg core + onnxruntime wasm + aaf scaffold copied to public/"
+);

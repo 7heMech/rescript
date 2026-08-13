@@ -41,6 +41,9 @@ jobs:
       - name: UI localization tests
         run: npm run test:i18n
 
+      - name: Timeline export tests
+        run: npm run test:timeline
+
       - name: Build Next.js
         run: npm run build
 
