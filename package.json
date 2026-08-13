@@ -20,6 +20,7 @@
     "start": "next start",
     "lint": "eslint",
     "test:i18n": "tsx tests/i18n-test.ts",
+    "test:timeline": "tsx tests/serialize-timeline-test.ts",
     "postinstall": "patch-package && node scripts/copy-assets.mjs",
     "build:electron": "node scripts/build-electron.mjs",
     "typecheck:electron": "tsc -p electron/tsconfig.json --noEmit",

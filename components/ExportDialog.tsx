@@ -112,6 +112,7 @@ export default function ExportDialog() {
   const aafOverCap =
     timelineFormat === "aaf" && keepRangeCount > AAF_MAX_CLIPS;
   const exporting = status === "exporting";
+  const dialogBusy = exporting || timelineBusy;
   const hasWords = words.length > 0;
 
   // Fall back when the remembered tab isn't valid for this project.
@@ -296,8 +297,9 @@ export default function ExportDialog() {
         width,
         height,
       });
+      trackEvent("export_completed", { kind: "timeline", format: timelineFormat });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Timeline export failed.");
+      setError(err instanceof Error ? err.message : en["error.timelineExport"]);
     } finally {
       setTimelineBusy(false);
     }
@@ -353,9 +355,9 @@ export default function ExportDialog() {
     },
     {
       id: "timeline",
-      label: "Timeline",
+      label: t("export.timeline"),
       icon: Clapperboard,
-      title: "Export an NLE sequence (Resolve, Premiere, Final Cut, Pro Tools)",
+      title: t("export.timelineTitle"),
     },
   ];
 
@@ -364,7 +366,7 @@ export default function ExportDialog() {
   return (
     <div
       className="app-no-drag fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/40 p-4 backdrop-blur-sm dark:bg-black/60"
-      onClick={() => !exporting && setOpen(false)}
+      onClick={() => !dialogBusy && setOpen(false)}
     >
       <div
         className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl dark:bg-zinc-900 dark:shadow-black/50"
@@ -376,7 +378,7 @@ export default function ExportDialog() {
           </h2>
           <button
             onClick={() => setOpen(false)}
-            disabled={exporting}
+            disabled={dialogBusy}
             className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 disabled:opacity-30 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
           >
             <X size={16} />
@@ -396,7 +398,7 @@ export default function ExportDialog() {
                 type="button"
                 role="tab"
                 aria-selected={selected}
-                disabled={disabled || exporting}
+                disabled={disabled || dialogBusy}
                 title={title}
                 onClick={() => selectTab(id)}
                 className={`flex h-9 items-center justify-center gap-1.5 rounded-[0.625rem] text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-40 ${
@@ -492,7 +494,7 @@ export default function ExportDialog() {
         {activeTab === "timeline" && (
           <div className="mb-5 space-y-4">
             <OptionGroup
-              label="NLE"
+              label={t("export.nle")}
               value={timelineFormat}
               options={TIMELINE_FORMATS.map(({ value, label }) => ({
                 value,
@@ -503,12 +505,12 @@ export default function ExportDialog() {
             />
             <div>
               <p className="mb-2 text-[11px] font-medium tracking-wide text-zinc-400 dark:text-zinc-500">
-                Frame rate
+                {t("export.frameRate")}
               </p>
               <div
                 className="grid grid-cols-4 gap-0.5 rounded-lg bg-zinc-100 p-0.5 dark:bg-zinc-800"
                 role="radiogroup"
-                aria-label="Frame rate"
+                aria-label={t("export.frameRate")}
               >
                 {TIMELINE_FRAME_RATES.map((opt) => {
                   const selected = timelineFrameRate === opt.value;
@@ -533,20 +535,23 @@ export default function ExportDialog() {
               </div>
             </div>
             <p className="text-xs text-zinc-500 dark:text-zinc-400">
-              Sequence references your original media by filename — relink in
-              the NLE after import.{" "}
-              {timelineFormat === "aaf"
-                ? "Pro Tools / Logic AAF (metadata-only)."
-                : timelineFormat === "fcpx"
-                  ? "Final Cut Pro FCPXML."
-                  : timelineFormat === "premiere"
-                    ? "Adobe Premiere Pro XML (xmeml)."
-                    : "DaVinci Resolve XML (xmeml)."}
+              {t("export.timelineHelp")}{" "}
+              {t(
+                timelineFormat === "aaf"
+                  ? "export.timelineHelpAaf"
+                  : timelineFormat === "fcpx"
+                    ? "export.timelineHelpFcpx"
+                    : timelineFormat === "premiere"
+                      ? "export.timelineHelpPremiere"
+                      : "export.timelineHelpResolve"
+              )}
             </p>
             {aafOverCap && (
               <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
-                This edit has {keepRangeCount} clips; AAF supports up to{" "}
-                {AAF_MAX_CLIPS}. Use Resolve, Premiere, or Final Cut instead.
+                {t("export.aafOverCap", {
+                  count: keepRangeCount,
+                  max: AAF_MAX_CLIPS,
+                })}
               </p>
             )}
           </div>
@@ -641,8 +646,12 @@ export default function ExportDialog() {
           >
             <Download size={15} />
             {timelineBusy
-              ? "Preparing…"
-              : `Download .${TIMELINE_FORMATS.find((f) => f.value === timelineFormat)?.ext}`}
+              ? t("export.preparing")
+              : t("export.downloadFormat", {
+                  format:
+                    TIMELINE_FORMATS.find((f) => f.value === timelineFormat)
+                      ?.ext ?? "xml",
+                })}
           </button>
         )}
       </div>

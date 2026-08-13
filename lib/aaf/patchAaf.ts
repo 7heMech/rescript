@@ -256,7 +256,7 @@ export async function writeAafComposition(input: AafExportInput): Promise<Blob> 
     );
   }
   if (!withVideo && !withAudio) {
-    throw new Error("Nothing to put on the AAF timeline.");
+    throw new Error("Nothing to put on the timeline.");
   }
 
   const scaffold = await loadScaffold();
