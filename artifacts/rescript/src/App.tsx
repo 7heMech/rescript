@@ -1,61 +1,40 @@
-import { type ReactNode } from 'react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { Suspense, lazy, useEffect } from 'react';
 import { ErrorBoundary } from '@/components/error-boundary';
-import { Toaster } from '@/components/ui/toaster';
-import { TooltipProvider } from '@/components/ui/tooltip';
-import NotFound from '@/pages/not-found';
-import {
-  Route,
-  Switch,
-  useLocation,
-  Router as WouterRouter,
-} from 'wouter';
+import I18nProvider from '@/components/I18nProvider';
 
-const queryClient = new QueryClient();
+// The editor relies on browser-only APIs (Workers, WebAssembly, WebGPU),
+// so lazy-load it so the loading spinner can render first.
+const Editor = lazy(() => import('@/components/Editor'));
 
-function Home() {
+function LoadingSpinner() {
   return (
-    <div className="min-h-screen w-full flex items-center justify-center bg-gray-50">
-      <div className="text-center">
-        <h1 className="text-2xl font-bold text-gray-900">
-          Replit Agent is building...
-        </h1>
-        <p className="mt-2 text-sm text-gray-600">
-          Your app will appear here once it's ready.
-        </p>
-      </div>
+    <div className="flex h-dvh items-center justify-center bg-zinc-50 dark:bg-zinc-950">
+      <div className="h-5 w-5 animate-spin rounded-full border-2 border-neutral-500 border-t-transparent dark:border-neutral-400" />
     </div>
   );
 }
 
-function Router() {
-  return (
-    // Keep a shared shell (sidebar, navbar) outside the boundary so it
-    // survives a page crash.
-    <RoutedErrorBoundary>
-      <Switch>
-        <Route path="/" component={Home} />
-        <Route component={NotFound} />
-      </Switch>
-    </RoutedErrorBoundary>
-  );
-}
-
-function RoutedErrorBoundary({ children }: { children: ReactNode }) {
-  const [location] = useLocation();
-  return <ErrorBoundary resetKey={location}>{children}</ErrorBoundary>;
-}
-
 function App() {
+  // Apply stored appearance before first paint (belt-and-suspenders: the
+  // inline boot script in index.html handles the real flash prevention).
+  useEffect(() => {
+    try {
+      if (localStorage.getItem('rescript.appearance') === 'dark') {
+        document.documentElement.classList.add('dark');
+      }
+    } catch {
+      // Private mode / storage blocked
+    }
+  }, []);
+
   return (
-    <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}>
-          <Router />
-        </WouterRouter>
-        <Toaster />
-      </TooltipProvider>
-    </QueryClientProvider>
+    <ErrorBoundary>
+      <I18nProvider>
+        <Suspense fallback={<LoadingSpinner />}>
+          <Editor />
+        </Suspense>
+      </I18nProvider>
+    </ErrorBoundary>
   );
 }
 

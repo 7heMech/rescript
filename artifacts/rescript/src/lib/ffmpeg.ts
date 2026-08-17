@@ -1,4 +1,3 @@
-"use client";
 
 import type { FFmpeg } from "@ffmpeg/ffmpeg";
 import { en } from "@/lib/i18n/messages/en";

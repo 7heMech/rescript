@@ -1,4 +1,3 @@
-"use client";
 
 import { useId, useMemo, useState } from "react";
 import { Undo2, VolumeX, WandSparkles, Zap, type LucideIcon } from "lucide-react";

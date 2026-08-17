@@ -1,4 +1,3 @@
-"use client";
 
 import { isElectron } from "./platform";
 
@@ -22,7 +21,7 @@ import { isElectron } from "./platform";
  */
 
 const ENDPOINT =
-  process.env.NEXT_PUBLIC_TELEMETRY_ENDPOINT ??
+  import.meta.env.VITE_TELEMETRY_ENDPOINT ??
   "https://www.getrescript.com/api/telemetry";
 
 const INSTALL_ID_KEY = "rescript.installId";
@@ -109,13 +108,13 @@ export function trackEvent(event: TelemetryEvent, props?: Props) {
   const body = JSON.stringify({
     installId: id,
     event,
-    version: process.env.NEXT_PUBLIC_APP_VERSION,
+    version: import.meta.env.VITE_APP_VERSION,
     platform: platform(),
     surface: isElectron ? "desktop" : "web",
     props: props ?? null,
   });
 
-  if (process.env.NODE_ENV !== "production") {
+  if (import.meta.env.DEV) {
     console.debug("[telemetry]", event, props ?? {});
     return;
   }

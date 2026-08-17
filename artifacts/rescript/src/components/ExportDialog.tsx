@@ -1,4 +1,3 @@
-"use client";
 
 import { useCallback, useMemo, useState } from "react";
 import {
@@ -469,7 +468,7 @@ export default function ExportDialog() {
                   ? { ...option, label: t("export.plainText") }
                   : option
               )}
-              onChange={setTranscriptFormat}
+              onChange={(v) => setTranscriptFormat(v)}
             />
             <p className="text-xs text-zinc-500 dark:text-zinc-400">
               {t("export.transcriptHelp")}
@@ -483,7 +482,7 @@ export default function ExportDialog() {
               label={t("export.format")}
               value={subtitleFormat}
               options={SUBTITLE_FORMATS}
-              onChange={setSubtitleFormat}
+              onChange={(v) => setSubtitleFormat(v)}
             />
             <p className="text-xs text-zinc-500 dark:text-zinc-400">
               {t("export.subtitlesHelp")}
@@ -501,7 +500,7 @@ export default function ExportDialog() {
                 label,
               }))}
               disabled={timelineBusy}
-              onChange={setTimelineFormat}
+              onChange={(v) => setTimelineFormat(v)}
             />
             <div>
               <p className="mb-2 text-[11px] font-medium tracking-wide text-zinc-400 dark:text-zinc-500">

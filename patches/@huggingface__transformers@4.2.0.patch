@@ -1,0 +1,296 @@
+diff --git a/dist/transformers.js b/dist/transformers.js
+index 3274d9cfc2453aeb6b1ee64e61c85f6984aaad88..0baa6421e46064b52e5f60967a0db6eb536de91a 100644
+--- a/dist/transformers.js
++++ b/dist/transformers.js
+@@ -16280,11 +16280,12 @@ var WhisperTokenizer = class extends PreTrainedTokenizer {
+    */
+   decodeWithTimestamps(token_ids, decode_args) {
+     const time_precision = decode_args?.time_precision ?? 0.02;
+-    const timestamp_begin = this.all_special_ids.at(-1) + 1;
++    const timestamp_begin = this.timestamp_begin;
++    const timestamp_end = timestamp_begin + 1500;
+     let outputs = [[]];
+     for (let token of token_ids) {
+       token = Number(token);
+-      if (token >= timestamp_begin) {
++      if (token >= timestamp_begin && token <= timestamp_end) {
+         const timestamp = ((token - timestamp_begin) * time_precision).toFixed(2);
+         outputs.push(`<|${timestamp}|>`);
+         outputs.push([]);
+@@ -16292,7 +16293,7 @@ var WhisperTokenizer = class extends PreTrainedTokenizer {
+         outputs[outputs.length - 1].push(token);
+       }
+     }
+-    outputs = outputs.map((s) => typeof s === "string" ? s : super.decode(s, decode_args));
++    outputs = outputs.map((s) => typeof s === "string" ? s : s.length === 0 ? "" : super.decode(s, decode_args));
+     return outputs.join("");
+   }
+   /**
+@@ -23586,6 +23587,7 @@ var WhisperTimeStampLogitsProcessor = class extends LogitsProcessor {
+     this.eos_token_id = Array.isArray(generate_config.eos_token_id) ? generate_config.eos_token_id[0] : generate_config.eos_token_id;
+     this.no_timestamps_token_id = generate_config.no_timestamps_token_id;
+     this.timestamp_begin = this.no_timestamps_token_id + 1;
++    this.timestamp_end = this.timestamp_begin + 1500;
+     this.begin_index = init_tokens.length;
+     if (init_tokens.at(-1) === this.no_timestamps_token_id) {
+       this.begin_index -= 1;
+@@ -23606,17 +23608,17 @@ var WhisperTimeStampLogitsProcessor = class extends LogitsProcessor {
+       );
+       batch_logits_data[this.no_timestamps_token_id] = -Infinity;
+       if (input_ids[i].length === this.begin_index) {
+-        batch_logits_data.subarray(0, this.timestamp_begin).fill(-Infinity);
++        batch_logits_data.subarray(0, this.timestamp_begin).fill(-Infinity), batch_logits_data.subarray(this.timestamp_end + 1).fill(-Infinity);
+         continue;
+       }
+       const seq = input_ids[i].slice(this.begin_index);
+-      const last_was_timestamp = seq.length >= 1 && seq[seq.length - 1] >= this.timestamp_begin;
+-      const penultimate_was_timestamp = seq.length < 2 || seq[seq.length - 2] >= this.timestamp_begin;
++      const last_was_timestamp = seq.length >= 1 && seq[seq.length - 1] >= this.timestamp_begin && seq[seq.length - 1] <= this.timestamp_end;
++      const penultimate_was_timestamp = seq.length < 2 || (seq[seq.length - 2] >= this.timestamp_begin && seq[seq.length - 2] <= this.timestamp_end);
+       if (last_was_timestamp) {
+         if (penultimate_was_timestamp) {
+-          batch_logits_data.subarray(this.timestamp_begin).fill(-Infinity);
++          batch_logits_data.subarray(this.timestamp_begin, this.timestamp_end + 1).fill(-Infinity);
+         } else {
+-          batch_logits_data.subarray(0, this.eos_token_id).fill(-Infinity);
++          batch_logits_data.subarray(0, this.eos_token_id).fill(-Infinity), batch_logits_data.subarray(this.timestamp_end + 1).fill(-Infinity);
+         }
+       }
+       if (input_ids[i].length === this.begin_index && this.max_initial_timestamp_index !== null) {
+@@ -23625,11 +23627,11 @@ var WhisperTimeStampLogitsProcessor = class extends LogitsProcessor {
+       }
+       const logprobs = log_softmax(batch_logits_data);
+       const timestamp_logprob = Math.log(
+-        logprobs.subarray(this.timestamp_begin).map(Math.exp).reduce((a, b) => a + b)
++        logprobs.subarray(this.timestamp_begin, this.timestamp_end + 1).map(Math.exp).reduce((a, b) => a + b)
+       );
+-      const max_text_token_logprob = max(logprobs.subarray(0, this.timestamp_begin))[0];
++      const max_text_token_logprob = Math.max(max(logprobs.subarray(0, this.timestamp_begin))[0], logprobs.length > this.timestamp_end + 1 ? max(logprobs.subarray(this.timestamp_end + 1))[0] : -Infinity);
+       if (timestamp_logprob > max_text_token_logprob) {
+-        batch_logits_data.subarray(0, this.timestamp_begin).fill(-Infinity);
++        batch_logits_data.subarray(0, this.timestamp_begin).fill(-Infinity), batch_logits_data.subarray(this.timestamp_end + 1).fill(-Infinity);
+       }
+     }
+     return logits;
+diff --git a/dist/transformers.node.cjs b/dist/transformers.node.cjs
+index 6cb09aecb7364f1b909fb6ceed8daff52bba345b..fcf2117f3b7d132b5a2a41fd472bbf56599cf328 100644
+--- a/dist/transformers.node.cjs
++++ b/dist/transformers.node.cjs
+@@ -16472,11 +16472,12 @@ var WhisperTokenizer = class extends PreTrainedTokenizer {
+    */
+   decodeWithTimestamps(token_ids, decode_args) {
+     const time_precision = decode_args?.time_precision ?? 0.02;
+-    const timestamp_begin = this.all_special_ids.at(-1) + 1;
++    const timestamp_begin = this.timestamp_begin;
++    const timestamp_end = timestamp_begin + 1500;
+     let outputs = [[]];
+     for (let token of token_ids) {
+       token = Number(token);
+-      if (token >= timestamp_begin) {
++      if (token >= timestamp_begin && token <= timestamp_end) {
+         const timestamp = ((token - timestamp_begin) * time_precision).toFixed(2);
+         outputs.push(`<|${timestamp}|>`);
+         outputs.push([]);
+@@ -16484,7 +16485,7 @@ var WhisperTokenizer = class extends PreTrainedTokenizer {
+         outputs[outputs.length - 1].push(token);
+       }
+     }
+-    outputs = outputs.map((s) => typeof s === "string" ? s : super.decode(s, decode_args));
++    outputs = outputs.map((s) => typeof s === "string" ? s : s.length === 0 ? "" : super.decode(s, decode_args));
+     return outputs.join("");
+   }
+   /**
+@@ -23769,6 +23770,7 @@ var WhisperTimeStampLogitsProcessor = class extends LogitsProcessor {
+     this.eos_token_id = Array.isArray(generate_config.eos_token_id) ? generate_config.eos_token_id[0] : generate_config.eos_token_id;
+     this.no_timestamps_token_id = generate_config.no_timestamps_token_id;
+     this.timestamp_begin = this.no_timestamps_token_id + 1;
++    this.timestamp_end = this.timestamp_begin + 1500;
+     this.begin_index = init_tokens.length;
+     if (init_tokens.at(-1) === this.no_timestamps_token_id) {
+       this.begin_index -= 1;
+@@ -23789,17 +23791,17 @@ var WhisperTimeStampLogitsProcessor = class extends LogitsProcessor {
+       );
+       batch_logits_data[this.no_timestamps_token_id] = -Infinity;
+       if (input_ids[i].length === this.begin_index) {
+-        batch_logits_data.subarray(0, this.timestamp_begin).fill(-Infinity);
++        batch_logits_data.subarray(0, this.timestamp_begin).fill(-Infinity), batch_logits_data.subarray(this.timestamp_end + 1).fill(-Infinity);
+         continue;
+       }
+       const seq = input_ids[i].slice(this.begin_index);
+-      const last_was_timestamp = seq.length >= 1 && seq[seq.length - 1] >= this.timestamp_begin;
+-      const penultimate_was_timestamp = seq.length < 2 || seq[seq.length - 2] >= this.timestamp_begin;
++      const last_was_timestamp = seq.length >= 1 && seq[seq.length - 1] >= this.timestamp_begin && seq[seq.length - 1] <= this.timestamp_end;
++      const penultimate_was_timestamp = seq.length < 2 || (seq[seq.length - 2] >= this.timestamp_begin && seq[seq.length - 2] <= this.timestamp_end);
+       if (last_was_timestamp) {
+         if (penultimate_was_timestamp) {
+-          batch_logits_data.subarray(this.timestamp_begin).fill(-Infinity);
++          batch_logits_data.subarray(this.timestamp_begin, this.timestamp_end + 1).fill(-Infinity);
+         } else {
+-          batch_logits_data.subarray(0, this.eos_token_id).fill(-Infinity);
++          batch_logits_data.subarray(0, this.eos_token_id).fill(-Infinity), batch_logits_data.subarray(this.timestamp_end + 1).fill(-Infinity);
+         }
+       }
+       if (input_ids[i].length === this.begin_index && this.max_initial_timestamp_index !== null) {
+@@ -23808,11 +23810,11 @@ var WhisperTimeStampLogitsProcessor = class extends LogitsProcessor {
+       }
+       const logprobs = log_softmax(batch_logits_data);
+       const timestamp_logprob = Math.log(
+-        logprobs.subarray(this.timestamp_begin).map(Math.exp).reduce((a, b) => a + b)
++        logprobs.subarray(this.timestamp_begin, this.timestamp_end + 1).map(Math.exp).reduce((a, b) => a + b)
+       );
+-      const max_text_token_logprob = max(logprobs.subarray(0, this.timestamp_begin))[0];
++      const max_text_token_logprob = Math.max(max(logprobs.subarray(0, this.timestamp_begin))[0], logprobs.length > this.timestamp_end + 1 ? max(logprobs.subarray(this.timestamp_end + 1))[0] : -Infinity);
+       if (timestamp_logprob > max_text_token_logprob) {
+-        batch_logits_data.subarray(0, this.timestamp_begin).fill(-Infinity);
++        batch_logits_data.subarray(0, this.timestamp_begin).fill(-Infinity), batch_logits_data.subarray(this.timestamp_end + 1).fill(-Infinity);
+       }
+     }
+     return logits;
+diff --git a/dist/transformers.node.mjs b/dist/transformers.node.mjs
+index bacb354fe1b898d4c535a39f5ef1ba5c6a463d75..e3670854fa10d951612122bee329839ecd59459a 100644
+--- a/dist/transformers.node.mjs
++++ b/dist/transformers.node.mjs
+@@ -15512,11 +15512,12 @@ var WhisperTokenizer = class extends PreTrainedTokenizer {
+    */
+   decodeWithTimestamps(token_ids, decode_args) {
+     const time_precision = decode_args?.time_precision ?? 0.02;
+-    const timestamp_begin = this.all_special_ids.at(-1) + 1;
++    const timestamp_begin = this.timestamp_begin;
++    const timestamp_end = timestamp_begin + 1500;
+     let outputs = [[]];
+     for (let token of token_ids) {
+       token = Number(token);
+-      if (token >= timestamp_begin) {
++      if (token >= timestamp_begin && token <= timestamp_end) {
+         const timestamp = ((token - timestamp_begin) * time_precision).toFixed(2);
+         outputs.push(`<|${timestamp}|>`);
+         outputs.push([]);
+@@ -15524,7 +15525,7 @@ var WhisperTokenizer = class extends PreTrainedTokenizer {
+         outputs[outputs.length - 1].push(token);
+       }
+     }
+-    outputs = outputs.map((s) => typeof s === "string" ? s : super.decode(s, decode_args));
++    outputs = outputs.map((s) => typeof s === "string" ? s : s.length === 0 ? "" : super.decode(s, decode_args));
+     return outputs.join("");
+   }
+   /**
+@@ -22809,6 +22810,7 @@ var WhisperTimeStampLogitsProcessor = class extends LogitsProcessor {
+     this.eos_token_id = Array.isArray(generate_config.eos_token_id) ? generate_config.eos_token_id[0] : generate_config.eos_token_id;
+     this.no_timestamps_token_id = generate_config.no_timestamps_token_id;
+     this.timestamp_begin = this.no_timestamps_token_id + 1;
++    this.timestamp_end = this.timestamp_begin + 1500;
+     this.begin_index = init_tokens.length;
+     if (init_tokens.at(-1) === this.no_timestamps_token_id) {
+       this.begin_index -= 1;
+@@ -22829,17 +22831,17 @@ var WhisperTimeStampLogitsProcessor = class extends LogitsProcessor {
+       );
+       batch_logits_data[this.no_timestamps_token_id] = -Infinity;
+       if (input_ids[i].length === this.begin_index) {
+-        batch_logits_data.subarray(0, this.timestamp_begin).fill(-Infinity);
++        batch_logits_data.subarray(0, this.timestamp_begin).fill(-Infinity), batch_logits_data.subarray(this.timestamp_end + 1).fill(-Infinity);
+         continue;
+       }
+       const seq = input_ids[i].slice(this.begin_index);
+-      const last_was_timestamp = seq.length >= 1 && seq[seq.length - 1] >= this.timestamp_begin;
+-      const penultimate_was_timestamp = seq.length < 2 || seq[seq.length - 2] >= this.timestamp_begin;
++      const last_was_timestamp = seq.length >= 1 && seq[seq.length - 1] >= this.timestamp_begin && seq[seq.length - 1] <= this.timestamp_end;
++      const penultimate_was_timestamp = seq.length < 2 || (seq[seq.length - 2] >= this.timestamp_begin && seq[seq.length - 2] <= this.timestamp_end);
+       if (last_was_timestamp) {
+         if (penultimate_was_timestamp) {
+-          batch_logits_data.subarray(this.timestamp_begin).fill(-Infinity);
++          batch_logits_data.subarray(this.timestamp_begin, this.timestamp_end + 1).fill(-Infinity);
+         } else {
+-          batch_logits_data.subarray(0, this.eos_token_id).fill(-Infinity);
++          batch_logits_data.subarray(0, this.eos_token_id).fill(-Infinity), batch_logits_data.subarray(this.timestamp_end + 1).fill(-Infinity);
+         }
+       }
+       if (input_ids[i].length === this.begin_index && this.max_initial_timestamp_index !== null) {
+@@ -22848,11 +22850,11 @@ var WhisperTimeStampLogitsProcessor = class extends LogitsProcessor {
+       }
+       const logprobs = log_softmax(batch_logits_data);
+       const timestamp_logprob = Math.log(
+-        logprobs.subarray(this.timestamp_begin).map(Math.exp).reduce((a, b) => a + b)
++        logprobs.subarray(this.timestamp_begin, this.timestamp_end + 1).map(Math.exp).reduce((a, b) => a + b)
+       );
+-      const max_text_token_logprob = max(logprobs.subarray(0, this.timestamp_begin))[0];
++      const max_text_token_logprob = Math.max(max(logprobs.subarray(0, this.timestamp_begin))[0], logprobs.length > this.timestamp_end + 1 ? max(logprobs.subarray(this.timestamp_end + 1))[0] : -Infinity);
+       if (timestamp_logprob > max_text_token_logprob) {
+-        batch_logits_data.subarray(0, this.timestamp_begin).fill(-Infinity);
++        batch_logits_data.subarray(0, this.timestamp_begin).fill(-Infinity), batch_logits_data.subarray(this.timestamp_end + 1).fill(-Infinity);
+       }
+     }
+     return logits;
+diff --git a/dist/transformers.web.js b/dist/transformers.web.js
+index bb7b32717a42475a5f66411a33d5e5964dfda3e2..37a5541e3d86a07ea745bb1b7905e9c13f6f5b8a 100644
+--- a/dist/transformers.web.js
++++ b/dist/transformers.web.js
+@@ -11617,11 +11617,12 @@ var WhisperTokenizer = class extends PreTrainedTokenizer {
+    */
+   decodeWithTimestamps(token_ids, decode_args) {
+     const time_precision = decode_args?.time_precision ?? 0.02;
+-    const timestamp_begin = this.all_special_ids.at(-1) + 1;
++    const timestamp_begin = this.timestamp_begin;
++    const timestamp_end = timestamp_begin + 1500;
+     let outputs = [[]];
+     for (let token of token_ids) {
+       token = Number(token);
+-      if (token >= timestamp_begin) {
++      if (token >= timestamp_begin && token <= timestamp_end) {
+         const timestamp = ((token - timestamp_begin) * time_precision).toFixed(2);
+         outputs.push(`<|${timestamp}|>`);
+         outputs.push([]);
+@@ -11629,7 +11630,7 @@ var WhisperTokenizer = class extends PreTrainedTokenizer {
+         outputs[outputs.length - 1].push(token);
+       }
+     }
+-    outputs = outputs.map((s) => typeof s === "string" ? s : super.decode(s, decode_args));
++    outputs = outputs.map((s) => typeof s === "string" ? s : s.length === 0 ? "" : super.decode(s, decode_args));
+     return outputs.join("");
+   }
+   /**
+@@ -18923,6 +18924,7 @@ var WhisperTimeStampLogitsProcessor = class extends LogitsProcessor {
+     this.eos_token_id = Array.isArray(generate_config.eos_token_id) ? generate_config.eos_token_id[0] : generate_config.eos_token_id;
+     this.no_timestamps_token_id = generate_config.no_timestamps_token_id;
+     this.timestamp_begin = this.no_timestamps_token_id + 1;
++    this.timestamp_end = this.timestamp_begin + 1500;
+     this.begin_index = init_tokens.length;
+     if (init_tokens.at(-1) === this.no_timestamps_token_id) {
+       this.begin_index -= 1;
+@@ -18943,17 +18945,17 @@ var WhisperTimeStampLogitsProcessor = class extends LogitsProcessor {
+       );
+       batch_logits_data[this.no_timestamps_token_id] = -Infinity;
+       if (input_ids[i].length === this.begin_index) {
+-        batch_logits_data.subarray(0, this.timestamp_begin).fill(-Infinity);
++        batch_logits_data.subarray(0, this.timestamp_begin).fill(-Infinity), batch_logits_data.subarray(this.timestamp_end + 1).fill(-Infinity);
+         continue;
+       }
+       const seq = input_ids[i].slice(this.begin_index);
+-      const last_was_timestamp = seq.length >= 1 && seq[seq.length - 1] >= this.timestamp_begin;
+-      const penultimate_was_timestamp = seq.length < 2 || seq[seq.length - 2] >= this.timestamp_begin;
++      const last_was_timestamp = seq.length >= 1 && seq[seq.length - 1] >= this.timestamp_begin && seq[seq.length - 1] <= this.timestamp_end;
++      const penultimate_was_timestamp = seq.length < 2 || (seq[seq.length - 2] >= this.timestamp_begin && seq[seq.length - 2] <= this.timestamp_end);
+       if (last_was_timestamp) {
+         if (penultimate_was_timestamp) {
+-          batch_logits_data.subarray(this.timestamp_begin).fill(-Infinity);
++          batch_logits_data.subarray(this.timestamp_begin, this.timestamp_end + 1).fill(-Infinity);
+         } else {
+-          batch_logits_data.subarray(0, this.eos_token_id).fill(-Infinity);
++          batch_logits_data.subarray(0, this.eos_token_id).fill(-Infinity), batch_logits_data.subarray(this.timestamp_end + 1).fill(-Infinity);
+         }
+       }
+       if (input_ids[i].length === this.begin_index && this.max_initial_timestamp_index !== null) {
+@@ -18962,11 +18964,11 @@ var WhisperTimeStampLogitsProcessor = class extends LogitsProcessor {
+       }
+       const logprobs = log_softmax(batch_logits_data);
+       const timestamp_logprob = Math.log(
+-        logprobs.subarray(this.timestamp_begin).map(Math.exp).reduce((a, b) => a + b)
++        logprobs.subarray(this.timestamp_begin, this.timestamp_end + 1).map(Math.exp).reduce((a, b) => a + b)
+       );
+-      const max_text_token_logprob = max(logprobs.subarray(0, this.timestamp_begin))[0];
++      const max_text_token_logprob = Math.max(max(logprobs.subarray(0, this.timestamp_begin))[0], logprobs.length > this.timestamp_end + 1 ? max(logprobs.subarray(this.timestamp_end + 1))[0] : -Infinity);
+       if (timestamp_logprob > max_text_token_logprob) {
+-        batch_logits_data.subarray(0, this.timestamp_begin).fill(-Infinity);
++        batch_logits_data.subarray(0, this.timestamp_begin).fill(-Infinity), batch_logits_data.subarray(this.timestamp_end + 1).fill(-Infinity);
+       }
+     }
+     return logits;

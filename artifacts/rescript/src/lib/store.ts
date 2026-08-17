@@ -1,4 +1,3 @@
-"use client";
 
 import { create } from "zustand";
 import type {
@@ -1023,7 +1022,7 @@ export function hydrateTranscriptLanguagePreference() {
 }
 
 // DevTools / Playwright: inspect and drive the editor store from the console.
-if (typeof window !== "undefined" && process.env.NODE_ENV === "development") {
+if (typeof window !== "undefined" && import.meta.env.DEV) {
   (window as unknown as { __rescriptStore?: typeof useEditorStore }).__rescriptStore =
     useEditorStore;
 }

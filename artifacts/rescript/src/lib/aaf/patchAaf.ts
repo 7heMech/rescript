@@ -10,7 +10,7 @@
 import * as CFB from "cfb";
 import type { TimeRange } from "../types";
 
-const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+const BASE_PATH = import.meta.env.VITE_BASE_PATH ?? "";
 const SCAFFOLD_URL = `${BASE_PATH}/vendor/aaf/scaffold.aaf`;
 
 /** Must match scripts/generate-aaf-scaffold.py */

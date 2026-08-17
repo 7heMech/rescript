@@ -3,21 +3,38 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
-    <title>Rescript</title>
-    <meta name="description" content="Rescript — built on Replit. Update this description to reflect the app." />
+    <title>Rescript — edit videos like you edit text</title>
+    <meta name="description" content="A fully offline, open-source transcript-based video editor. Transcribe with Whisper, cut by deleting words, export with ffmpeg — on your device." />
     <meta name="robots" content="index, follow" />
-    <meta property="og:title" content="Rescript" />
-    <meta property="og:description" content="Rescript — built on Replit. Update this description to reflect the app." />
     <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Rescript" />
+    <meta property="og:title" content="Rescript — edit videos like you edit text" />
+    <meta property="og:description" content="A fully offline, open-source transcript-based video editor. Transcribe with Whisper, cut by deleting words, export with ffmpeg — on your device." />
+    <meta property="og:image" content="/og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Rescript — a transcript-based video editor running in the browser" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Rescript" />
-    <meta name="twitter:description" content="Rescript — built on Replit. Update this description to reflect the app." />
+    <meta name="twitter:title" content="Rescript — edit videos like you edit text" />
+    <meta name="twitter:description" content="A fully offline, open-source transcript-based video editor. Transcribe with Whisper, cut by deleting words, export with ffmpeg — on your device." />
+    <meta name="twitter:image" content="/og.png" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!--
+      Cross-Origin Isolation: SharedArrayBuffer (required by ffmpeg-core-mt and
+      onnxruntime-web threaded WASM) needs COOP + COEP. Vite dev server does not
+      set these; the vite.config.ts server.headers block handles it in dev.
+    -->
+    <script>
+      // Apply stored appearance before first paint to avoid a light→dark flash.
+      (function(){try{if(localStorage.getItem("rescript.appearance")==="dark")document.documentElement.classList.add("dark")}catch(e){}})();
+    </script>
+    <script>
+      // Apply stored locale preference before first paint so the HTML lang
+      // attribute is correct before React hydrates.
+      (function(){try{var k="rescript.uiLocale";var v=localStorage.getItem(k);if(v){document.documentElement.lang=v}}catch(e){}})();
+    </script>
   </head>
-  <body>
+  <body class="min-h-full antialiased">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

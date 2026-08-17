@@ -86,7 +86,7 @@ const IGNORE_ERRORS = [
 ];
 
 export function initSentry() {
-  const dsn = process.env.NEXT_PUBLIC_SENTRY_DSN;
+  const dsn = import.meta.env.VITE_SENTRY_DSN;
   // No DSN in local dev or a fork's build — stay entirely inert rather than
   // warn, so contributors don't need Sentry credentials to run the app.
   if (!dsn) return;
@@ -94,8 +94,8 @@ export function initSentry() {
 
   Sentry.init({
     dsn,
-    release: process.env.NEXT_PUBLIC_APP_VERSION,
-    environment: process.env.NODE_ENV,
+    release: import.meta.env.VITE_APP_VERSION,
+    environment: import.meta.env.MODE,
     // Never attach IP address, cookies, or headers.
     sendDefaultPii: false,
     tracesSampleRate: 0,
@@ -136,7 +136,7 @@ export function initSentry() {
  * with a tag describing where the pipeline gave up.
  */
 export function reportError(error: unknown, stage: string) {
-  if (!process.env.NEXT_PUBLIC_SENTRY_DSN) return;
+  if (!import.meta.env.VITE_SENTRY_DSN) return;
   if (!isTelemetryEnabled()) return;
   Sentry.captureException(error, { tags: { stage } });
 }

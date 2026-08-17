@@ -49,6 +49,16 @@ export default defineConfig({
   ],
   resolve: {
     alias: {
+      // Browser shims for Node built-ins pulled in by @chatoctopus/timeline's
+      // NLE writers (deterministic resource-id hashing / file URL helpers).
+      'node:crypto': path.resolve(
+        import.meta.dirname,
+        'src/lib/shims/node-crypto.ts',
+      ),
+      'node:url': path.resolve(
+        import.meta.dirname,
+        'src/lib/shims/node-url.ts',
+      ),
       '@': path.resolve(import.meta.dirname, 'src'),
       '@assets': path.resolve(
         import.meta.dirname,
@@ -60,9 +70,20 @@ export default defineConfig({
     dedupe: ['react', 'react-dom'],
   },
   root: path.resolve(import.meta.dirname),
+  // Web Workers (transcription) import ESM dependencies; IIFE is not
+  // supported for code-splitting builds.
+  worker: {
+    format: 'es',
+  },
+  optimizeDeps: {
+    // Large WASM-backed packages break esbuild pre-bundling.
+    exclude: ['@ffmpeg/ffmpeg', '@ffmpeg/util', 'parakeet.js'],
+  },
   build: {
     outDir: path.resolve(import.meta.dirname, 'dist/public'),
     emptyOutDir: true,
+    // ffmpeg/onnx wasm chunks are large; silence the default 500kB warning.
+    chunkSizeWarningLimit: 4096,
   },
   server: {
     port,
@@ -72,10 +93,22 @@ export default defineConfig({
     fs: {
       strict: true,
     },
+    // SharedArrayBuffer (ffmpeg core-mt + threaded ONNX Runtime) requires
+    // cross-origin isolation.
+    headers: {
+      'Cross-Origin-Opener-Policy': 'same-origin',
+      'Cross-Origin-Embedder-Policy': 'credentialless',
+      'Cross-Origin-Resource-Policy': 'cross-origin',
+    },
   },
   preview: {
     port,
     host: '0.0.0.0',
     allowedHosts: true,
+    headers: {
+      'Cross-Origin-Opener-Policy': 'same-origin',
+      'Cross-Origin-Embedder-Policy': 'credentialless',
+      'Cross-Origin-Resource-Policy': 'cross-origin',
+    },
   },
 });

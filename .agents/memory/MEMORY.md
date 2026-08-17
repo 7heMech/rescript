@@ -1,0 +1,1 @@
+- [Rescript WASM vendoring](rescript-wasm-vendoring.md) — WASM assets and node_modules patches are regenerated, not committed; reinstalls silently break transcription until copy-assets + patches re-run.

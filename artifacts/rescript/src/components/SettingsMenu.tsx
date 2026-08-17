@@ -1,4 +1,3 @@
-"use client";
 
 import { useId, useState } from "react";
 import { Bug, ExternalLink, HomeIcon, Moon, Settings, Sun } from "lucide-react";

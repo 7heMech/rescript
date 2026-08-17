@@ -6,13 +6,13 @@
  * bundle). AAF is produced by patching a vendored metadata-only scaffold.
  */
 
-import { writeFCPXML } from "../node_modules/@chatoctopus/timeline/dist/fcpxml/writer.js";
-import { writeXMEML } from "../node_modules/@chatoctopus/timeline/dist/xmeml/writer.js";
+import { writeFCPXML } from "../../node_modules/@chatoctopus/timeline/dist/fcpxml/writer.js";
+import { writeXMEML } from "../../node_modules/@chatoctopus/timeline/dist/xmeml/writer.js";
 import {
   FRAME_RATES,
   rational,
   ZERO,
-} from "../node_modules/@chatoctopus/timeline/dist/time.js";
+} from "../../node_modules/@chatoctopus/timeline/dist/time.js";
 import type { Timeline } from "@chatoctopus/timeline";
 import {
   writeAafComposition,

@@ -1,4 +1,3 @@
-"use client";
 
 import { useId } from "react";
 import { useI18n } from "./I18nProvider";

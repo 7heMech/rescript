@@ -7,7 +7,9 @@
     "dev": "vite --config vite.config.ts --host 0.0.0.0",
     "build": "vite build --config vite.config.ts",
     "serve": "vite preview --config vite.config.ts --host 0.0.0.0",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "copy-assets": "node scripts/copy-assets.mjs",
+    "prepare": "node scripts/copy-assets.mjs"
   },
   "devDependencies": {
     "@hookform/resolvers": "^3.10.0",
@@ -63,7 +65,7 @@
     "react-dom": "catalog:",
     "react-hook-form": "^7.55.0",
     "react-icons": "^5.4.0",
-    "react-resizable-panels": "^2.1.7",
+    "react-resizable-panels": "^4.12.2",
     "recharts": "^2.15.2",
     "sonner": "^2.0.7",
     "tailwind-merge": "catalog:",
@@ -73,5 +75,18 @@
     "vite": "catalog:",
     "wouter": "^3.3.5",
     "zod": "catalog:"
+  },
+  "dependencies": {
+    "@chatoctopus/timeline": "^0.3.0",
+    "@ffmpeg/core-mt": "^0.12.10",
+    "@ffmpeg/ffmpeg": "^0.12.15",
+    "@ffmpeg/util": "^0.12.2",
+    "@floating-ui/react": "^0.27.20",
+    "@huggingface/transformers": "4.2.0",
+    "@sentry/react": "^10.70.0",
+    "cfb": "^1.2.2",
+    "parakeet.js": "^1.4.4",
+    "weightlift": "^0.2.1",
+    "zustand": "^5.0.15"
   }
 }

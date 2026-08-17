@@ -1,4 +1,3 @@
-"use client";
 
 import { useSyncExternalStore } from "react";
 import { detectPlatform, type Platform } from "@/lib/platform";
