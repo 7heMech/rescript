@@ -1,162 +1,19 @@
 {
-  "name": "rescript",
-  "version": "1.1.8",
-  "description": "Rescript — edit video and audio like you edit text, fully offline.",
-  "private": true,
-  "author": {
-    "name": "Wassim Gharbi",
-    "email": "wassgha@gmail.com",
-    "url": "https://github.com/wassgha"
-  },
-  "license": "PolyForm-Noncommercial-1.0.0",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/wassgha/rescript.git"
-  },
-  "main": "./electron-dist/main.js",
+  "name": "workspace",
+  "version": "0.0.0",
+  "license": "MIT",
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "eslint",
-    "test:i18n": "tsx tests/i18n-test.ts",
-    "test:timeline": "tsx tests/serialize-timeline-test.ts",
-    "postinstall": "patch-package && node scripts/copy-assets.mjs",
-    "build:electron": "node scripts/build-electron.mjs",
-    "typecheck:electron": "tsc -p electron/tsconfig.json --noEmit",
-    "electron:dev": "npm run build:electron && concurrently -k -n next,electron -c cyan,magenta \"next dev\" \"node scripts/electron-dev.mjs\"",
-    "export:web": "cross-env STATIC_EXPORT=1 next build",
-    "export:desktop": "cross-env STATIC_EXPORT=1 NEXT_PUBLIC_ELECTRON=1 next build",
-    "dist": "npm run export:desktop && npm run build:electron && electron-builder --config.npmRebuild=false",
-    "release": "npm run export:desktop && npm run build:electron && electron-builder --publish always --config.npmRebuild=false",
-    "cut:patch": "npm version patch -m \"Release v%s\" && git push --follow-tags",
-    "cut:minor": "npm version minor -m \"Release v%s\" && git push --follow-tags",
-    "cut:major": "npm version major -m \"Release v%s\" && git push --follow-tags",
-    "notes:preview": "tsx scripts/generate-release-notes.ts HEAD \"$(git tag --sort=-v:refname | head -1)\""
+    "preinstall": "sh -c 'rm -f package-lock.json yarn.lock; case \"$npm_config_user_agent\" in pnpm/*) ;; *) echo \"Use pnpm instead\" >&2; exit 1 ;; esac'",
+    "build": "pnpm run typecheck && pnpm -r --if-present run build",
+    "typecheck:libs": "tsc --build",
+    "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck"
   },
+  "private": true,
   "dependencies": {
-    "@chatoctopus/timeline": "^0.3.0",
-    "@ffmpeg/core-mt": "^0.12.10",
-    "@ffmpeg/ffmpeg": "^0.12.15",
-    "@ffmpeg/util": "^0.12.2",
-    "@floating-ui/react": "^0.27.20",
-    "@huggingface/transformers": "4.2.0",
-    "@next/third-parties": "^16.2.12",
-    "@sentry/electron": "^7.16.0",
-    "@sentry/react": "^10.69.0",
-    "@vercel/analytics": "^2.0.1",
-    "cfb": "^1.2.2",
-    "lucide-react": "^1.27.0",
-    "next": "16.2.12",
-    "parakeet.js": "^1.4.4",
-    "react": "19.2.4",
-    "react-dom": "19.2.4",
-    "react-resizable-panels": "^4.12.2",
-    "weightlift": "^0.2.1",
-    "zustand": "^5.0.14"
+    "@replit/connectors-sdk": "^0.4.1"
   },
   "devDependencies": {
-    "@ai-sdk/gateway": "^3.0.0",
-    "@tailwindcss/postcss": "^4",
-    "@types/node": "^20",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
-    "ai": "^6.0.193",
-    "concurrently": "^9.2.1",
-    "cross-env": "^10.1.0",
-    "dotenv": "^17.4.2",
-    "electron": "^42.3.0",
-    "electron-builder": "^26.8.1",
-    "electron-log": "^5.4.3",
-    "electron-updater": "^6.6.2",
-    "esbuild": "^0.28.1",
-    "eslint": "^9",
-    "eslint-config-next": "16.2.12",
-    "patch-package": "^8.0.1",
-    "tailwindcss": "^4",
-    "tsx": "^4.22.4",
-    "typescript": "^5"
-  },
-  "build": {
-    "appId": "io.rescript.app",
-    "productName": "Rescript",
-    "directories": {
-      "output": "dist",
-      "buildResources": "build"
-    },
-    "publish": [
-      {
-        "provider": "github",
-        "owner": "wassgha",
-        "repo": "rescript"
-      }
-    ],
-    "files": [
-      "electron-dist/**/*",
-      "out/**/*",
-      "package.json",
-      "!electron-dist/**/*.map",
-      "!**/node_modules/**"
-    ],
-    "asar": true,
-    "mac": {
-      "target": [
-        {
-          "target": "dmg",
-          "arch": [
-            "x64",
-            "arm64"
-          ]
-        },
-        {
-          "target": "zip",
-          "arch": [
-            "x64",
-            "arm64"
-          ]
-        }
-      ],
-      "category": "public.app-category.video",
-      "artifactName": "${productName}-mac-${arch}.${ext}",
-      "hardenedRuntime": true,
-      "gatekeeperAssess": false,
-      "entitlements": "build/entitlements.mac.plist",
-      "entitlementsInherit": "build/entitlements.mac.plist",
-      "notarize": true,
-      "extendInfo": {
-        "NSMicrophoneUsageDescription": "Rescript can use the microphone for on-device speech transcription features.",
-        "NSDocumentsFolderUsageDescription": "Rescript opens and exports video and audio files you select."
-      }
-    },
-    "win": {
-      "target": [
-        "nsis"
-      ]
-    },
-    "nsis": {
-      "oneClick": false,
-      "perMachine": false,
-      "allowToChangeInstallationDirectory": true,
-      "installerLanguages": [
-        "en_US",
-        "zh_CN",
-        "zh_TW",
-        "ja_JP",
-        "ko_KR",
-        "es_ES",
-        "fr_FR",
-        "de_DE"
-      ],
-      "multiLanguageInstaller": true,
-      "artifactName": "${productName}-Setup.${ext}"
-    },
-    "linux": {
-      "target": [
-        "AppImage",
-        "deb"
-      ],
-      "category": "AudioVideo",
-      "artifactName": "${productName}-linux.${ext}"
-    }
+    "prettier": "^3.9.6",
+    "typescript": "~5.9.3"
   }
 }
