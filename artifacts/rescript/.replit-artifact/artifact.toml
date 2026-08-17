@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Rescript"
+description = "Rescript is a fully offline, browser-based transcript editor that lets you edit video and audio like you edit text. Upload a media file, transcribe it with Whisper AI, then cut and edit your recording simply by deleting or rearranging words. Export the final cut using FFmpeg — all running entirely in your browser, with no server uploads needed."
+version = "1.0.0"
+id = "artifacts/rescript"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 20667
+
+[services.development]
+run = "pnpm --filter @workspace/rescript run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/rescript", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/rescript/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "20667"
+BASE_PATH = "/"
