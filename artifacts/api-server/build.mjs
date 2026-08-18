@@ -21,6 +21,10 @@ async function buildAll() {
       // dist/transcribe/worker.mjs exists to spawn at runtime. onnxruntime-node
       // stays external (see below) so its native addon loads from node_modules.
       path.resolve(artifactDir, "src/transcribe/worker.ts"),
+      // Keep the native Parakeet runtime out of the Whisper worker. Loading
+      // onnxruntime-node eagerly in the shared bundle can crash Whisper jobs
+      // before they ever inspect their backend.
+      path.resolve(artifactDir, "src/transcribe/parakeetWorker.ts"),
     ],
     platform: "node",
     bundle: true,
@@ -114,6 +118,31 @@ async function buildAll() {
       // ASR path never touches it and sharp is an unbuilt native addon, so a
       // bare external import fails at runtime. Stub it to an empty module: the
       // image code path is unreachable for speech-to-text.
+      // parakeet.js reaches for onnxruntime-web inside its `initOrt` browser
+      // path. The server never calls it — src/transcribe/parakeet.ts builds the
+      // model on onnxruntime-node instead — but the bare `import()` still drags
+      // the whole WASM runtime in, so resolve it to a stub. If that path is ever
+      // reached anyway, initOrt's own "env is not available" guard raises a
+      // readable error.
+      //
+      // Scoped to parakeet.js as the importer on purpose: @huggingface/
+      // transformers resolves the same specifier for its own runtime detection
+      // and must keep the real module.
+      {
+        name: "stub-onnxruntime-web-for-parakeet",
+        setup(build) {
+          build.onResolve({ filter: /^onnxruntime-web(\/|$)/ }, (args) => {
+            if (!/[\\/]node_modules[\\/]parakeet\.js[\\/]/.test(args.importer)) {
+              return null;
+            }
+            return { path: args.path, namespace: "stub-ort-web" };
+          });
+          build.onLoad({ filter: /.*/, namespace: "stub-ort-web" }, () => ({
+            contents: "export default {}; export {};",
+            loader: "js",
+          }));
+        },
+      },
       {
         name: "stub-sharp",
         setup(build) {

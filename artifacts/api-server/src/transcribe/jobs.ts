@@ -55,6 +55,7 @@ export interface Job {
   filePath: string;
   fileDir: string;
   modelId: string;
+  backend: "whisper" | "parakeet";
   language: string;
   worker: Worker | null;
   admission: UploadAdmission;
@@ -96,6 +97,12 @@ function modelCacheDir(): string {
 
 const jobs = new Map<string, Job>();
 const waiting: string[] = [];
+interface BackendWorker {
+  worker: Worker;
+  jobId: string | null;
+  closing: boolean;
+}
+const backendWorkers = new Map<Job["backend"], BackendWorker>();
 let running = 0;
 let admittedJobs = 0;
 let admittedBytes = 0;
@@ -148,11 +155,61 @@ function releaseJobAdmission(job: Job): void {
 
 /**
  * Resolve the bundled worker entry. After esbuild bundling this module is part
- * of dist/index.mjs, so import.meta.url points at dist/; the worker is emitted
- * as its own entry at dist/transcribe/worker.mjs.
+ * of dist/index.mjs, so import.meta.url points at dist/; each backend is emitted
+ * as its own entry under dist/transcribe/.
  */
-function workerEntry(): string {
-  return fileURLToPath(new URL("./transcribe/worker.mjs", import.meta.url));
+function workerEntry(backend: Job["backend"]): string {
+  const entry =
+    backend === "parakeet" ? "parakeetWorker.mjs" : "worker.mjs";
+  return fileURLToPath(new URL(`./transcribe/${entry}`, import.meta.url));
+}
+
+function getBackendWorker(backend: Job["backend"]): BackendWorker {
+  const existing = backendWorkers.get(backend);
+  if (existing && !existing.closing) return existing;
+
+  const state: BackendWorker = {
+    worker: new Worker(workerEntry(backend), {
+      workerData: { persistent: true },
+    }),
+    jobId: null,
+    closing: false,
+  };
+  backendWorkers.set(backend, state);
+
+  state.worker.on("error", (err: Error) => {
+    logger.error({ err, jobId: state.jobId }, "transcription worker crashed");
+    state.closing = true;
+    const job = state.jobId ? jobs.get(state.jobId) : undefined;
+    if (job) {
+      job.state = "error";
+      job.error = err.message || "Transcription worker crashed.";
+      job.message = "Error";
+      job.finishedAt = Date.now();
+      touch(job);
+      finish(job);
+    }
+    void state.worker.terminate().catch(() => {});
+  });
+
+  state.worker.on("exit", () => {
+    const job = state.jobId ? jobs.get(state.jobId) : undefined;
+    if (job) {
+      job.state = "error";
+      job.error = "Transcription worker exited unexpectedly.";
+      job.message = "Error";
+      job.finishedAt = Date.now();
+      touch(job);
+      finish(job);
+    }
+    state.closing = true;
+    if (backendWorkers.get(backend) === state) {
+      backendWorkers.delete(backend);
+    }
+    pump();
+  });
+
+  return state;
 }
 
 function touch(job: Job): void {
@@ -164,6 +221,7 @@ export async function createJob(params: {
   filePath: string;
   fileDir: string;
   modelId: string;
+  backend: "whisper" | "parakeet";
   language: string;
   admission: UploadAdmission;
 }): Promise<Job> {
@@ -178,6 +236,7 @@ export async function createJob(params: {
     filePath: params.filePath,
     fileDir: params.fileDir,
     modelId: params.modelId,
+    backend: params.backend,
     language: params.language,
     worker: null,
     admission: params.admission,
@@ -197,30 +256,42 @@ export function getJob(id: string): Job | undefined {
 
 /** Try to start queued jobs up to the concurrency cap. */
 function pump(): void {
-  while (running < MAX_CONCURRENT && waiting.length > 0) {
+  let inspected = 0;
+  while (
+    running < MAX_CONCURRENT &&
+    waiting.length > 0 &&
+    inspected < waiting.length
+  ) {
     const id = waiting.shift()!;
     const job = jobs.get(id);
     // Skip jobs cancelled while queued.
-    if (!job || job.state === "error" || job.state === "done") continue;
+    if (!job || job.state === "error" || job.state === "done") {
+      inspected = 0;
+      continue;
+    }
+    const backendWorker = backendWorkers.get(job.backend);
+    if (backendWorker?.jobId || backendWorker?.closing) {
+      // Leave same-backend work queued while another backend can still use a
+      // free slot. The idle worker calls pump again when it finishes.
+      waiting.push(id);
+      inspected++;
+      continue;
+    }
     startWorker(job);
+    inspected = 0;
   }
 }
 
 function startWorker(job: Job): void {
   running++;
-  const worker = new Worker(workerEntry(), {
-    workerData: {
-      filePath: job.filePath,
-      modelId: job.modelId,
-      language: job.language,
-      cacheDir: modelCacheDir(),
-    },
-  });
-  job.worker = worker;
+  const state = getBackendWorker(job.backend);
+  state.jobId = job.id;
+  state.worker.removeAllListeners("message");
+  job.worker = state.worker;
   job.state = "downloading";
   touch(job);
 
-  worker.on("message", (msg: WorkerOutMessage) => {
+  state.worker.on("message", (msg: WorkerOutMessage) => {
     switch (msg.type) {
       case "progress":
         // The download stage reports through the same channel; keep the client
@@ -260,40 +331,26 @@ function startWorker(job: Job): void {
     }
   });
 
-  worker.on("error", (err: Error) => {
-    logger.error({ err, jobId: job.id }, "transcription worker crashed");
-    if (job.state !== "done") {
-      job.state = "error";
-      job.error = err.message || "Transcription worker crashed.";
-      job.message = "Error";
-      job.finishedAt = Date.now();
-    }
-    finish(job);
-  });
-
-  worker.on("exit", () => {
-    // If the worker exited without a terminal message, treat it as an error.
-    if (job.state !== "done" && job.state !== "error") {
-      job.state = "error";
-      job.error = "Transcription worker exited unexpectedly.";
-      job.message = "Error";
-      job.finishedAt = Date.now();
-    }
-    finish(job);
+  state.worker.postMessage({
+    filePath: job.filePath,
+    modelId: job.modelId,
+    backend: job.backend,
+    language: job.language,
+    cacheDir: modelCacheDir(),
   });
 }
 
-/** Release a worker slot and clean up the uploaded media (keep the words). */
+/** Finish a job and clean up uploaded media while keeping the worker alive. */
 function finish(job: Job): void {
-  if (job.worker) {
-    const w = job.worker;
+  const state = backendWorkers.get(job.backend);
+  if (state?.jobId === job.id) {
+    state.jobId = null;
     job.worker = null;
     running = Math.max(0, running - 1);
-    void w.terminate().catch(() => {});
+    if (!state.closing) pump();
     // Remove the uploaded file as soon as inference is over; the transcript is
     // in memory and the media is not needed again.
     void rm(job.fileDir, { recursive: true, force: true }).catch(() => {});
-    pump();
   }
   if (job.state === "done" || job.state === "error") {
     releaseJobAdmission(job);
@@ -314,7 +371,14 @@ export async function cancelJob(id: string): Promise<boolean> {
     job.message = "Cancelled";
     job.finishedAt = Date.now();
   }
-  finish(job);
+  const activeWorker = backendWorkers.get(job.backend);
+  const workerIsBusy = activeWorker?.jobId === job.id;
+  // A persistent native worker cannot be terminated and immediately replaced
+  // safely: the next thread may fail to self-register the ONNX addon. Keep its
+  // slot occupied while the current run unwinds, but stop exposing this job.
+  if (!workerIsBusy) {
+    finish(job);
+  }
   releaseJobAdmission(job);
   await rm(job.fileDir, { recursive: true, force: true }).catch(() => {});
   jobs.delete(id);

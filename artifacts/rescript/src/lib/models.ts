@@ -282,12 +282,18 @@ export function isModelId(value: unknown): value is ModelId {
 }
 
 /**
- * Whisper models transcribe on the API server by default; Parakeet stays in the
- * browser worker because its runtime is browser-only. A non-model source (e.g.
+ * Every speech model transcribes on the API server. Parakeet used to be excluded
+ * because parakeet.js only ships a browser loading path, but the server now
+ * builds the model against onnxruntime-node directly — see
+ * artifacts/api-server/src/transcribe/parakeet.ts. A non-model source (e.g.
  * "import") is never transcribed at all.
+ *
+ * The browser worker is still the fallback used when the app runs without a
+ * reachable API server, and it remains the only path with VAD, forced alignment
+ * and diarization.
  */
 export function usesServerTranscription(source: unknown): boolean {
-  return isModelId(source) && MODELS[source].backend === "whisper";
+  return isModelId(source);
 }
 
 const MODEL_STORAGE_KEY = "rescript.model";

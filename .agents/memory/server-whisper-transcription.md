@@ -1,64 +1,45 @@
 ---
 name: Server-side Whisper transcription
-description: How server ASR runs on the API artifact, and the native-dep pitfalls that break its esbuild bundle.
+description: Durable operational rules for CPU speech recognition, native ONNX dependencies, and generated API contracts.
 ---
 
-# Server-side Whisper transcription
+# Server-side speech recognition
 
-The API server (`artifacts/api-server`) runs Whisper Base/Small on the CPU via
-`@huggingface/transformers`, in a `worker_threads` worker, as an async job queue
-(upload → poll status → words). Parakeet stays browser-only. The frontend picks
-the backend in `Editor.tsx` via `usesServerTranscription(source)` (whisper →
-server, parakeet → browser worker).
+Server CPU transcription is an asynchronous job-queue capability. Browser
+transcription remains a fallback because waveform extraction, alignment, and
+export still depend on browser isolation.
 
-**Why a worker thread + job queue:** CPU inference blocks; the queue caps
-concurrency (`TRANSCRIBE_CONCURRENCY`, default 1) and reaps terminal/stale jobs
-on a TTL so abandoned uploads don't leak.
+**Native worker lifecycle:** Keep one persistent worker per backend and route
+jobs to an idle worker. Do not repeatedly load the same native ONNX addon in
+fresh worker threads within one Node process; the second load can fail with
+“Module did not self-register”.
 
-## esbuild bundling pitfalls (the part that cost the most time)
+**Why:** CPU inference must stay off the API event loop, while native addon
+initialization is not reliably repeatable across short-lived worker threads.
+Backend-specific workers also prevent an unused native backend from
+contaminating another backend's bundle.
 
-`@huggingface/transformers` pulls native deps that a bundled worker cannot
-`import` unless they resolve at runtime:
+**How to apply:** Bound the global queue, gate each backend worker to one active
+job, release a slot only when a job is terminal, and keep a cancelled worker's
+slot occupied until its current run unwinds.
 
-- **`onnxruntime-node`** must be an esbuild `external` AND a *direct* dependency
-  of `api-server`. It is only a transitive dep of transformers otherwise, so a
-  bare external import from `dist/` fails with "Cannot find package". Make sure
-  the package manager builds its native addon. The Node build uses `device:
-  "cpu"`, NOT `"wasm"` (wasm throws
-  "Unsupported device" — that string is browser-only).
-- **`sharp`** is lazily imported for image inputs the ASR path never hits, and it
-  is an unbuilt native addon. Do NOT externalize it (unresolvable at runtime) —
-  stub it to an empty module with an esbuild `onResolve`/`onLoad` plugin.
+## Native dependency bundling
 
-**Why:** externalizing a native dep only works if Node can resolve it from the
-emitted file's location; transitive natives are not guaranteed to be resolvable
-from the artifact's `dist/`. Direct-dep + external for the one we use, stub for
-the ones we don't.
+Native packages used by a bundled worker must be direct dependencies and remain
+external so Node resolves the addon at runtime. Native packages imported only by
+unreachable code should be stubbed rather than externalized. Always use the CPU
+runtime explicitly for Node inference; browser WASM device settings do not
+transfer to the server.
 
-## Worker entry path after bundling
+## Generated API contracts
 
-The worker is a second esbuild entry → `dist/transcribe/worker.mjs`. `jobs.ts`
-lives in `dist/index.mjs` after bundling, so spawn it with
-`new URL("./transcribe/worker.mjs", import.meta.url)`, not `./worker.mjs`.
-
-## OpenAPI codegen gotchas (zod v3 + orval v8)
-
-- orval emits `zod.int()` (zod v4) which zod 3.25 lacks → use `type: number`, not
-  `integer`, for numeric schema fields.
-- A `format: binary` multipart field emits `zod.instanceof(File)` and a `Blob`
-  TS type, neither of which exist in the Node lib → keep the file OUT of the
-  OpenAPI body schema; multer validates the upload, and the generated upload
-  helper only serializes non-file fields anyway (so the frontend builds its own
-  FormData with the file — see `useServerTranscriber.ts`).
-- The `api-zod` barrel re-exports schema *values* from `generated/api.ts` named
-  after the operation response (`UploadTranscriptionResponse`,
-  `GetTranscriptionStatusResponse`), while the entity names (`TranscribeJob`,
-  `TranscribeStatus`) are TS-only interfaces. Import the response-named values
-  server-side for `.parse()`.
+Keep multipart file handling in the server upload middleware when generated
+OpenAPI schemas produce browser-only `File`/`Blob` types. Validate generated
+response values with the response-named runtime schemas; entity names may be
+type-only interfaces.
 
 ## Isolation
 
-Server transcription still relies on ffmpeg-in-browser for the waveform
-envelope, so the cross-origin-isolation (SharedArrayBuffer) gate stays. Only the
-transcription *inference* moved off the browser; the waveform/export isolation
-requirement is unchanged.
+Moving inference to the server does not remove the browser's
+cross-origin-isolation requirement: ffmpeg waveform extraction and export still
+use `SharedArrayBuffer`.

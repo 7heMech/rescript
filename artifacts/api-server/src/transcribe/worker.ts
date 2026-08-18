@@ -1,11 +1,14 @@
 /**
- * Node worker thread that runs Whisper speech-to-text on the CPU.
+ * Node worker thread that runs speech-to-text on the CPU.
  *
  * This mirrors the browser worker (artifacts/rescript/src/workers) but stripped
  * to the server's job: decode the uploaded media to 16 kHz mono PCM with a
- * spawned ffmpeg, run the patched @huggingface/transformers pipeline with
- * word-level timestamps, and stream progress + the final word list back to the
- * main thread over the parentPort channel.
+ * spawned ffmpeg, run the patched @huggingface/transformers pipeline (Whisper)
+ * with word-level timestamps, and stream progress + the final word list back to
+ * the main thread over the parentPort channel.
+ *
+ * Whisper is told which language to decode; Parakeet v3 detects it itself, so
+ * `language` is unused on that path and carried only for telemetry parity.
  *
  * It deliberately does NOT do VAD, forced alignment, or diarization: those live
  * in the browser worker where the aligner/diarizer models already ship. The
@@ -37,7 +40,9 @@ const SAMPLE_RATE = 16000;
 
 interface WorkerData {
   filePath: string;
+  /** Hugging Face id for Whisper; the parakeet.js model key for Parakeet. */
   modelId: string;
+  backend: "whisper" | "parakeet";
   language: string;
   cacheDir: string;
 }
@@ -187,13 +192,15 @@ async function loadPipeline(
   return asr;
 }
 
-async function run(data: WorkerData): Promise<void> {
+async function runWhisper(
+  data: WorkerData,
+  audio: Float32Array,
+  durationS: number,
+): Promise<void> {
   env.allowLocalModels = false;
   env.cacheDir = data.cacheDir;
 
   const asr = await loadPipeline(data.modelId);
-  const audio = await decodeToPcm(data.filePath);
-  const durationS = audio.length / SAMPLE_RATE;
 
   post({ type: "progress", message: MSG.transcribing, value: 0 });
 
@@ -251,10 +258,25 @@ async function run(data: WorkerData): Promise<void> {
   post({ type: "complete", words });
 }
 
-run(workerData as WorkerData).catch((err: unknown) => {
+async function run(data: WorkerData): Promise<void> {
+  const audio = await decodeToPcm(data.filePath);
+  const durationS = audio.length / SAMPLE_RATE;
+  await runWhisper(data, audio, durationS);
+}
+
+function reportError(err: unknown): void {
   post({
     type: "error",
     message: err instanceof Error ? err.message : String(err),
     cause: isNetworkError(err) ? "network" : undefined,
   });
-});
+}
+
+const initialData = workerData as WorkerData & { persistent?: boolean };
+if (initialData.persistent) {
+  port.on("message", (message: WorkerData) => {
+    void run(message).catch(reportError);
+  });
+} else {
+  void run(initialData).catch(reportError);
+}

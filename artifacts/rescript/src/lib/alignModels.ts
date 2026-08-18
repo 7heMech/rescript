@@ -16,6 +16,13 @@ export interface AlignModelInfo {
  * multilingual MMS forced-aligner (Latin a–z after accent folding). Chinese
  * uses an XLS-R CTC model whose vocab includes Han characters. Languages with
  * no entry skip CTC and keep the VAD/envelope heuristic only.
+ *
+ * Bulgarian is deliberately absent. The MMS aligner the other European languages
+ * share expects romanised Latin — its vocabulary has no Cyrillic — and there is
+ * no `normalize` mode that transliterates, so pointing `bg` at it would align
+ * against characters the model never emits and produce worse timings than the
+ * heuristic. Adding it means adding a Cyrillic CTC model plus a matching
+ * {@link CtcNormalizeMode}.
  */
 export const ALIGN_MODELS: Partial<
   Record<TranscriptLanguage, AlignModelInfo>

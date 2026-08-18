@@ -5,7 +5,7 @@ Rescript is a fully offline, transcript-based video/audio editor — edit videos
 ## Run & Operate
 
 - `bun run --cwd artifacts/rescript dev` — run the Rescript web app (Vite, reads `PORT` and `BASE_PATH` env, managed by the `artifacts/rescript: web` workflow)
-- `bun run --cwd artifacts/api-server dev` — run the API server
+- `bun run --cwd artifacts/api-server dev` — run the API server (needs `ffmpeg` on PATH; `MODEL_CACHE_DIR`, `TRANSCRIBE_CONCURRENCY`, `PARAKEET_THREADS`, `PARAKEET_CHUNK_LENGTH_S` are optional)
 - `bun run typecheck` — full typecheck across all packages
 - `PORT=5000 BASE_PATH=/ bun run --cwd artifacts/rescript build` — production build of the web app
 - WASM vendor assets in `artifacts/rescript/public/vendor/` are regenerated automatically on install by the package's `prepare` script (`scripts/copy-assets.mjs`), which also verifies the dependency patches applied and fails loudly if not. Manual re-run: `bun run --cwd artifacts/rescript copy-assets`.
@@ -14,7 +14,7 @@ Rescript is a fully offline, transcript-based video/audio editor — edit videos
 
 - Bun workspaces, Node.js 24, TypeScript 5.9
 - Web app: React 19 + Vite 7 + Tailwind 4 (ported from Next.js 16 / Vercel)
-- Transcription: `@huggingface/transformers` (Whisper) + `parakeet.js` (Parakeet TDT), ONNX Runtime WASM, all in a Web Worker
+- Transcription: `@huggingface/transformers` (Whisper) + `parakeet.js` (Parakeet TDT), ONNX Runtime WASM in a Web Worker; the same two backends also run server-side on `onnxruntime-node`
 - Media: `@ffmpeg/ffmpeg` + `@ffmpeg/core-mt` (multi-threaded ffmpeg.wasm)
 - Timeline export: `@chatoctopus/timeline` (FCPXML/XMEML writers) + custom AAF scaffold patching (`cfb`)
 - State: zustand; i18n: custom I18nProvider (9 locales)
@@ -33,7 +33,8 @@ Rescript is a fully offline, transcript-based video/audio editor — edit videos
 
 ## Architecture decisions
 
-- **Fully client-side**: no backend or database. Transcription, editing, and export run in-browser. The api-server artifact exists but serves nothing for Rescript.
+- **Server transcription, client editing**: both speech backends run on the api-server (`POST /api/transcribe/upload`, polled for status); editing and export stay in-browser. The browser worker remains the offline fallback and the only path with VAD, forced alignment and diarization.
+- **Parakeet on Node**: `parakeet.js` only ships a browser loader (IndexedDB cache, blob URLs, `onnxruntime-web`), so `artifacts/api-server/src/transcribe/parakeet.ts` replaces just that layer — weights streamed to `MODEL_CACHE_DIR`, a file-backed tokenizer and `nemo128.onnx` preprocessor, and `ParakeetModel` constructed directly on `onnxruntime-node`. The TDT decoder itself is used unmodified. Server quantisation is int8 encoder + **fp32** decoder (the CPU provider has no native fp16 kernels), unlike the browser's fp16 decoder. `onnxruntime-web` is stubbed out in `build.mjs`.
 - **Cross-origin isolation is required**: multi-threaded ffmpeg.wasm and threaded ONNX need `SharedArrayBuffer`, so COOP/COEP headers are set in `vite.config.ts` (dev + preview). Any production hosting must send the same headers.
 - **Vendored WASM served same-origin** from `public/vendor/` (ffmpeg core, ffmpeg class worker, two ONNX Runtime versions — transformers.js and parakeet.js pin different ort versions and must stay separate: `vendor/ort` vs `vendor/ort-parakeet`).
 - **Patched dependencies are install-safe**: `@huggingface/transformers` (Whisper timestamp fix) and `parakeet.js` (wasmPaths honored) are reapplied idempotently by `scripts/apply-dependency-patches.mjs` during Bun install. The rescript package's `prepare` script re-vendors WASM assets and verifies both patches, failing loudly if missing.

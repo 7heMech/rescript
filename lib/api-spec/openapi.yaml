@@ -122,10 +122,12 @@ components:
       properties:
         model:
           type: string
-          description: Whisper model id (base or small).
+          description: Speech model id (base, small or parakeet).
         language:
           type: string
-          description: Transcript language hint (en, es, fr, de, zh).
+          description: >-
+            Transcript language hint (en, es, fr, de, zh, bg). Whisper decodes
+            this language; Parakeet v3 auto-detects and ignores it.
       required:
         - model
         - language

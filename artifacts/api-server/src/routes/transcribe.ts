@@ -32,13 +32,35 @@ import {
 
 const router: IRouter = Router();
 
-/** Whisper models that the server path supports (Parakeet stays browser-only). */
-const SERVER_MODELS: Record<string, string> = {
-  base: "onnx-community/whisper-base_timestamped",
-  small: "onnx-community/whisper-small_timestamped",
+/**
+ * Speech models the server path supports, keyed by the client's model id.
+ *
+ * `backend` selects the worker's inference path: "whisper" runs the
+ * transformers.js pipeline, "parakeet" runs parakeet.js on onnxruntime-node.
+ */
+const SERVER_MODELS: Record<
+  string,
+  { backend: "whisper" | "parakeet"; modelId: string }
+> = {
+  base: {
+    backend: "whisper",
+    modelId: "onnx-community/whisper-base_timestamped",
+  },
+  small: {
+    backend: "whisper",
+    modelId: "onnx-community/whisper-small_timestamped",
+  },
+  parakeet: { backend: "parakeet", modelId: "parakeet-tdt-0.6b-v3" },
 };
 
-const SUPPORTED_LANGUAGES = new Set(["en", "es", "fr", "de", "zh"]);
+/**
+ * Transcript language hints the server accepts.
+ *
+ * Whisper decodes the requested language directly. Parakeet v3 auto-detects and
+ * ignores the hint, but it is still validated here so an unsupported value fails
+ * the same way on both backends rather than silently changing meaning.
+ */
+const SUPPORTED_LANGUAGES = new Set(["en", "es", "fr", "de", "zh", "bg"]);
 
 /** Multipart framing is small relative to the media ceiling. */
 const MAX_MULTIPART_OVERHEAD = 1024 * 1024;
@@ -144,8 +166,8 @@ router.post("/transcribe/upload", (req, res) => {
         const language =
           typeof req.body?.language === "string" ? req.body.language : "";
 
-        const modelId = SERVER_MODELS[model];
-        if (!file || !modelId || !SUPPORTED_LANGUAGES.has(language)) {
+        const entry = SERVER_MODELS[model];
+        if (!file || !entry || !SUPPORTED_LANGUAGES.has(language)) {
           res
             .status(400)
             .json({ error: "Missing file, or unsupported model/language." });
@@ -161,7 +183,8 @@ router.post("/transcribe/upload", (req, res) => {
         const job = await createJob({
           filePath: file.path,
           fileDir: uploadDir ?? path.dirname(file.path),
-          modelId,
+          modelId: entry.modelId,
+          backend: entry.backend,
           language,
           admission,
         });
