@@ -23,7 +23,7 @@ import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
-/** Resolve a package's real directory through pnpm symlinks, walking up from
+/** Resolve a package's real directory through workspace symlinks, walking up from
  *  `base` until a node_modules containing the package is found. */
 function pkgDir(base, name) {
   let dir = realpathSync(base);
@@ -81,8 +81,8 @@ copyOrtWasm(parakeetOrtDist, join(root, "public/vendor/ort-parakeet"));
 /*
  * The behavioral fixes to parakeet.js (initOrt honoring wasmPaths) and
  * @huggingface/transformers (Whisper timestamp handling) are applied
- * declaratively via pnpm `patchedDependencies` (see /pnpm-workspace.yaml and
- * /patches). Verify they took effect and fail the install loudly if not —
+ * declaratively via the install patch script (see /scripts and /patches). Verify
+ * they took effect and fail the install loudly if not —
  * without them transcription silently falls back to CDN assets or produces
  * garbled Whisper timestamps.
  */
@@ -93,7 +93,7 @@ if (
 ) {
   throw new Error(
     "[copy-assets] parakeet.js is missing the wasmPaths patch. " +
-      "Check patchedDependencies in pnpm-workspace.yaml and reinstall."
+      "Check scripts/apply-dependency-patches.mjs and reinstall."
   );
 }
 const hfBundle = join(hfDir, "dist/transformers.js");
@@ -103,7 +103,7 @@ if (
 ) {
   throw new Error(
     "[copy-assets] @huggingface/transformers is missing the Whisper timestamp patch. " +
-      "Check patchedDependencies in pnpm-workspace.yaml and reinstall."
+      "Check scripts/apply-dependency-patches.mjs and reinstall."
   );
 }
 

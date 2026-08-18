@@ -2,11 +2,18 @@
   "name": "workspace",
   "version": "0.0.0",
   "license": "MIT",
+  "packageManager": "bun@1.3.6",
+  "workspaces": [
+    "artifacts/*",
+    "lib/*",
+    "lib/integrations/*",
+    "scripts"
+  ],
   "scripts": {
-    "preinstall": "sh -c 'rm -f package-lock.json yarn.lock; case \"$npm_config_user_agent\" in pnpm/*) ;; *) echo \"Use pnpm instead\" >&2; exit 1 ;; esac'",
-    "build": "pnpm run typecheck && pnpm -r --if-present run build",
+    "postinstall": "node scripts/apply-dependency-patches.mjs",
+    "build": "bun run typecheck && bun run --cwd artifacts/api-server build && bun run --cwd artifacts/mockup-sandbox build && bun run --cwd artifacts/rescript build",
     "typecheck:libs": "tsc --build",
-    "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck"
+    "typecheck": "bun run typecheck:libs && bun run --cwd artifacts/api-server typecheck && bun run --cwd artifacts/mockup-sandbox typecheck && bun run --cwd artifacts/rescript typecheck && bun run --cwd scripts typecheck"
   },
   "private": true,
   "dependencies": {

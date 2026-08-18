@@ -281,6 +281,15 @@ export function isModelId(value: unknown): value is ModelId {
   return typeof value === "string" && Object.prototype.hasOwnProperty.call(MODELS, value);
 }
 
+/**
+ * Whisper models transcribe on the API server by default; Parakeet stays in the
+ * browser worker because its runtime is browser-only. A non-model source (e.g.
+ * "import") is never transcribed at all.
+ */
+export function usesServerTranscription(source: unknown): boolean {
+  return isModelId(source) && MODELS[source].backend === "whisper";
+}
+
 const MODEL_STORAGE_KEY = "rescript.model";
 
 /** Read the last-selected speech model from localStorage (defaults to base). */

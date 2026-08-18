@@ -1,1 +1,3 @@
 - [Rescript WASM vendoring](rescript-wasm-vendoring.md) — WASM assets and node_modules patches are regenerated, not committed; reinstalls silently break transcription until copy-assets + patches re-run.
+- [Server-side Whisper transcription](server-whisper-transcription.md) — API-server ASR: native-dep bundling (onnxruntime direct+external, sharp stub), device:"cpu", worker entry path, zod/orval codegen gotchas.
+- [Bun workspace migration](bun-workspace-migration.md) — Bun uses root workspaces/concrete versions; artifact workflows run from package dirs and install-time patches must handle Bun's layout/line endings.

@@ -13,6 +13,7 @@ import { useCrossOriginIsolated } from "@/hooks/useCrossOriginIsolated";
 import { useDesktopMenu } from "@/hooks/useDesktopMenu";
 import { useIsDesktopLayout } from "@/hooks/useIsDesktopLayout";
 import { useTranscriber } from "@/hooks/useTranscriber";
+import { useServerTranscriber } from "@/hooks/useServerTranscriber";
 import { detectMediaKind, MEDIA_ACCEPT } from "@/lib/media";
 import TopBar from "./TopBar";
 import DesktopAppBanner from "./DesktopAppBanner";
@@ -30,7 +31,7 @@ import ModelSelector, {
   ModelOptionSeparator,
 } from "./ModelSelector";
 import ImportTranscriptOption from "./ImportTranscriptOption";
-import { MODEL_ORDER } from "@/lib/models";
+import { MODEL_ORDER, usesServerTranscription } from "@/lib/models";
 import { isTypingTarget } from "@/lib/keyboard";
 import { en } from "@/lib/i18n/messages/en";
 import { useI18n } from "./I18nProvider";
@@ -135,6 +136,7 @@ export default function Editor() {
   const skipTranscription = useEditorStore((s) => s.skipTranscription);
   const loadVideo = useEditorStore((s) => s.loadVideo);
   const { transcribe } = useTranscriber();
+  const { transcribe: transcribeOnServer } = useServerTranscriber();
 
   const canUndo = useEditorStore((s) => s.past.length > 0);
   const canRedo = useEditorStore((s) => s.future.length > 0);
@@ -228,6 +230,11 @@ export default function Editor() {
         if (restoreOnly || !audio) {
           s.setStatus("ready");
           s.setProgress({ message: "", value: null });
+        } else if (usesServerTranscription(s.source)) {
+          // Whisper Base/Small transcribe on the API server: upload the original
+          // media (not the decoded PCM) and poll the job. The browser worker
+          // stays the path for Parakeet, which is browser-only.
+          transcribeOnServer(videoFile);
         } else {
           transcribe(audio, audio.length / VAD_SAMPLE_RATE);
         }
@@ -246,7 +253,7 @@ export default function Editor() {
         );
       }
     })();
-  }, [videoFile, skipTranscription, transcribe]);
+  }, [videoFile, skipTranscription, transcribe, transcribeOnServer]);
 
   // The desktop shell opens as a small upload window and grows once the
   // three-pane editor takes over (and shrinks back on "start over").

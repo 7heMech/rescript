@@ -4,15 +4,15 @@ Rescript is a fully offline, transcript-based video/audio editor — edit videos
 
 ## Run & Operate
 
-- `pnpm --filter @workspace/rescript run dev` — run the Rescript web app (Vite, reads `PORT` and `BASE_PATH` env, managed by the `artifacts/rescript: web` workflow)
-- `pnpm --filter @workspace/api-server run dev` — run the API server (currently unused by Rescript; the app is fully client-side)
-- `pnpm run typecheck` — full typecheck across all packages
-- `PORT=5000 BASE_PATH=/ pnpm --filter @workspace/rescript run build` — production build of the web app
-- WASM vendor assets in `artifacts/rescript/public/vendor/` are regenerated automatically on install by the package's `prepare` script (`scripts/copy-assets.mjs`), which also verifies the dependency patches applied and fails loudly if not. Manual re-run: `pnpm --filter @workspace/rescript run copy-assets`.
+- `bun run --cwd artifacts/rescript dev` — run the Rescript web app (Vite, reads `PORT` and `BASE_PATH` env, managed by the `artifacts/rescript: web` workflow)
+- `bun run --cwd artifacts/api-server dev` — run the API server
+- `bun run typecheck` — full typecheck across all packages
+- `PORT=5000 BASE_PATH=/ bun run --cwd artifacts/rescript build` — production build of the web app
+- WASM vendor assets in `artifacts/rescript/public/vendor/` are regenerated automatically on install by the package's `prepare` script (`scripts/copy-assets.mjs`), which also verifies the dependency patches applied and fails loudly if not. Manual re-run: `bun run --cwd artifacts/rescript copy-assets`.
 
 ## Stack
 
-- pnpm workspaces, Node.js 24, TypeScript 5.9
+- Bun workspaces, Node.js 24, TypeScript 5.9
 - Web app: React 19 + Vite 7 + Tailwind 4 (ported from Next.js 16 / Vercel)
 - Transcription: `@huggingface/transformers` (Whisper) + `parakeet.js` (Parakeet TDT), ONNX Runtime WASM, all in a Web Worker
 - Media: `@ffmpeg/ffmpeg` + `@ffmpeg/core-mt` (multi-threaded ffmpeg.wasm)
@@ -36,7 +36,7 @@ Rescript is a fully offline, transcript-based video/audio editor — edit videos
 - **Fully client-side**: no backend or database. Transcription, editing, and export run in-browser. The api-server artifact exists but serves nothing for Rescript.
 - **Cross-origin isolation is required**: multi-threaded ffmpeg.wasm and threaded ONNX need `SharedArrayBuffer`, so COOP/COEP headers are set in `vite.config.ts` (dev + preview). Any production hosting must send the same headers.
 - **Vendored WASM served same-origin** from `public/vendor/` (ffmpeg core, ffmpeg class worker, two ONNX Runtime versions — transformers.js and parakeet.js pin different ort versions and must stay separate: `vendor/ort` vs `vendor/ort-parakeet`).
-- **Patched dependencies are declarative**: `@huggingface/transformers` (Whisper timestamp fix) and `parakeet.js` (wasmPaths honored) are patched via pnpm `patchedDependencies` (`pnpm-workspace.yaml` + `/patches/`), so every install applies them automatically. The rescript package's `prepare` script re-vendors WASM assets and verifies both patches, failing loudly if missing.
+- **Patched dependencies are install-safe**: `@huggingface/transformers` (Whisper timestamp fix) and `parakeet.js` (wasmPaths honored) are reapplied idempotently by `scripts/apply-dependency-patches.mjs` during Bun install. The rescript package's `prepare` script re-vendors WASM assets and verifies both patches, failing loudly if missing.
 - **Env conversion from Next**: `NEXT_PUBLIC_*` → `VITE_*` (`VITE_BASE_PATH`, `VITE_SENTRY_DSN`, `VITE_APP_VERSION`, `VITE_TELEMETRY_ENDPOINT`); all optional — the app boots with none set.
 - **`@chatoctopus/timeline` deep imports**: browser bundle imports dist subpaths directly (avoids the Node-only ffprobe helper); `node:crypto`/`node:url` are shimmed via Vite aliases.
 

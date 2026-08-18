@@ -12,10 +12,10 @@ paths = [ "/" ]
 localPort = 20667
 
 [services.development]
-run = "pnpm --filter @workspace/rescript run dev"
+run = "bun run dev"
 
 [services.production]
-build = [ "pnpm", "--filter", "@workspace/rescript", "run", "build" ]
+build = [ "bun", "run", "build" ]
 serve = "static"
 publicDir = "artifacts/rescript/dist/public"
 

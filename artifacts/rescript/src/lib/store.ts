@@ -521,8 +521,11 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     ) {
       return;
     }
-    // Stop Whisper if it was still running.
+    // Stop Whisper if it was still running (browser worker or server job).
     void import("@/hooks/useTranscriber").then((m) => m.cancelTranscription());
+    void import("@/hooks/useServerTranscriber").then((m) =>
+      m.cancelServerTranscription()
+    );
     set({
       words,
       speakers: speakersFromWords(words, speakers ?? []),
@@ -968,6 +971,12 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     const { mediaUrl, exportUrl } = get();
     if (mediaUrl) URL.revokeObjectURL(mediaUrl);
     if (exportUrl) URL.revokeObjectURL(exportUrl);
+    // Stop any in-flight transcription so a server job for the old media does
+    // not resolve into the fresh home screen.
+    void import("@/hooks/useTranscriber").then((m) => m.cancelTranscription());
+    void import("@/hooks/useServerTranscriber").then((m) =>
+      m.cancelServerTranscription()
+    );
     set({
       videoFile: null,
       mediaUrl: null,

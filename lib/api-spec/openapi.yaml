@@ -10,6 +10,8 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: transcribe
+    description: Server-side speech-to-text transcription
 paths:
   /healthz:
     get:
@@ -24,6 +26,81 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /transcribe/upload:
+    post:
+      operationId: uploadTranscription
+      tags: [transcribe]
+      summary: Upload media for transcription
+      description: >-
+        Accepts a media file plus model and language fields, queues a
+        server-side transcription job, and returns its id immediately.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/TranscribeUpload"
+      responses:
+        "202":
+          description: Job accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TranscribeJob"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /transcribe/{jobId}/status:
+    get:
+      operationId: getTranscriptionStatus
+      tags: [transcribe]
+      summary: Poll a transcription job
+      description: >-
+        Returns the current state and progress of a transcription job, and the
+        word-level transcript once it is done.
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Job status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TranscribeStatus"
+        "404":
+          description: Job not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /transcribe/{jobId}:
+    delete:
+      operationId: cancelTranscription
+      tags: [transcribe]
+      summary: Cancel a transcription job
+      description: Cancels a running job and deletes its uploaded media.
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Cancelled
+        "404":
+          description: Job not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 components:
   schemas:
     HealthStatus:
@@ -33,4 +110,76 @@ components:
           type: string
       required:
         - status
-
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
+    TranscribeUpload:
+      type: object
+      properties:
+        model:
+          type: string
+          description: Whisper model id (base or small).
+        language:
+          type: string
+          description: Transcript language hint (en, es, fr, de, zh).
+      required:
+        - model
+        - language
+    TranscribeJob:
+      type: object
+      properties:
+        jobId:
+          type: string
+      required:
+        - jobId
+    TranscribeWord:
+      type: object
+      properties:
+        id:
+          type: number
+        text:
+          type: string
+        start:
+          type: number
+        end:
+          type: number
+        speaker:
+          type: number
+        deleted:
+          type: boolean
+      required:
+        - id
+        - text
+        - start
+        - end
+        - speaker
+        - deleted
+    TranscribeStatus:
+      type: object
+      properties:
+        jobId:
+          type: string
+        state:
+          type: string
+          description: One of queued, downloading, transcribing, done, error.
+        message:
+          type: string
+          description: Human-readable progress message key.
+        progress:
+          type: ["number", "null"]
+          description: 0..1 progress within the current stage, or null when indeterminate.
+        words:
+          type: ["array", "null"]
+          items:
+            $ref: "#/components/schemas/TranscribeWord"
+        error:
+          type: ["string", "null"]
+      required:
+        - jobId
+        - state
+        - message
+        - progress

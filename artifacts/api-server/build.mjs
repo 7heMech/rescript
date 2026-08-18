@@ -15,7 +15,13 @@ async function buildAll() {
   await rm(distDir, { recursive: true, force: true });
 
   await esbuild({
-    entryPoints: [path.resolve(artifactDir, "src/index.ts")],
+    entryPoints: [
+      path.resolve(artifactDir, "src/index.ts"),
+      // Transcription runs in a worker thread; bundle it as its own entry so
+      // dist/transcribe/worker.mjs exists to spawn at runtime. onnxruntime-node
+      // stays external (see below) so its native addon loads from node_modules.
+      path.resolve(artifactDir, "src/transcribe/worker.ts"),
+    ],
     platform: "node",
     bundle: true,
     format: "esm",
@@ -29,7 +35,6 @@ async function buildAll() {
     // - use path traversal to read files (e.g. @google-cloud/secret-manager loads sibling .proto files)
     external: [
       "*.node",
-      "sharp",
       "better-sqlite3",
       "sqlite3",
       "canvas",
@@ -104,7 +109,24 @@ async function buildAll() {
     sourcemap: "linked",
     plugins: [
       // pino relies on workers to handle logging, instead of externalizing it we use a plugin to handle it
-      esbuildPluginPino({ transports: ["pino-pretty"] })
+      esbuildPluginPino({ transports: ["pino-pretty"] }),
+      // @huggingface/transformers lazily imports `sharp` for image inputs. The
+      // ASR path never touches it and sharp is an unbuilt native addon, so a
+      // bare external import fails at runtime. Stub it to an empty module: the
+      // image code path is unreachable for speech-to-text.
+      {
+        name: "stub-sharp",
+        setup(build) {
+          build.onResolve({ filter: /^sharp$/ }, () => ({
+            path: "sharp",
+            namespace: "stub-sharp",
+          }));
+          build.onLoad({ filter: /.*/, namespace: "stub-sharp" }, () => ({
+            contents: "export default {}; export {};",
+            loader: "js",
+          }));
+        },
+      },
     ],
     // Make sure packages that are cjs only (e.g. express) but are bundled continue to work in our esm output file
     banner: {

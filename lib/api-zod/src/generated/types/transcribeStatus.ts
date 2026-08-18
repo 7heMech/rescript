@@ -5,33 +5,7 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
-export interface HealthStatus {
-  status: string;
-}
-
-export interface ErrorResponse {
-  error: string;
-}
-
-export interface TranscribeUpload {
-  /** Whisper model id (base or small). */
-  model: string;
-  /** Transcript language hint (en, es, fr, de, zh). */
-  language: string;
-}
-
-export interface TranscribeJob {
-  jobId: string;
-}
-
-export interface TranscribeWord {
-  id: number;
-  text: string;
-  start: number;
-  end: number;
-  speaker: number;
-  deleted: boolean;
-}
+import type { TranscribeWord } from './transcribeWord';
 
 export interface TranscribeStatus {
   jobId: string;
@@ -49,4 +23,3 @@ export interface TranscribeStatus {
   /** @nullable */
   error?: string | null;
 }
-

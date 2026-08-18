@@ -5,14 +5,14 @@ router = "application"
 deploymentTarget = "autoscale"
 
 [deployment.postBuild]
-args = ["pnpm", "store", "prune"]
+args = ["bun", "install", "--frozen-lockfile"]
 env = { "CI" = "true" }
 
 [workflows]
 runButton = "Project"
 
 [agent]
-stack = "PNPM_WORKSPACE"
+stack = "BUN_WORKSPACE"
 expertMode = true
 
 [postMerge]
